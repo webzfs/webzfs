@@ -6,7 +6,10 @@ from fastapi import APIRouter, Request, Form, Depends, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import Annotated, Optional, Dict
 import platform
+<<<<<<< HEAD
 import threading
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
 from config.templates import templates
 from services.zfs_replication import ZFSReplicationService, ReplicationType, CompressionMethod
 from services.syncoid import SyncoidService
@@ -34,9 +37,12 @@ async def replication_index(request: Request):
         # Check syncoid status
         syncoid_status = syncoid_service.check_syncoid_status()
         
+<<<<<<< HEAD
         # Get active executions so user can see in-progress replications
         active_executions = replication_service.get_active_executions()
         
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
         # Detect OS
         system = platform.system()
         
@@ -46,7 +52,10 @@ async def replication_index(request: Request):
                 "request": request,
                 "jobs": jobs,
                 "syncoid_status": syncoid_status,
+<<<<<<< HEAD
                 "active_executions": active_executions,
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
                 "system": system,
                 "page_title": "ZFS Replication"
             }
@@ -58,7 +67,10 @@ async def replication_index(request: Request):
                 "request": request,
                 "jobs": [],
                 "syncoid_status": {'installed': False},
+<<<<<<< HEAD
                 "active_executions": [],
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
                 "system": platform.system(),
                 "error": str(e),
                 "page_title": "ZFS Replication"
