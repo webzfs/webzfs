@@ -386,10 +386,15 @@ class ZFSObservabilityService:
         Returns:
             Dictionary with ARC stats
         """
+<<<<<<< HEAD
 
         # FreeBSD/NetBSD use sysctl for ARC stats
         if is_freebsd() or is_netbsd():
             return self._get_arc_summary_sysctl()
+=======
+        if is_freebsd():
+            return self._get_arc_summary_freebsd()
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
         else:
             return self._get_arc_summary_linux()
     
@@ -433,6 +438,7 @@ class ZFSObservabilityService:
         except Exception as e:
             return {'error': f'Failed to read ARC stats: {str(e)}'}
     
+<<<<<<< HEAD
     def _get_arc_summary_sysctl(self) -> Dict[str, Any]:
         """
         Get ARC stats using sysctl (for BSD systems)
@@ -442,6 +448,12 @@ class ZFSObservabilityService:
         """
         try:
             # Get all ZFS ARC-related sysctl values
+=======
+    def _get_arc_summary_freebsd(self) -> Dict[str, Any]:
+        """Get ARC stats from FreeBSD sysctl"""
+        try:
+            # Use sysctl to get ARC stats on FreeBSD
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
             result = subprocess.run(
                 ['sysctl', 'kstat.zfs.misc.arcstats'],
                 capture_output=True,
@@ -450,6 +462,7 @@ class ZFSObservabilityService:
             )
             
             if result.returncode != 0:
+<<<<<<< HEAD
 <<<<<<< HEAD
 
 =======
@@ -477,13 +490,31 @@ class ZFSObservabilityService:
                 # kstat.zfs.misc.arcstats.hits -> hits
                 stat_name = name.split('.')[-1]
                 
+=======
+                return {'error': f'Failed to get ARC stats: {result.stderr}'}
+            
+            stats = {}
+            for line in result.stdout.strip().split('\n'):
+                if not line or ':' not in line:
+                    continue
+                
+                # Format: kstat.zfs.misc.arcstats.hits: 12345678
+                key, value = line.split(':', 1)
+                # Extract just the stat name (last part after arcstats.)
+                stat_name = key.strip().split('.')[-1]
+                value = value.strip()
+                
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
                 try:
                     stats[stat_name] = int(value)
                 except ValueError:
                     stats[stat_name] = value
             
+<<<<<<< HEAD
             if not stats:
                 return {'error': 'ARC stats not available via sysctl'}
+=======
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
             # Calculate derived stats
             if 'hits' in stats and 'misses' in stats:
                 total = stats['hits'] + stats['misses']

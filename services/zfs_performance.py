@@ -638,15 +638,21 @@ class ZFSPerformanceService:
     def _read_arc_stats(self) -> Dict[str, Any]:
         """Read current ARC statistics"""
 <<<<<<< HEAD
+<<<<<<< HEAD
 
         # FreeBSD/NetBSD use sysctl for ARC stats
         if self.system in ('FreeBSD', 'NetBSD'):
             return self._read_arc_stats_sysctl()
+=======
+        if self.system == 'FreeBSD':
+            return self._read_arc_stats_freebsd()
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
         else:
             return self._read_arc_stats_linux()
     
     def _read_arc_stats_linux(self) -> Dict[str, Any]:
         """Read ARC stats from Linux /proc filesystem"""
+<<<<<<< HEAD
 =======
         # FreeBSD/NetBSD use sysctl for ARC stats
         if self.system in ('FreeBSD', 'NetBSD'):
@@ -654,6 +660,8 @@ class ZFSPerformanceService:
         
         # Linux uses /proc/spl/kstat/zfs/arcstats
 >>>>>>> 59b61a8 (improve arc stats page under observability)
+=======
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
         try:
             arcstats_path = Path('/proc/spl/kstat/zfs/arcstats')
             
@@ -785,6 +793,47 @@ class ZFSPerformanceService:
             
             if not stats:
                 return {'error': 'ARC stats not available via sysctl'}
+            
+            # Calculate derived metrics
+            if 'hits' in stats and 'misses' in stats:
+                total = stats['hits'] + stats['misses']
+                if total > 0:
+                    stats['hit_rate'] = (stats['hits'] / total) * 100
+                    stats['miss_rate'] = (stats['misses'] / total) * 100
+            
+            return stats
+            
+        except Exception as e:
+            return {'error': f'Failed to read ARC stats: {str(e)}'}
+    
+    def _read_arc_stats_freebsd(self) -> Dict[str, Any]:
+        """Read ARC stats from FreeBSD sysctl"""
+        try:
+            result = subprocess.run(
+                ['sysctl', 'kstat.zfs.misc.arcstats'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                return {'error': f'Failed to get ARC stats: {result.stderr}'}
+            
+            stats = {}
+            for line in result.stdout.strip().split('\n'):
+                if not line or ':' not in line:
+                    continue
+                
+                # Format: kstat.zfs.misc.arcstats.hits: 12345678
+                key, value = line.split(':', 1)
+                # Extract just the stat name (last part after arcstats.)
+                stat_name = key.strip().split('.')[-1]
+                value = value.strip()
+                
+                try:
+                    stats[stat_name] = int(value)
+                except ValueError:
+                    stats[stat_name] = value
             
             # Calculate derived metrics
             if 'hits' in stats and 'misses' in stats:
