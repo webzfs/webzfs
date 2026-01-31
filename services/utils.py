@@ -255,6 +255,7 @@ def is_netbsd() -> bool:
 <<<<<<< HEAD
 
 
+
 def run_zfs_command_with_pipe(
     send_cmd: List[str],
     receive_cmd: List[str],
@@ -291,5 +292,8 @@ def run_zfs_command_with_pipe(
     send_process.stdout.close()
     
     return send_process, receive_process
+<<<<<<< HEAD
 =======
 >>>>>>> 59b61a8 (improve arc stats page under observability)
+=======
+>>>>>>> e70c497 (rebase netbsd work)
