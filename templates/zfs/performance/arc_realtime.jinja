@@ -56,6 +56,8 @@
             - Reading from <code>/proc/spl/kstat/zfs/arcstats</code>
             {% elif system == 'FreeBSD' %}
             - Using <code>zfs-stats -A</code> command (requires zfs-stats package)
+            {% elif system == 'NetBSD' %}
+            - Reading from <code>sysctl</code> (kstat.zfs.misc.arcstats)
             {% else %}
             - ARC statistics not available on this platform
             {% endif %}
@@ -63,7 +65,7 @@
     </div>
 
     <!-- Filters -->
-    {% if system == 'Linux' or system == 'FreeBSD' %}
+    {% if system == 'Linux' or system == 'FreeBSD' or system == 'NetBSD' %}
     <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
         <form method="get" action="/zfs/performance/arc-realtime" class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

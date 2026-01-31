@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from config.settings import Settings
+from services.utils import is_freebsd, is_netbsd
 
 
 class ZFSPerformanceService:
@@ -677,7 +678,6 @@ class ZFSPerformanceService:
             
         except Exception as e:
             return {'error': f'Failed to read ARC stats: {str(e)}'}
-    
 
     def _read_arc_stats_sysctl(self) -> Dict[str, Any]:
         """Read ARC statistics using sysctl (for BSD systems)"""
@@ -685,6 +685,7 @@ class ZFSPerformanceService:
         try:
             result = subprocess.run(
                 ['sysctl', 'kstat.zfs.misc.arcstats'],
+
                 capture_output=True,
                 text=True,
                 check=False
@@ -741,6 +742,7 @@ class ZFSPerformanceService:
         
         On Linux: cat /proc/spl/kstat/zfs/arcstats
         On FreeBSD: zfs-stats -A
+        On NetBSD: sysctl -a | grep arcstats
         
         Returns:
             Dictionary with raw output and system info
@@ -797,6 +799,31 @@ class ZFSPerformanceService:
                 except subprocess.TimeoutExpired:
                     return {
                         'error': 'zfs-stats command timed out',
+                        'system': self.system
+                    }
+            
+            elif self.system == 'NetBSD':
+                # NetBSD uses sysctl for ARC stats
+                try:
+                    result = subprocess.run(
+                        ['sh', '-c', 'sysctl -a | grep -i arcstats'],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    output = result.stdout if result.stdout else 'No ARC stats found via sysctl'
+                    
+                    return {
+                        'output': output,
+                        'system': self.system,
+                        'command': 'sysctl -a | grep -i arcstats',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                except subprocess.TimeoutExpired:
+                    return {
+                        'error': 'sysctl command timed out',
                         'system': self.system
                     }
             else:

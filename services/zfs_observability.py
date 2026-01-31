@@ -7,7 +7,6 @@ import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
-
 from services.utils import is_freebsd, is_netbsd, run_zfs_command
 from config.settings import Settings
 
@@ -98,6 +97,10 @@ class ZFSObservabilityService:
         Returns:
             List of parsed event entries
         """
+        # NetBSD ZFS does not support the 'events' subcommand
+        if is_netbsd():
+            return []
+        
         timeout = self.timeouts.get('events', self.timeouts['default'])
         try:
             cmd = ['zpool', 'events']
@@ -166,6 +169,10 @@ class ZFSObservabilityService:
         Args:
             pool_name: Optional pool name, clears all if not provided
         """
+        # NetBSD ZFS does not support the 'events' subcommand
+        if is_netbsd():
+            return
+        
         timeout = self.timeouts.get('events', self.timeouts['default'])
         try:
             cmd = ['zpool', 'events', '-c']
@@ -330,9 +337,9 @@ class ZFSObservabilityService:
         Returns:
             List of syslog entries
         """
-        if is_freebsd():
-            # FreeBSD uses syslog - grep /var/log/messages
-            return self._read_freebsd_syslog(lines, since, severity)
+        if is_freebsd() or is_netbsd():
+            # BSD uses syslog - grep /var/log/messages
+            return self._read_bsd_syslog(lines, since, severity)
         
         try:
             # Linux uses journalctl on systemd systems (default)
@@ -676,13 +683,14 @@ class ZFSObservabilityService:
         except:
             return {'raw': '\n'.join(lines) if lines else ''}
     
-    def _read_freebsd_syslog(
+    def _read_bsd_syslog(
+
         self,
         lines: int,
         since: Optional[datetime] = None,
         severity: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """FreeBSD-specific syslog reading from /var/log/messages"""
+        """BSD-specific syslog reading from /var/log/messages"""
         try:
             # Read from /var/log/messages and filter for ZFS
             result = subprocess.run(
@@ -705,9 +713,9 @@ class ZFSObservabilityService:
     def _fallback_syslog_read(self, lines: int) -> List[Dict[str, Any]]:
         """Fallback method to read syslog without journalctl"""
         try:
-            # Try dmesg (without -T flag on FreeBSD)
-            if is_freebsd():
-                # FreeBSD dmesg doesn't support -T flag
+            # Try dmesg (without -T flag on BSD systems)
+            if is_freebsd() or is_netbsd():
+                # BSD dmesg doesn't support -T flag
                 result = subprocess.run(
                     ['dmesg'],
                     capture_output=True,

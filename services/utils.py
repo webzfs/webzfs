@@ -244,8 +244,6 @@ def run_zfs_command(
         input=input_data
     )
 
-
-
 def is_freebsd() -> bool:
     """Check if running on FreeBSD"""
     return get_os_type() == 'FreeBSD'
@@ -254,6 +252,7 @@ def is_freebsd() -> bool:
 def is_netbsd() -> bool:
     """Check if running on NetBSD"""
     return get_os_type() == 'NetBSD'
+
 
 def run_zfs_command_with_pipe(
     send_cmd: List[str],
@@ -291,4 +290,3 @@ def run_zfs_command_with_pipe(
     send_process.stdout.close()
     
     return send_process, receive_process
-
