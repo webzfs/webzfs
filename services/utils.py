@@ -32,3 +32,8 @@ def get_os_type() -> str:
 def is_freebsd() -> bool:
     """Check if running on FreeBSD"""
     return get_os_type() == 'FreeBSD'
+
+
+def is_netbsd() -> bool:
+    """Check if running on NetBSD"""
+    return get_os_type() == 'NetBSD'

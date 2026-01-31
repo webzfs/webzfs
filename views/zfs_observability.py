@@ -340,36 +340,19 @@ async def arc_summary(request: Request):
     try:
         system = platform.system()
         
-        # On FreeBSD, use zfs-stats -A for raw output (same as Performance > ARC page)
-        if system == 'FreeBSD':
-            from services.zfs_performance import ZFSPerformanceService
-            performance_service = ZFSPerformanceService()
-            raw_arcstats = performance_service.get_raw_arcstats()
-            
-            return templates.TemplateResponse(
-                "zfs/observability/arc_summary.jinja",
-                {
-                    "request": request,
-                    "arc_stats": {},  # Empty for FreeBSD
-                    "raw_arcstats": raw_arcstats,
-                    "system": system,
-                    "page_title": "ARC Summary"
-                }
-            )
-        else:
-            # On Linux, use the detailed parsed view
-            arc_stats = observability_service.get_arc_summary()
-            
-            return templates.TemplateResponse(
-                "zfs/observability/arc_summary.jinja",
-                {
-                    "request": request,
-                    "arc_stats": arc_stats,
-                    "raw_arcstats": None,
-                    "system": system,
-                    "page_title": "ARC Summary"
-                }
-            )
+        # All platforms now use the parsed visual dashboard
+        # FreeBSD/NetBSD use sysctl, Linux uses /proc/spl/kstat/zfs/arcstats
+        arc_stats = observability_service.get_arc_summary()
+        
+        return templates.TemplateResponse(
+            "zfs/observability/arc_summary.jinja",
+            {
+                "request": request,
+                "arc_stats": arc_stats,
+                "system": system,
+                "page_title": "ARC Summary"
+            }
+        )
     except Exception as e:
         import platform
         return templates.TemplateResponse(
@@ -377,7 +360,6 @@ async def arc_summary(request: Request):
             {
                 "request": request,
                 "arc_stats": {},
-                "raw_arcstats": None,
                 "system": platform.system(),
                 "error": str(e),
                 "page_title": "ARC Summary"
