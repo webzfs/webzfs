@@ -204,24 +204,36 @@
                 <div>
                     <label for="encryption" class="form-label">
                         Encryption
+                        {% if not supports_encryption %}
+                        <span class="text-text-tertiary text-xs ml-2">(Not supported on this platform)</span>
+                        {% endif %}
                     </label>
                     <select 
                         id="encryption" 
                         name="encryption"
-                        class="form-select"
+                        class="form-select {% if not supports_encryption %}opacity-50 cursor-not-allowed{% endif %}"
                         x-model="encryption"
+                        {% if not supports_encryption %}disabled{% endif %}
                     >
                         <option value="">Off (No Encryption)</option>
+                        {% if supports_encryption %}
                         <option value="aes-256-gcm">AES-256-GCM (Recommended)</option>
                         <option value="aes-128-gcm">AES-128-GCM</option>
                         <option value="aes-192-gcm">AES-192-GCM</option>
                         <option value="aes-256-ccm">AES-256-CCM</option>
                         <option value="aes-128-ccm">AES-128-CCM</option>
                         <option value="aes-192-ccm">AES-192-CCM</option>
+                        {% endif %}
                     </select>
+                    {% if supports_encryption %}
                     <p class="text-text-tertiary text-sm mt-1">
                         Enable native ZFS encryption. AES-256-GCM provides the best security and performance.
                     </p>
+                    {% else %}
+                    <p class="text-warning-400 text-sm mt-1">
+                        ZFS encryption is not supported on NetBSD. Datasets will be created without encryption.
+                    </p>
+                    {% endif %}
                 </div>
 
                 <!-- Encryption Passphrase (only when encryption is enabled) -->

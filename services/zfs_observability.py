@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from services.utils import is_freebsd
+from services.utils import is_freebsd, is_netbsd
 from config.settings import Settings
 
 
@@ -100,6 +100,10 @@ class ZFSObservabilityService:
         Returns:
             List of parsed event entries
         """
+        # NetBSD ZFS does not support the 'events' subcommand
+        if is_netbsd():
+            return []
+        
         timeout = self.timeouts.get('events', self.timeouts['default'])
         try:
             cmd = ['zpool', 'events']
@@ -139,6 +143,10 @@ class ZFSObservabilityService:
         Args:
             pool_name: Optional pool name, clears all if not provided
         """
+        # NetBSD ZFS does not support the 'events' subcommand
+        if is_netbsd():
+            return
+        
         timeout = self.timeouts.get('events', self.timeouts['default'])
         try:
             cmd = ['zpool', 'events', '-c']
@@ -210,9 +218,9 @@ class ZFSObservabilityService:
         Returns:
             List of syslog entries
         """
-        if is_freebsd():
-            # FreeBSD uses syslog - grep /var/log/messages
-            return self._read_freebsd_syslog(lines, since, severity)
+        if is_freebsd() or is_netbsd():
+            # BSD uses syslog - grep /var/log/messages
+            return self._read_bsd_syslog(lines, since, severity)
         
         try:
             # Linux uses journalctl on systemd systems (default)
@@ -259,6 +267,11 @@ class ZFSObservabilityService:
         Returns:
             Dictionary with ARC stats
         """
+        # NetBSD/FreeBSD use sysctl for ARC stats
+        if is_netbsd() or is_freebsd():
+            return self._get_arc_summary_sysctl()
+        
+        # Linux uses /proc/spl/kstat/zfs/arcstats
         try:
             arcstats_path = Path('/proc/spl/kstat/zfs/arcstats')
             
@@ -279,6 +292,69 @@ class ZFSObservabilityService:
                             stats[name] = int(value)
                         except ValueError:
                             stats[name] = value
+            
+            # Calculate derived stats
+            if 'hits' in stats and 'misses' in stats:
+                total = stats['hits'] + stats['misses']
+                if total > 0:
+                    stats['hit_rate'] = (stats['hits'] / total) * 100
+            
+            # Format sizes
+            if 'size' in stats:
+                stats['size_human'] = self._format_bytes(stats['size'])
+            if 'c_max' in stats:
+                stats['c_max_human'] = self._format_bytes(stats['c_max'])
+            
+            return stats
+            
+        except Exception as e:
+            return {'error': f'Failed to read ARC stats: {str(e)}'}
+    
+    def _get_arc_summary_sysctl(self) -> Dict[str, Any]:
+        """
+        Get ARC stats using sysctl (for BSD systems)
+        
+        Returns:
+            Dictionary with ARC stats
+        """
+        try:
+            # Get all ZFS ARC-related sysctl values
+            result = subprocess.run(
+                ['sysctl', '-a'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                return {'error': 'Failed to read sysctl'}
+            
+            stats = {}
+            
+            # Look for kstat.zfs.misc.arcstats.* entries
+            for line in result.stdout.split('\n'):
+                if 'arcstats' in line.lower() or 'arc_' in line.lower():
+                    # Parse sysctl output: name=value or name: value
+                    if '=' in line:
+                        name, value = line.split('=', 1)
+                    elif ':' in line:
+                        name, value = line.split(':', 1)
+                    else:
+                        continue
+                    
+                    name = name.strip()
+                    value = value.strip()
+                    
+                    # Extract just the stat name (last part after dots)
+                    stat_name = name.split('.')[-1]
+                    
+                    try:
+                        stats[stat_name] = int(value)
+                    except ValueError:
+                        stats[stat_name] = value
+            
+            if not stats:
+                return {'error': 'ARC stats not available via sysctl'}
             
             # Calculate derived stats
             if 'hits' in stats and 'misses' in stats:
@@ -449,13 +525,13 @@ class ZFSObservabilityService:
         except:
             return {'raw': line}
     
-    def _read_freebsd_syslog(
+    def _read_bsd_syslog(
         self,
         lines: int,
         since: Optional[datetime] = None,
         severity: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """FreeBSD-specific syslog reading from /var/log/messages"""
+        """BSD-specific syslog reading from /var/log/messages"""
         try:
             # Read from /var/log/messages and filter for ZFS
             result = subprocess.run(
@@ -478,9 +554,9 @@ class ZFSObservabilityService:
     def _fallback_syslog_read(self, lines: int) -> List[Dict[str, Any]]:
         """Fallback method to read syslog without journalctl"""
         try:
-            # Try dmesg (without -T flag on FreeBSD)
-            if is_freebsd():
-                # FreeBSD dmesg doesn't support -T flag
+            # Try dmesg (without -T flag on BSD systems)
+            if is_freebsd() or is_netbsd():
+                # BSD dmesg doesn't support -T flag
                 result = subprocess.run(
                     ['dmesg'],
                     capture_output=True,
