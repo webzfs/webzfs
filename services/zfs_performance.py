@@ -636,6 +636,13 @@ class ZFSPerformanceService:
     
     def _read_arc_stats(self) -> Dict[str, Any]:
         """Read current ARC statistics"""
+        if self.system == 'FreeBSD':
+            return self._read_arc_stats_freebsd()
+        else:
+            return self._read_arc_stats_linux()
+    
+    def _read_arc_stats_linux(self) -> Dict[str, Any]:
+        """Read ARC stats from Linux /proc filesystem"""
         try:
             arcstats_path = Path('/proc/spl/kstat/zfs/arcstats')
             
@@ -656,6 +663,47 @@ class ZFSPerformanceService:
                             stats[name] = int(value)
                         except ValueError:
                             stats[name] = value
+            
+            # Calculate derived metrics
+            if 'hits' in stats and 'misses' in stats:
+                total = stats['hits'] + stats['misses']
+                if total > 0:
+                    stats['hit_rate'] = (stats['hits'] / total) * 100
+                    stats['miss_rate'] = (stats['misses'] / total) * 100
+            
+            return stats
+            
+        except Exception as e:
+            return {'error': f'Failed to read ARC stats: {str(e)}'}
+    
+    def _read_arc_stats_freebsd(self) -> Dict[str, Any]:
+        """Read ARC stats from FreeBSD sysctl"""
+        try:
+            result = subprocess.run(
+                ['sysctl', 'kstat.zfs.misc.arcstats'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                return {'error': f'Failed to get ARC stats: {result.stderr}'}
+            
+            stats = {}
+            for line in result.stdout.strip().split('\n'):
+                if not line or ':' not in line:
+                    continue
+                
+                # Format: kstat.zfs.misc.arcstats.hits: 12345678
+                key, value = line.split(':', 1)
+                # Extract just the stat name (last part after arcstats.)
+                stat_name = key.strip().split('.')[-1]
+                value = value.strip()
+                
+                try:
+                    stats[stat_name] = int(value)
+                except ValueError:
+                    stats[stat_name] = value
             
             # Calculate derived metrics
             if 'hits' in stats and 'misses' in stats:
@@ -700,10 +748,11 @@ class ZFSPerformanceService:
                 }
                 
             elif self.system == 'FreeBSD':
-                # zfs-stats requires sudo on FreeBSD
+                # On FreeBSD, webzfs runs as root, so no sudo needed
+                # Use full path to ensure it's found regardless of PATH environment
                 try:
                     result = subprocess.run(
-                        ['sudo', 'zfs-stats', '-A'],
+                        ['/usr/local/bin/zfs-stats', '-A'],
                         capture_output=True,
                         text=True,
                         timeout=30
@@ -718,7 +767,7 @@ class ZFSPerformanceService:
                     return {
                         'output': result.stdout,
                         'system': self.system,
-                        'command': 'sudo zfs-stats -A',
+                        'command': 'zfs-stats -A',
                         'timestamp': datetime.now().isoformat()
                     }
                     
