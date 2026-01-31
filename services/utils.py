@@ -252,6 +252,7 @@ def is_freebsd() -> bool:
 def is_netbsd() -> bool:
     """Check if running on NetBSD"""
     return get_os_type() == 'NetBSD'
+<<<<<<< HEAD
 
 
 def run_zfs_command_with_pipe(
@@ -290,3 +291,5 @@ def run_zfs_command_with_pipe(
     send_process.stdout.close()
     
     return send_process, receive_process
+=======
+>>>>>>> 59b61a8 (improve arc stats page under observability)

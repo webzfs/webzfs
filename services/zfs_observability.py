@@ -7,7 +7,12 @@ import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
+<<<<<<< HEAD
 from services.utils import is_freebsd, is_netbsd, run_zfs_command
+=======
+
+from services.utils import is_freebsd, is_netbsd
+>>>>>>> 59b61a8 (improve arc stats page under observability)
 from config.settings import Settings
 
 
@@ -386,6 +391,7 @@ class ZFSObservabilityService:
         Returns:
             Dictionary with ARC stats
         """
+<<<<<<< HEAD
 
         # FreeBSD/NetBSD use sysctl for ARC stats
         if is_freebsd() or is_netbsd():
@@ -395,6 +401,13 @@ class ZFSObservabilityService:
     
     def _get_arc_summary_linux(self) -> Dict[str, Any]:
         """Get ARC stats from Linux /proc filesystem"""
+=======
+        # FreeBSD/NetBSD use sysctl for ARC stats
+        if is_freebsd() or is_netbsd():
+            return self._get_arc_summary_sysctl()
+        
+        # Linux uses /proc/spl/kstat/zfs/arcstats
+>>>>>>> 59b61a8 (improve arc stats page under observability)
         try:
             arcstats_path = Path('/proc/spl/kstat/zfs/arcstats')
             
@@ -450,7 +463,10 @@ class ZFSObservabilityService:
             )
             
             if result.returncode != 0:
+<<<<<<< HEAD
 
+=======
+>>>>>>> 59b61a8 (improve arc stats page under observability)
                 return {'error': 'Failed to read sysctl for ARC stats'}
             
             stats = {}
@@ -481,7 +497,11 @@ class ZFSObservabilityService:
             
             if not stats:
                 return {'error': 'ARC stats not available via sysctl'}
+<<<<<<< HEAD
 
+=======
+            
+>>>>>>> 59b61a8 (improve arc stats page under observability)
             # Calculate derived stats
             if 'hits' in stats and 'misses' in stats:
                 total = stats['hits'] + stats['misses']
