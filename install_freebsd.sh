@@ -70,6 +70,7 @@ find_python() {
     return 1
 }
 
+<<<<<<< HEAD
 # Function to detect FreeBSD version and determine wheel directory
 detect_freebsd_version() {
     # Get FreeBSD version (e.g., "14.3-RELEASE" or "15.0-RELEASE")
@@ -162,18 +163,32 @@ detect_freebsd_version
 
 # Install required dependencies
 echo
+=======
+# Install required dependencies
+>>>>>>> 4a04a64 (update freebsd installer)
 echo "Installing required dependencies..."
 echo "(This may take a few minutes on first run...)"
 echo
 
+<<<<<<< HEAD
 # Install packages via pkg
+=======
+# Install all required packages via pkg
+>>>>>>> 4a04a64 (update freebsd installer)
 # python311 - Python runtime
 # py311-pip - pip for installing Python packages
 # node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
+<<<<<<< HEAD
 # Note: rust, libsodium, gmake are NOT needed when using pre-compiled wheels
 pkg install -y python311 py311-pip node npm smartmontools sanoid
+=======
+# rust - Required to compile pydantic-core
+# libsodium - Required to compile pynacl
+# gmake - Required for compiling some Python packages
+pkg install -y python311 py311-pip node npm smartmontools sanoid rust libsodium gmake
+>>>>>>> 4a04a64 (update freebsd installer)
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -239,8 +254,40 @@ if ! command_exists sanoid; then
     printf "${YELLOW}Warning: sanoid not installed correctly${NC}\n"
 else
     printf "${GREEN}✓${NC} sanoid found\n"
+<<<<<<< HEAD
 fi
 
+=======
+fi
+
+# Verify Rust
+if ! command_exists rustc; then
+    printf "${RED}Error: Rust was not installed correctly${NC}\n"
+    exit 1
+fi
+
+printf "${GREEN}✓${NC} Rust $(rustc --version | cut -d' ' -f2) found\n"
+
+# Verify libsodium
+if [ ! -f "/usr/local/include/sodium.h" ]; then
+    printf "${RED}Error: libsodium was not installed correctly${NC}\n"
+    exit 1
+fi
+
+printf "${GREEN}✓${NC} libsodium found\n"
+
+# Verify gmake
+if ! command_exists gmake; then
+    printf "${RED}Error: gmake was not installed correctly${NC}\n"
+    exit 1
+fi
+
+printf "${GREEN}✓${NC} gmake found\n"
+
+# Get the full path to gmake for use in the install script
+GMAKE_PATH=$(command -v gmake)
+
+>>>>>>> 4a04a64 (update freebsd installer)
 echo
 
 # Create installation directory if it doesn't exist
