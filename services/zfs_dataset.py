@@ -6,6 +6,8 @@ import re
 import subprocess
 from typing import List, Dict, Any, Optional
 
+from services.utils import is_netbsd
+
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
     import libzfs_core as lzc
@@ -87,8 +89,14 @@ class ZFSDatasetService:
         if pool_name:
             self.validate_dataset_name(pool_name)
         try:
-            cmd = ['zfs', 'list', '-H', '-o', 
-                   'name,type,used,avail,refer,mountpoint,compression,compressratio,encryption']
+            # NetBSD ZFS may not support the 'encryption' property
+            # Use a reduced property list for NetBSD
+            if is_netbsd():
+                properties = 'name,type,used,avail,refer,mountpoint,compression,compressratio'
+            else:
+                properties = 'name,type,used,avail,refer,mountpoint,compression,compressratio,encryption'
+            
+            cmd = ['zfs', 'list', '-H', '-o', properties]
             
             if dataset_type:
                 cmd.extend(['-t', dataset_type])
@@ -109,18 +117,34 @@ class ZFSDatasetService:
                     continue
                     
                 parts = line.split('\t')
-                if len(parts) >= 9:
-                    datasets.append({
-                        'name': parts[0],
-                        'type': parts[1],
-                        'used': parts[2],
-                        'avail': parts[3],
-                        'refer': parts[4],
-                        'mountpoint': parts[5],
-                        'compression': parts[6],
-                        'compressratio': parts[7],
-                        'encryption': parts[8]
-                    })
+                
+                # Handle different property counts based on platform
+                if is_netbsd():
+                    if len(parts) >= 8:
+                        datasets.append({
+                            'name': parts[0],
+                            'type': parts[1],
+                            'used': parts[2],
+                            'avail': parts[3],
+                            'refer': parts[4],
+                            'mountpoint': parts[5],
+                            'compression': parts[6],
+                            'compressratio': parts[7],
+                            'encryption': '-'  # Not supported on NetBSD
+                        })
+                else:
+                    if len(parts) >= 9:
+                        datasets.append({
+                            'name': parts[0],
+                            'type': parts[1],
+                            'used': parts[2],
+                            'avail': parts[3],
+                            'refer': parts[4],
+                            'mountpoint': parts[5],
+                            'compression': parts[6],
+                            'compressratio': parts[7],
+                            'encryption': parts[8]
+                        })
             
             return datasets
             

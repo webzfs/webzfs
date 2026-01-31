@@ -7,7 +7,7 @@ import re
 import os
 from typing import List, Dict, Any, Optional, Tuple
 
-from services.utils import is_freebsd
+from services.utils import is_freebsd, is_netbsd
 from config.settings import Settings
 
 
@@ -29,6 +29,9 @@ class DiskUtilsService:
         if is_freebsd():
             # FreeBSD: Use geom to list disks
             return self._get_available_disks_freebsd()
+        elif is_netbsd():
+            # NetBSD: Use sysctl hw.disknames and dkctl
+            return self._get_available_disks_netbsd()
         else:
             # Linux (default): Use lsblk to list disks
             return self._get_available_disks_linux()
@@ -209,6 +212,304 @@ class DiskUtilsService:
             
         except subprocess.CalledProcessError:
             return None
+    
+    def _get_available_disks_netbsd(self) -> List[Dict[str, Any]]:
+        """
+        Get available disks on NetBSD using sysctl hw.disknames and dkctl
+        
+        NetBSD disk naming:
+          - wd0: IDE/SATA disks (PATA/SATA)
+          - sd0: SCSI disks (including USB, some NVMe)
+          - ld0: Logical disks (RAID controllers, etc.)
+          - dk0: Wedges (partitions)
+        
+        Returns:
+            List of dictionaries containing disk information
+        """
+        disks = []
+        
+        # Get system disks (OS/swap) that should be excluded
+        system_disks = self._get_system_disks_netbsd()
+        
+        try:
+            # Get list of disk names using sysctl
+            result = subprocess.run(
+                ['sysctl', '-n', 'hw.disknames'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            # hw.disknames returns space-separated list like "wd0 wd1 sd0 dk0 dk1"
+            disk_names = result.stdout.strip().split() if result.stdout else []
+            
+            # Filter to only physical disks (not wedges which are partitions)
+            # wd = IDE/SATA, sd = SCSI/USB, ld = Logical (RAID)
+            physical_disks = [d for d in disk_names if re.match(r'^(wd|sd|ld)\d+$', d)]
+            
+            for disk_name in physical_disks:
+                try:
+                    disk_info = self._get_netbsd_disk_info(disk_name)
+                    if disk_info:
+                        # Check if this is a system disk
+                        is_system_disk = disk_name in system_disks
+                        disk_info['in_use'] = disk_info.get('in_use', False) or is_system_disk
+                        disk_info['is_system_disk'] = is_system_disk
+                        disk_info['system_usage'] = system_disks.get(disk_name, None)
+                        disks.append(disk_info)
+                except Exception:
+                    # Skip disks that fail to query
+                    continue
+                    
+        except subprocess.CalledProcessError:
+            # Fallback: try to enumerate disks from /dev
+            try:
+                dev_contents = os.listdir('/dev')
+                # Find disk devices (wd0, sd0, ld0 - but not partitions like wd0a)
+                for entry in dev_contents:
+                    if re.match(r'^(wd|sd|ld)\d+$', entry):
+                        disk_info = self._get_netbsd_disk_info(entry)
+                        if disk_info:
+                            is_system_disk = entry in system_disks
+                            disk_info['in_use'] = disk_info.get('in_use', False) or is_system_disk
+                            disk_info['is_system_disk'] = is_system_disk
+                            disk_info['system_usage'] = system_disks.get(entry, None)
+                            disks.append(disk_info)
+            except Exception:
+                pass
+        
+        return disks
+    
+    def _get_netbsd_disk_info(self, disk_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information for a NetBSD disk
+        
+        Args:
+            disk_name: Disk name (e.g., 'wd0', 'sd0', 'ld0')
+            
+        Returns:
+            Dictionary with disk information or None
+        """
+        disk_info = {
+            'name': disk_name,
+            'device_path': f'/dev/{disk_name}',
+            'size': 'Unknown',
+            'model': 'Unknown',
+            'type': 'HDD',
+            'in_use': False,
+            'exported': False
+        }
+        
+        # Try to get disk info using dkctl
+        try:
+            result = subprocess.run(
+                ['dkctl', disk_name, 'getwedgeinfo'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            # dkctl getwedgeinfo returns info about wedges on the disk
+            # This at least confirms the disk exists
+        except Exception:
+            pass
+        
+        # Try to get disk size and geometry using disklabel
+        try:
+            result = subprocess.run(
+                ['disklabel', '-r', disk_name],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    line = line.strip()
+                    
+                    # Parse total sectors line
+                    if 'total sectors:' in line.lower():
+                        # Format: "total sectors: 1953525168"
+                        match = re.search(r'total sectors:\s*(\d+)', line, re.IGNORECASE)
+                        if match:
+                            sectors = int(match.group(1))
+                            # Assume 512 byte sectors
+                            size_bytes = sectors * 512
+                            disk_info['size'] = self._format_size(size_bytes)
+                    
+                    # Try to get disk type/model from label
+                    elif line.startswith('disk:') or line.startswith('label:'):
+                        parts = line.split(':', 1)
+                        if len(parts) == 2:
+                            label = parts[1].strip()
+                            if label and label != 'default label':
+                                disk_info['model'] = label
+        except Exception:
+            pass
+        
+        # Try to get more info using sysctl (if available for this disk)
+        try:
+            # Try to get disk description
+            result = subprocess.run(
+                ['dmesg'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode == 0:
+                # Look for disk info in dmesg output
+                # Format: "wd0 at atabus0 drive 0: <VBOX HARDDISK>"
+                # or: "sd0 at scsibus0 target 0 lun 0: <vendor, product, rev>"
+                for line in result.stdout.split('\n'):
+                    if line.startswith(f'{disk_name} at ') or line.startswith(f'{disk_name}:'):
+                        # Try to extract model info
+                        match = re.search(r'<([^>]+)>', line)
+                        if match:
+                            disk_info['model'] = match.group(1)
+                        
+                        # Check for SSD indicators
+                        line_lower = line.lower()
+                        if 'ssd' in line_lower or 'solid' in line_lower or 'nvme' in line_lower:
+                            disk_info['type'] = 'SSD'
+                        break
+        except Exception:
+            pass
+        
+        # Check if disk is in use by ZFS
+        disk_info['in_use'] = self._is_disk_in_use(disk_name)
+        
+        return disk_info
+    
+    def _get_system_disks_netbsd(self) -> Dict[str, str]:
+        """
+        Get disks that are used by the OS (root, boot, swap, etc.) on NetBSD
+        
+        Returns:
+            Dictionary mapping disk names to their usage type
+        """
+        system_disks = {}
+        
+        try:
+            # Check for mounted filesystems using mount
+            result = subprocess.run(
+                ['mount'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if not line or not line.startswith('/dev/'):
+                        continue
+                    
+                    # Format: /dev/wd0a on / type ffs (...)
+                    # Or with wedges: /dev/dk0 on / type ffs (...)
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        device = parts[0].replace('/dev/', '')
+                        mountpoint = parts[2]
+                        
+                        # Check for critical mount points
+                        critical_mounts = ['/', '/boot', '/usr', '/var', '/home']
+                        if mountpoint in critical_mounts:
+                            # Extract base disk name
+                            base_disk = self._get_base_disk_name_netbsd(device)
+                            if base_disk:
+                                if base_disk not in system_disks:
+                                    system_disks[base_disk] = f"OS disk (mounted: {mountpoint})"
+        except Exception:
+            pass
+        
+        try:
+            # Check for swap using swapctl
+            result = subprocess.run(
+                ['swapctl', '-l'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n')[1:]:  # Skip header
+                    if not line:
+                        continue
+                    
+                    parts = line.split()
+                    if parts and parts[0].startswith('/dev/'):
+                        device = parts[0].replace('/dev/', '')
+                        # Extract base disk name
+                        base_disk = self._get_base_disk_name_netbsd(device)
+                        if base_disk:
+                            if base_disk not in system_disks:
+                                system_disks[base_disk] = "Swap disk"
+                            else:
+                                system_disks[base_disk] += " / Swap"
+        except Exception:
+            pass
+        
+        return system_disks
+    
+    def _get_base_disk_name_netbsd(self, device: str) -> Optional[str]:
+        """
+        Extract base disk name from a partition/wedge device name (NetBSD)
+        
+        Args:
+            device: Device name (e.g., 'wd0a', 'dk0', 'sd0e')
+            
+        Returns:
+            Base disk name (e.g., 'wd0', 'sd0') or None
+            
+        NetBSD partition naming:
+          - Traditional BSD partitions: wd0a, wd0b, wd0e (a-p suffixes)
+          - Wedges: dk0, dk1 (these are independent partition names)
+        """
+        # Wedges (dk0, dk1) are partition references, need to resolve them
+        if device.startswith('dk'):
+            # Try to find the parent disk for this wedge
+            try:
+                result = subprocess.run(
+                    ['dkctl', device, 'getwedgeinfo'],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                
+                if result.returncode == 0:
+                    # Output format: "dk0 at wd0: ..."
+                    for line in result.stdout.split('\n'):
+                        match = re.search(r'at\s+(wd|sd|ld)\d+', line)
+                        if match:
+                            return match.group(0).replace('at ', '').strip()
+            except Exception:
+                pass
+            # If we can't resolve the wedge, return None (it's a partition)
+            return None
+        
+        # Traditional BSD partitions: wd0a -> wd0, sd0e -> sd0
+        match = re.match(r'((wd|sd|ld)\d+)[a-p]?', device)
+        if match:
+            return match.group(1)
+        
+        return None
+    
+    def _format_size(self, size_bytes: int) -> str:
+        """
+        Format size in bytes to human-readable string
+        
+        Args:
+            size_bytes: Size in bytes
+            
+        Returns:
+            Human-readable size string (e.g., '500G', '2T')
+        """
+        for unit in ['B', 'K', 'M', 'G', 'T', 'P']:
+            if size_bytes < 1024:
+                if unit in ['B', 'K']:
+                    return f"{size_bytes}{unit}"
+                return f"{size_bytes:.1f}{unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f}E"
     
     def _get_system_disks_linux(self) -> Dict[str, str]:
         """
@@ -674,13 +975,14 @@ class DiskUtilsService:
                     
                     # Check if it looks like a device path, disk name, or disk-by-id identifier
                     # Include: /dev/sda, sda, nvme0n1, nvme-CT4000T500SSD3_XXX, ata-WDC_XXX, etc.
+                    # NetBSD: wd0, sd0, ld0
                     is_device = False
                     
                     if '/' in device:
                         # It's a path
                         is_device = True
-                    elif device.startswith(('sd', 'nvme', 'ada', 'da', 'vtbd', 'hd', 'vd')):
-                        # It's a simple disk name
+                    elif device.startswith(('sd', 'nvme', 'ada', 'da', 'vtbd', 'hd', 'vd', 'wd', 'ld')):
+                        # It's a simple disk name (Linux, FreeBSD, or NetBSD)
                         is_device = True
                     elif '-' in device or '_' in device:
                         # Likely a disk-by-id identifier (nvme-XXX, ata-XXX, etc.)
@@ -743,6 +1045,22 @@ class DiskUtilsService:
                         return base_disk
                     except:
                         continue
+        elif is_netbsd():
+            # NetBSD: Handle NetBSD-specific device identifiers
+            # NetBSD disks: wd0, sd0, ld0
+            # NetBSD partitions: wd0a, sd0e (BSD disklabel)
+            # NetBSD wedges: dk0, dk1
+            
+            # Direct disk name (wd0, sd0, ld0)
+            if re.match(r'^(wd|sd|ld)\d+[a-p]?$', device):
+                full_path = f'/dev/{device}'
+                return self._strip_partition_number(full_path)
+            
+            # Wedge devices (dk0, dk1) - need to resolve to parent disk
+            if device.startswith('dk'):
+                base_disk = self._get_base_disk_name_netbsd(device)
+                if base_disk:
+                    return f'/dev/{base_disk}'
         else:
             # Linux (default): Handle Linux-specific device identifiers
             # Check if it looks like a disk-by-id identifier
@@ -781,6 +1099,7 @@ class DiskUtilsService:
         Examples:
             Linux: /dev/sda1 -> /dev/sda, /dev/nvme0n1p1 -> /dev/nvme0n1
             FreeBSD: /dev/ada0p1 -> /dev/ada0, /dev/da0p1 -> /dev/da0
+            NetBSD: /dev/wd0a -> /dev/wd0, /dev/sd0e -> /dev/sd0
             
         Args:
             device_path: Full device path
@@ -788,7 +1107,7 @@ class DiskUtilsService:
         Returns:
             Base disk path without partition number
         """
-        # Handle NVMe devices (common to both platforms)
+        # Handle NVMe devices (common to all platforms)
         if 'nvme' in device_path:
             # Remove partition part (p1, p2, etc.)
             match = re.match(r'(.*nvme\d+n\d+)p?\d*$', device_path)
@@ -806,6 +1125,15 @@ class DiskUtilsService:
                     return match.group(1)
                 # Strip MBR slice (s1, s2, etc.) and potential sub-partition (a, b, etc.)
                 match = re.match(r'(.*(?:ada|da|vtbd)\d+)s\d+[a-z]?$', device_path)
+                if match:
+                    return match.group(1)
+        elif is_netbsd():
+            # NetBSD: Handle NetBSD-specific device patterns
+            # NetBSD uses BSD disklabel partitions: wd0a, sd0e, ld0b (a-p suffixes)
+            # Wedges (dk0, dk1) are handled separately in _get_base_disk_name_netbsd
+            if any(x in device_path for x in ['wd', 'sd', 'ld']):
+                # Strip BSD partition suffix (a-p)
+                match = re.match(r'(.*(?:wd|sd|ld)\d+)[a-p]$', device_path)
                 if match:
                     return match.group(1)
         else:
@@ -880,6 +1208,38 @@ class DiskUtilsService:
                                     paths_to_check.append(label_path)
                     except:
                         pass
+        elif is_netbsd():
+            # NetBSD: Add NetBSD-specific partition patterns
+            # NetBSD uses BSD disklabel partitions (a-p suffixes)
+            # Common ZFS partitions are on 'd' (whole disk) or other letters
+            disk_name = device_path.replace('/dev/', '')
+            
+            if any(x in device_path for x in ['wd', 'sd', 'ld']):
+                # NetBSD: wd0 -> wd0a, wd0d, wd0e (common partition letters)
+                # 'a' is usually root, 'b' is swap, 'd' is usually whole disk
+                # 'e' and beyond are user partitions
+                for suffix in ['a', 'd', 'e', 'f', 'g', 'h']:
+                    paths_to_check.append(f'{device_path}{suffix}')
+            
+            # Also check wedges (dk0, dk1, etc.) that might belong to this disk
+            try:
+                result = subprocess.run(
+                    ['dkctl', disk_name, 'listwedges'],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                
+                if result.returncode == 0:
+                    # Parse dkctl output to find wedges
+                    for line in result.stdout.split('\n'):
+                        # Look for wedge device names (dk0, dk1, etc.)
+                        match = re.search(r'(dk\d+)', line)
+                        if match:
+                            wedge_name = match.group(1)
+                            paths_to_check.append(f'/dev/{wedge_name}')
+            except:
+                pass
         else:
             # Linux (default): Add Linux-specific partition patterns
             if 'nvme' in device_path:

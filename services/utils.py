@@ -25,10 +25,20 @@ def run_command(args: list[str] | str, *, check: bool = True, text: bool = True)
 
 
 def get_os_type() -> str:
-    """Returns 'Linux' or 'FreeBSD'"""
+    """Returns 'Linux', 'FreeBSD', or 'NetBSD'"""
     return platform.system()
 
 
 def is_freebsd() -> bool:
     """Check if running on FreeBSD"""
     return get_os_type() == 'FreeBSD'
+
+
+def is_netbsd() -> bool:
+    """Check if running on NetBSD"""
+    return get_os_type() == 'NetBSD'
+
+
+def is_bsd() -> bool:
+    """Check if running on any BSD variant (FreeBSD, NetBSD)"""
+    return get_os_type() in ('FreeBSD', 'NetBSD')

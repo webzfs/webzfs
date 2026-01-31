@@ -8,6 +8,7 @@ from typing import Annotated, Optional
 from config.templates import templates
 from services.zfs_dataset import ZFSDatasetService
 from services.audit_logger import audit_logger
+from services.utils import is_netbsd
 from auth.dependencies import get_current_user
 
 
@@ -87,11 +88,15 @@ async def create_dataset_form(
     parent: Optional[str] = None
 ):
     """Display dataset creation form"""
+    # NetBSD ZFS does not support encryption
+    supports_encryption = not is_netbsd()
+    
     return templates.TemplateResponse(
         "zfs/datasets/create.jinja",
         {
             "request": request,
             "parent": parent,
+            "supports_encryption": supports_encryption,
             "page_title": "Create Dataset"
         }
     )
@@ -172,6 +177,8 @@ async def create_dataset(
     except Exception as e:
         # Log failed dataset creation
         audit_logger.log_dataset_create(user=current_user, dataset_name=dataset_name, success=False, error=str(e))
+        # NetBSD ZFS does not support encryption
+        supports_encryption = not is_netbsd()
         return templates.TemplateResponse(
             "zfs/datasets/create.jinja",
             {
@@ -185,6 +192,7 @@ async def create_dataset(
                 "atime": atime,
                 "volsize": volsize,
                 "encryption": encryption,
+                "supports_encryption": supports_encryption,
                 "page_title": "Create Dataset"
             }
         )
