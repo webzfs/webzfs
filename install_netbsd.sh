@@ -2,8 +2,7 @@
 
 # WebZFS Installation Script for NetBSD
 # This script installs WebZFS to /opt/webzfs
-# This is a simplified script that copies and builds the application
-# Service setup and prerequisites must be handled separately
+# On NetBSD, the application runs as root due to PAM authentication requirements
 
 set -e
 
@@ -14,16 +13,6 @@ LOG_FILE="${INSTALL_DIR}/install_log.txt"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Verify essential files exist in source directory
-ESSENTIAL_FILES=".env.example requirements.txt package.json"
-for file in $ESSENTIAL_FILES; do
-    if [ ! -f "${SOURCE_DIR}/${file}" ]; then
-        echo "Error: Essential file '${file}' not found in ${SOURCE_DIR}"
-        echo "Please run this installer from the WebZFS source directory containing all application files."
-        exit 1
-    fi
-done
 
 # Colors for output
 RED='\033[0;31m'
@@ -59,7 +48,206 @@ find_python() {
     return 1
 }
 
-# Quick prerequisite check (just verify commands exist)
+# Parse command line arguments
+SKIP_DEPS=false
+DEPS_ONLY=false
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --skip-deps)
+            SKIP_DEPS=true
+            shift
+            ;;
+        --deps-only)
+            DEPS_ONLY=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo
+            echo "Options:"
+            echo "  --skip-deps    Skip dependency installation (use if deps already installed)"
+            echo "  --deps-only    Only install dependencies, skip WebZFS installation"
+            echo "  --help, -h     Show this help message"
+            echo
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# ============================================================
+# PHASE 1: DEPENDENCY INSTALLATION
+# ============================================================
+
+install_dependencies() {
+    echo "========================================"
+    echo "Phase 1: Installing System Dependencies"
+    echo "========================================"
+    echo
+
+    # Check for pkgin
+    if ! command_exists pkgin; then
+        printf "${RED}Error: pkgin is not installed${NC}\n"
+        echo "Please install pkgin first to manage packages"
+        exit 1
+    fi
+
+    # Install System Packages
+    echo "Installing system packages via pkgin..."
+    pkgin -y install python311 py311-pip nodejs smartmontools \
+                     git perl mbuffer lzop pv mozilla-rootcerts \
+                     p5-Config-IniFiles p5-Capture-Tiny \
+                     gmake libsodium curl pkg-config openssl
+
+    # Create Python symlinks if they don't exist
+    if [ ! -f /usr/pkg/bin/python3 ]; then
+        if [ -f /usr/pkg/bin/python3.11 ]; then
+            ln -sf /usr/pkg/bin/python3.11 /usr/pkg/bin/python3
+            printf "${GREEN}✓${NC} Created python3 symlink\n"
+        fi
+    fi
+
+    if [ ! -f /usr/pkg/bin/pip ] && [ ! -f /usr/pkg/bin/pip3 ]; then
+        if [ -f /usr/pkg/bin/pip3.11 ]; then
+            ln -sf /usr/pkg/bin/pip3.11 /usr/pkg/bin/pip
+            printf "${GREEN}✓${NC} Created pip symlink\n"
+        fi
+    fi
+
+    # Create symlinks for OpenSSL libraries so they can be found by Python packages
+    # This is needed for cryptography package (used by paramiko)
+    if [ -f /usr/pkg/lib/libssl.so.3 ] && [ ! -f /usr/lib/libssl.so.3 ]; then
+        ln -s /usr/pkg/lib/libssl.so.3 /usr/lib/libssl.so.3
+        printf "${GREEN}✓${NC} Created libssl symlink\n"
+    fi
+    if [ -f /usr/pkg/lib/libcrypto.so.3 ] && [ ! -f /usr/lib/libcrypto.so.3 ]; then
+        ln -s /usr/pkg/lib/libcrypto.so.3 /usr/lib/libcrypto.so.3
+        printf "${GREEN}✓${NC} Created libcrypto symlink\n"
+    fi
+
+    printf "${GREEN}✓${NC} System packages installed\n"
+    echo
+
+    # Install Rust via rustup (pkgsrc rust package has issues on some systems)
+    echo "Checking Rust installation..."
+    
+    # Source cargo env if it exists
+    if [ -f "/root/.cargo/env" ]; then
+        . "/root/.cargo/env"
+    elif [ -f "$HOME/.cargo/env" ]; then
+        . "$HOME/.cargo/env"
+    fi
+
+    if ! command_exists rustc || ! rustc --version >/dev/null 2>&1; then
+        echo "Installing Rust via rustup..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        # Source cargo env for current session
+        . "/root/.cargo/env" 2>/dev/null || . "$HOME/.cargo/env" 2>/dev/null || true
+        # Set default toolchain
+        rustup default stable
+        printf "${GREEN}✓${NC} Rust installed via rustup\n"
+    else
+        printf "${GREEN}✓${NC} Rust already installed\n"
+    fi
+    echo
+
+    # SSL Setup (Required for Git)
+    echo "Setting up SSL certificates..."
+    if [ -x /usr/pkg/sbin/mozilla-rootcerts ]; then
+        /usr/pkg/sbin/mozilla-rootcerts install 2>/dev/null || true
+        printf "${GREEN}✓${NC} SSL certificates configured\n"
+    fi
+    echo
+
+    # Sanoid Setup
+    echo "Setting up Sanoid..."
+    SANOID_DIR="/opt/sanoid"
+    if [ ! -d "$SANOID_DIR" ]; then
+        echo "Cloning Sanoid repository..."
+        git clone https://github.com/jimsalterjrs/sanoid.git "$SANOID_DIR"
+        cd "$SANOID_DIR"
+        # Use latest stable tag
+        git checkout $(git describe --abbrev=0 --tags)
+        cd - >/dev/null
+    fi
+
+    # Link binaries
+    ln -sf "$SANOID_DIR/sanoid" /usr/pkg/bin/sanoid
+    ln -sf "$SANOID_DIR/syncoid" /usr/pkg/bin/syncoid
+    chmod +x "$SANOID_DIR/sanoid" "$SANOID_DIR/syncoid"
+
+    # Config setup
+    mkdir -p /etc/sanoid
+    if [ ! -f /etc/sanoid/sanoid.conf ]; then
+        cp "$SANOID_DIR/sanoid.defaults.conf" /etc/sanoid/sanoid.conf
+    fi
+
+    printf "${GREEN}✓${NC} Sanoid configured\n"
+    echo
+
+    # Enable ZFS
+    echo "Configuring ZFS..."
+    if ! grep -q "zfs=YES" /etc/rc.conf 2>/dev/null; then
+        echo "zfs=YES" >> /etc/rc.conf
+        printf "${GREEN}✓${NC} ZFS enabled in rc.conf\n"
+    else
+        printf "${GREEN}✓${NC} ZFS already enabled in rc.conf\n"
+    fi
+
+    if [ ! -f /etc/modules.conf ] || ! grep -q "zfs" /etc/modules.conf 2>/dev/null; then
+        echo "zfs" >> /etc/modules.conf
+        printf "${GREEN}✓${NC} ZFS added to modules.conf\n"
+    else
+        printf "${GREEN}✓${NC} ZFS already in modules.conf\n"
+    fi
+    echo
+
+    echo "========================================"
+    printf "${GREEN}Dependencies Installation Complete!${NC}\n"
+    echo "========================================"
+    echo
+    echo "Note: If ZFS module is not loaded, run:"
+    echo "  modload zfs"
+    echo "  service zfs start"
+    echo
+}
+
+# Run dependency installation if not skipped
+if [ "$SKIP_DEPS" = "false" ]; then
+    install_dependencies
+fi
+
+# Exit if deps-only mode
+if [ "$DEPS_ONLY" = "true" ]; then
+    echo "Dependency installation complete. Exiting (--deps-only mode)."
+    exit 0
+fi
+
+# ============================================================
+# PHASE 2: WEBZFS APPLICATION INSTALLATION
+# ============================================================
+
+echo "========================================"
+echo "Phase 2: Installing WebZFS Application"
+echo "========================================"
+echo
+
+# Verify essential files exist in source directory
+ESSENTIAL_FILES=".env.example requirements.txt package.json"
+for file in $ESSENTIAL_FILES; do
+    if [ ! -f "${SOURCE_DIR}/${file}" ]; then
+        printf "${RED}Error: Essential file '${file}' not found in ${SOURCE_DIR}${NC}\n"
+        echo "Please run this installer from the WebZFS source directory containing all application files."
+        exit 1
+    fi
+done
+
+# Check prerequisites
 echo "Checking prerequisites..."
 
 PYTHON_CMD=$(find_python)
@@ -89,14 +277,16 @@ printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 
 # Check for Rust (needed to compile pydantic-core on NetBSD)
 # Try to source cargo env if rustup is installed
-if [ -f "$HOME/.cargo/env" ]; then
+if [ -f "/root/.cargo/env" ]; then
+    . "/root/.cargo/env"
+elif [ -f "$HOME/.cargo/env" ]; then
     . "$HOME/.cargo/env"
 fi
 
 if ! command_exists rustc; then
     printf "${RED}Error: Rust is not installed${NC}\n"
     echo "Rust is required to compile pydantic-core on NetBSD."
-    echo "Please run: sh install_netbsd_deps.sh"
+    echo "Please run: $0 --deps-only"
     exit 1
 fi
 
@@ -287,24 +477,206 @@ printf "${GREEN}✓${NC} Static assets built\n"
 printf "${GREEN}✓${NC} Configuration file created\n"
 echo
 
+# ============================================================
+# PHASE 3: SERVICE CONFIGURATION
+# ============================================================
+
+echo "========================================"
+echo "Phase 3: Configuring Service"
+echo "========================================"
+echo
+
+# Create service wrapper script
+SERVICE_SCRIPT="${INSTALL_DIR}/webzfs_service.sh"
+echo "Creating service wrapper script..."
+
+cat > "$SERVICE_SCRIPT" << 'SERVICE_EOF'
+#!/bin/sh
+# WebZFS Service Wrapper Script for NetBSD
+# This script runs as root
+
+WEBZFS_DIR="/opt/webzfs"
+PIDFILE="${WEBZFS_DIR}/webzfs.pid"
+
+cd "${WEBZFS_DIR}"
+export HOME="${WEBZFS_DIR}"
+export PYTHONPATH="${WEBZFS_DIR}:${PYTHONPATH}"
+
+# DO NOT load .env file here - let pydantic-settings handle it
+# Loading .env in shell can cause issues with quote handling
+# pydantic-settings reads .env correctly from the working directory
+
+# Run gunicorn with PID file
+exec "${WEBZFS_DIR}/.venv/bin/gunicorn" -c "${WEBZFS_DIR}/config/gunicorn.conf.py" --pid "${PIDFILE}"
+SERVICE_EOF
+
+chmod +x "$SERVICE_SCRIPT"
+printf "${GREEN}✓${NC} Service wrapper script created\n"
+
+# Create rc.d service file for NetBSD
+# NetBSD uses /etc/rc.d for base system services and /usr/pkg/share/examples/rc.d
+# for package services, but custom services typically go in /etc/rc.d
+RC_SCRIPT="/etc/rc.d/webzfs"
+echo "Creating rc.d service script..."
+
+cat > "$RC_SCRIPT" << 'RC_EOF'
+#!/bin/sh
+#
+# PROVIDE: webzfs
+# REQUIRE: DAEMON NETWORKING
+# KEYWORD: shutdown
+
+$_rc_subr_loaded . /etc/rc.subr
+
+name="webzfs"
+rcvar=$name
+
+# WebZFS installation directory
+webzfs_dir="/opt/webzfs"
+
+pidfile="${webzfs_dir}/webzfs.pid"
+
+# Custom commands
+start_cmd="webzfs_start"
+stop_cmd="webzfs_stop"
+status_cmd="webzfs_status"
+extra_commands="status"
+
+webzfs_start()
+{
+    # Clean up stale pidfile if process is not running
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+            rm -f ${pidfile}
+        else
+            echo "${name} already running with pid ${pid}."
+            return 1
+        fi
+    fi
+    
+    # Verify the venv exists
+    if [ ! -f "${webzfs_dir}/.venv/bin/gunicorn" ]; then
+        echo "Error: gunicorn not found. Please run the installer again."
+        return 1
+    fi
+    
+    echo "Starting ${name}."
+    # Start the service as root
+    cd ${webzfs_dir} && ${webzfs_dir}/webzfs_service.sh >> ${webzfs_dir}/gunicorn.log 2>&1 &
+    
+    # Give it a moment to start and write PID
+    sleep 2
+    
+    # Check if it started
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "${name} started with pid ${pid}."
+            return 0
+        fi
+    fi
+    
+    echo "${name} failed to start. Check ${webzfs_dir}/gunicorn.log for details."
+    return 1
+}
+
+webzfs_stop()
+{
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -n "$pid" ]; then
+            echo "Stopping ${name}."
+            kill -TERM "$pid" 2>/dev/null
+            # Wait for process to stop
+            i=0
+            while [ $i -lt 5 ]; do
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    break
+                fi
+                sleep 1
+                i=$((i + 1))
+            done
+            # Force kill if still running
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -KILL "$pid" 2>/dev/null
+            fi
+            echo "${name} stopped."
+        fi
+        rm -f ${pidfile}
+    else
+        echo "${name} is not running."
+    fi
+}
+
+webzfs_status()
+{
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "${name} is running as pid ${pid}."
+            return 0
+        fi
+    fi
+    echo "${name} is not running."
+    return 1
+}
+
+load_rc_config $name
+run_rc_command "$1"
+RC_EOF
+
+chmod +x "$RC_SCRIPT"
+printf "${GREEN}✓${NC} rc.d service script created at ${RC_SCRIPT}\n"
+
+# Ask if user wants to enable the service
+echo
+printf "Do you want to enable WebZFS to start on boot? (y/n): "
+read -r REPLY
+if [ "$REPLY" = "y" ] || [ "$REPLY" = "Y" ]; then
+    # Add to rc.conf if not already present
+    if grep -q "^webzfs=" /etc/rc.conf 2>/dev/null; then
+        # Update existing entry
+        sed "s/^webzfs=.*/webzfs=YES/" /etc/rc.conf > /etc/rc.conf.tmp && mv /etc/rc.conf.tmp /etc/rc.conf
+    else
+        # Add new entry
+        echo "webzfs=YES" >> /etc/rc.conf
+    fi
+    printf "${GREEN}✓${NC} WebZFS service enabled in /etc/rc.conf\n"
+    echo
+    printf "Do you want to start WebZFS now? (y/n): "
+    read -r REPLY2
+    if [ "$REPLY2" = "y" ] || [ "$REPLY2" = "Y" ]; then
+        /etc/rc.d/webzfs start
+        printf "${GREEN}✓${NC} WebZFS service started\n"
+        echo
+        echo "Check service status with: /etc/rc.d/webzfs status"
+    fi
+else
+    echo "Service not enabled. You can enable it later with:"
+    echo "  echo 'webzfs=YES' >> /etc/rc.conf"
+    echo "  /etc/rc.d/webzfs start"
+fi
+
+echo
 echo "========================================"
 printf "${GREEN}Installation Complete!${NC}\n"
 echo "========================================"
 echo
 echo "WebZFS has been installed to: $INSTALL_DIR"
+echo "Note: On NetBSD, the service runs as root for PAM authentication"
 echo
 echo "To start the application manually:"
-echo "  cd $INSTALL_DIR"
-echo "  .venv/bin/gunicorn -c config/gunicorn.conf.py"
-echo
-echo "Or use the run script:"
 echo "  $INSTALL_DIR/run.sh"
+echo
+echo "To manage the service:"
+echo "  /etc/rc.d/webzfs start"
+echo "  /etc/rc.d/webzfs stop"
+echo "  /etc/rc.d/webzfs restart"
+echo "  /etc/rc.d/webzfs status"
 echo
 echo "To access the web interface:"
 echo "  http://localhost:26619"
 echo
 echo "For more information, see: $INSTALL_DIR/BUILD_AND_RUN.md"
-echo
-echo "Note: Service setup (rc.d scripts) not included in this installer."
-echo "You will need to configure service startup separately."
 echo
