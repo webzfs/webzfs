@@ -60,13 +60,37 @@ find_python() {
     return 1
 }
 
-# Check prerequisites
-echo "Checking prerequisites..."
+# Install required dependencies
+echo "Installing required dependencies..."
+echo "(This may take a few minutes on first run...)"
+echo
+
+# Install all required packages via pkg
+# python311 - Python runtime
+# py311-pip - pip for installing Python packages
+# node/npm - Node.js for building CSS assets
+# smartmontools - SMART disk monitoring
+# sanoid - ZFS snapshot management (includes syncoid for replication)
+# rust - Required to compile pydantic-core
+# libsodium - Required to compile pynacl
+# gmake - Required for compiling some Python packages
+pkg install -y python311 py311-pip node npm smartmontools sanoid rust libsodium gmake
+
+if [ $? -ne 0 ]; then
+    printf "${RED}Error: Failed to install required packages${NC}\n"
+    echo "Please check your network connection and pkg configuration."
+    exit 1
+fi
+
+printf "${GREEN}✓${NC} Dependencies installed\n"
+echo
+
+# Verify prerequisites
+echo "Verifying prerequisites..."
 
 PYTHON_CMD=$(find_python)
 if [ -z "$PYTHON_CMD" ]; then
-    printf "${RED}Error: Python 3 is not installed${NC}\n"
-    echo "Please install Python 3.11+ with: sudo pkg install python311"
+    printf "${RED}Error: Python 3 was not installed correctly${NC}\n"
     exit 1
 fi
 
@@ -85,16 +109,14 @@ fi
 printf "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)\n"
 
 if ! command_exists node; then
-    printf "${RED}Error: Node.js is not installed${NC}\n"
-    echo "Please install Node.js with: sudo pkg install node npm"
+    printf "${RED}Error: Node.js was not installed correctly${NC}\n"
     exit 1
 fi
 
 printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
 
 if ! command_exists npm; then
-    printf "${RED}Error: npm is not installed${NC}\n"
-    echo "Please install npm with: sudo pkg install npm"
+    printf "${RED}Error: npm was not installed correctly${NC}\n"
     exit 1
 fi
 
@@ -106,37 +128,39 @@ if ! command_exists zpool || ! command_exists zfs; then
     echo "ZFS should be available in the base system"
 fi
 
-# Check for smartmontools
+# Verify smartmontools
 if ! command_exists smartctl; then
-    printf "${YELLOW}Warning: smartmontools not found${NC}\n"
-    echo "Install smartmontools with: sudo pkg install smartmontools"
+    printf "${YELLOW}Warning: smartmontools not installed correctly${NC}\n"
+else
+    printf "${GREEN}✓${NC} smartmontools found\n"
 fi
 
-# Check for Rust (needed to compile pydantic-core on FreeBSD)
+# Verify sanoid
+if ! command_exists sanoid; then
+    printf "${YELLOW}Warning: sanoid not installed correctly${NC}\n"
+else
+    printf "${GREEN}✓${NC} sanoid found\n"
+fi
+
+# Verify Rust
 if ! command_exists rustc; then
-    printf "${RED}Error: Rust is not installed${NC}\n"
-    echo "Rust is required to compile pydantic-core on FreeBSD."
-    echo "Please install Rust with: sudo pkg install rust"
+    printf "${RED}Error: Rust was not installed correctly${NC}\n"
     exit 1
 fi
 
 printf "${GREEN}✓${NC} Rust $(rustc --version | cut -d' ' -f2) found\n"
 
-# Check for libsodium (needed to compile pynacl on FreeBSD)
+# Verify libsodium
 if [ ! -f "/usr/local/include/sodium.h" ]; then
-    printf "${RED}Error: libsodium is not installed${NC}\n"
-    echo "libsodium is required to compile pynacl on FreeBSD."
-    echo "Please install it with: sudo pkg install libsodium"
+    printf "${RED}Error: libsodium was not installed correctly${NC}\n"
     exit 1
 fi
 
 printf "${GREEN}✓${NC} libsodium found\n"
 
-# Check for gmake (GNU make - required for compiling some Python packages)
+# Verify gmake
 if ! command_exists gmake; then
-    printf "${RED}Error: GNU make (gmake) is not installed${NC}\n"
-    echo "gmake is required to compile some Python packages on FreeBSD."
-    echo "Please install it with: sudo pkg install gmake"
+    printf "${RED}Error: gmake was not installed correctly${NC}\n"
     exit 1
 fi
 
