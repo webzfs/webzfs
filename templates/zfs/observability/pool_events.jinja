@@ -227,7 +227,6 @@
                                 <tr>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Time</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Event Class</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Details</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-bg-elevated divide-y divide-border-subtle">
@@ -243,9 +242,6 @@
                                             {% else %}badge-info{% endif %}">
                                             {{ event.class }}
                                         </span>
-                                    </td>
-                                    <td class="px-4 py-3 text-sm text-text-secondary">
-                                        {{ event.details or '-' }}
                                     </td>
                                 </tr>
                                 {% endfor %}
