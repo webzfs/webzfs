@@ -86,6 +86,7 @@ chown -R "$WEBZFS_USER:$WEBZFS_USER" "$INSTALL_DIR"
 echo -e "${GREEN}✓${NC} Application files updated"
 echo
 
+<<<<<<< HEAD
 # Update CAPTION in .env from .env.example
 ENV_FILE="${INSTALL_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -107,6 +108,8 @@ fi
 
 echo
 
+=======
+>>>>>>> 5cd958d (add update scripts)
 # Create a temporary update script that runs as the webzfs user
 TEMP_UPDATE_SCRIPT="${INSTALL_DIR}/_update_deps.sh"
 echo "Updating Python and Node.js dependencies as $WEBZFS_USER..."

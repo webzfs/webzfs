@@ -99,6 +99,7 @@ rm -f "$EXCLUDE_FILE"
 printf "${GREEN}✓${NC} Application files updated\n"
 echo
 
+<<<<<<< HEAD
 # Update CAPTION in .env from .env.example
 ENV_FILE="${INSTALL_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -120,6 +121,8 @@ fi
 
 echo
 
+=======
+>>>>>>> 5cd958d (add update scripts)
 # Update dependencies
 echo "Updating Python and Node.js dependencies..."
 echo "(This may take a few minutes...)"
