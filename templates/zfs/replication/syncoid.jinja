@@ -53,9 +53,11 @@
             </svg>
             <div>
                 <strong class="font-semibold">Warning:</strong> Syncoid is not installed on this system. 
+                {% if system == 'FreeBSD' %}
                 <div class="mt-2 bg-bg-elevated-3 p-2 rounded border border-border-default inline-block">
-                    <code class="text-xs text-warning-400">sudo pacman -S sanoid</code>
+                    <code class="text-xs text-warning-400">pkg install sanoid</code>
                 </div>
+                {% endif %}
             </div>
         </div>
     {% endif %}

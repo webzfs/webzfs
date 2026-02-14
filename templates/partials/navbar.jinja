@@ -27,9 +27,10 @@
       <div class="hidden lg:flex flex-1 justify-center px-8">
         <ul class="flex items-center space-x-2">
           {% for tab in NAV_TABS %}
+            {% set is_active = (tab.url == '/' and request.url.path == '/') or (tab.url != '/' and request.url.path.startswith(tab.url)) %}
             <li>
               <a
-                class="nav-tab {% if tab.id == 'dashboard' %}text-primary-400 border-primary-500{% elif tab.id == 'fleet' %}text-purple-400 border-purple-500{% elif active_page == tab.id %}nav-tab-active{% endif %}"
+                class="nav-tab {% if tab.id == 'fleet' %}text-purple-400 border-purple-500{% elif is_active %}nav-tab-active{% endif %}"
                 href="{{ tab.url }}"
               >
                 {{ tab.label }}
@@ -74,9 +75,10 @@
     <div id="mobile-menu" class="hidden lg:hidden pb-4 pt-2 border-t border-border-subtle mt-2">
       <ul class="space-y-1">
         {% for tab in NAV_TABS %}
+          {% set is_active = (tab.url == '/' and request.url.path == '/') or (tab.url != '/' and request.url.path.startswith(tab.url)) %}
           <li>
             <a
-              class="block px-4 py-2.5 rounded-lg transition-colors duration-200 {% if tab.id == 'dashboard' %}text-primary-400 {% if active_page == tab.id %}bg-bg-elevated-3 font-medium border-l-4 border-primary-500{% else %}hover:text-primary-300 hover:bg-bg-elevated-2{% endif %}{% elif tab.id == 'fleet' %}text-purple-400 {% if active_page == tab.id %}bg-bg-elevated-3 font-medium border-l-4 border-purple-500{% else %}hover:text-purple-300 hover:bg-bg-elevated-2{% endif %}{% elif active_page == tab.id %}bg-bg-elevated-3 text-primary-400 font-medium border-l-4 border-primary-500{% else %}text-text-secondary hover:text-text-primary hover:bg-bg-elevated-2{% endif %}"
+              class="block px-4 py-2.5 rounded-lg transition-colors duration-200 {% if tab.id == 'fleet' %}text-purple-400 {% if is_active %}bg-bg-elevated-3 font-medium border-l-4 border-purple-500{% else %}hover:text-purple-300 hover:bg-bg-elevated-2{% endif %}{% elif is_active %}bg-bg-elevated-3 text-primary-400 font-medium border-l-4 border-primary-500{% else %}text-text-secondary hover:text-text-primary hover:bg-bg-elevated-2{% endif %}"
               href="{{ tab.url }}"
             >
               {{ tab.label }}

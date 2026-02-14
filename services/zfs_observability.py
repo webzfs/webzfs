@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from services.utils import is_freebsd, run_zfs_command
+from services.utils import is_freebsd, is_netbsd, run_zfs_command
 from config.settings import Settings
 
 
@@ -113,13 +113,44 @@ class ZFSObservabilityService:
             )
             
             events = []
-            for line in result.stdout.strip().split('\n'):
-                if not line or line.startswith('TIME'):
-                    continue
+            
+            if verbose:
+                # In verbose mode, group lines together per event
+                lines = result.stdout.strip().split('\n')
+                current_event_lines = []
                 
-                event = self._parse_event_line(line, verbose)
-                if event:
-                    events.append(event)
+                for line in lines:
+                    if not line or line.startswith('TIME'):
+                        continue
+                    
+                    # Check if this is a header line (starts with timestamp, not indented)
+                    if line and not line[0].isspace():
+                        # Save previous event if exists
+                        if current_event_lines:
+                            event = self._parse_verbose_event(current_event_lines)
+                            if event:
+                                events.append(event)
+                        # Start new event
+                        current_event_lines = [line]
+                    else:
+                        # This is a detail line, add to current event
+                        if current_event_lines:
+                            current_event_lines.append(line)
+                
+                # Don't forget the last event
+                if current_event_lines:
+                    event = self._parse_verbose_event(current_event_lines)
+                    if event:
+                        events.append(event)
+            else:
+                # Normal mode: one line per event
+                for line in result.stdout.strip().split('\n'):
+                    if not line or line.startswith('TIME'):
+                        continue
+                    
+                    event = self._parse_event_line(line, verbose)
+                    if event:
+                        events.append(event)
             
             return events
         
@@ -253,6 +284,15 @@ class ZFSObservabilityService:
         Returns:
             Dictionary with ARC stats
         """
+
+        # FreeBSD/NetBSD use sysctl for ARC stats
+        if is_freebsd() or is_netbsd():
+            return self._get_arc_summary_sysctl()
+        else:
+            return self._get_arc_summary_linux()
+    
+    def _get_arc_summary_linux(self) -> Dict[str, Any]:
+        """Get ARC stats from Linux /proc filesystem"""
         try:
             arcstats_path = Path('/proc/spl/kstat/zfs/arcstats')
             
@@ -274,6 +314,72 @@ class ZFSObservabilityService:
                         except ValueError:
                             stats[name] = value
             
+            # Calculate derived stats
+            if 'hits' in stats and 'misses' in stats:
+                total = stats['hits'] + stats['misses']
+                if total > 0:
+                    stats['hit_rate'] = (stats['hits'] / total) * 100
+            
+            # Format sizes
+            if 'size' in stats:
+                stats['size_human'] = self._format_bytes(stats['size'])
+            if 'c_max' in stats:
+                stats['c_max_human'] = self._format_bytes(stats['c_max'])
+            
+            return stats
+            
+        except Exception as e:
+            return {'error': f'Failed to read ARC stats: {str(e)}'}
+    
+    def _get_arc_summary_sysctl(self) -> Dict[str, Any]:
+        """
+        Get ARC stats using sysctl (for BSD systems)
+        
+        Returns:
+            Dictionary with ARC stats
+        """
+        try:
+            # Get all ZFS ARC-related sysctl values
+            result = subprocess.run(
+                ['sysctl', 'kstat.zfs.misc.arcstats'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+
+                return {'error': 'Failed to read sysctl for ARC stats'}
+            
+            stats = {}
+            
+            for line in result.stdout.split('\n'):
+                if not line.strip():
+                    continue
+                
+                # Parse sysctl output: name: value (FreeBSD) or name=value (NetBSD)
+                if ': ' in line:
+                    name, value = line.split(': ', 1)
+                elif '=' in line:
+                    name, value = line.split('=', 1)
+                else:
+                    continue
+                
+                name = name.strip()
+                value = value.strip()
+                
+                # Extract just the stat name (last part after dots)
+                # kstat.zfs.misc.arcstats.hits -> hits
+                stat_name = name.split('.')[-1]
+                
+                try:
+                    stats[stat_name] = int(value)
+                except ValueError:
+                    stats[stat_name] = value
+            
+            if not stats:
+                return {'error': 'ARC stats not available via sysctl'}
+
             # Calculate derived stats
             if 'hits' in stats and 'misses' in stats:
                 total = stats['hits'] + stats['misses']
@@ -429,19 +535,51 @@ class ZFSObservabilityService:
     def _parse_event_line(self, line: str, verbose: bool) -> Optional[Dict[str, Any]]:
         """Parse a zpool events line"""
         try:
-            parts = line.split(None, 3)
-            if len(parts) < 3:
+            # zpool events format: TIME (4 parts: month day year time) CLASS [details]
+            # Example: Jan 13 2026 20:39:02.026667341 sysevent.fs.zfs.history_event
+            parts = line.split(None, 4)  # Split into 5 parts max
+            if len(parts) < 5:
                 return None
             
+            # First 4 parts are the timestamp
+            time_str = f"{parts[0]} {parts[1]} {parts[2]} {parts[3]}"
+            event_class = parts[4]
+            
             return {
-                'time': parts[0],
-                'class': parts[1],
-                'pool': parts[2] if len(parts) > 2 else None,
-                'details': parts[3] if len(parts) > 3 else '',
+                'time': time_str,
+                'class': event_class,
+                'details': '',  # No additional details in non-verbose mode
                 'raw': line
             }
         except:
             return {'raw': line}
+    
+    def _parse_verbose_event(self, lines: List[str]) -> Optional[Dict[str, Any]]:
+        """Parse a verbose event with multiple lines"""
+        try:
+            if not lines:
+                return None
+            
+            # First line is the header with timestamp and class
+            header_line = lines[0]
+            parts = header_line.split(None, 4)
+            if len(parts) < 5:
+                return {'raw': '\n'.join(lines)}
+            
+            # First 4 parts are the timestamp
+            time_str = f"{parts[0]} {parts[1]} {parts[2]} {parts[3]}"
+            event_class = parts[4]
+            
+            # Combine all lines for raw output
+            raw_output = '\n'.join(lines)
+            
+            return {
+                'time': time_str,
+                'class': event_class,
+                'raw': raw_output
+            }
+        except:
+            return {'raw': '\n'.join(lines) if lines else ''}
     
     def _read_freebsd_syslog(
         self,

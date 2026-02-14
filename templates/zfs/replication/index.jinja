@@ -303,9 +303,11 @@
                             <span class="text-danger-400 font-medium">Not Installed</span>
                         </div>
                         <p class="text-sm text-text-secondary">Syncoid is part of the sanoid package. Install it to enable advanced replication features.</p>
+                        {% if system == 'FreeBSD' %}
                         <div class="bg-bg-elevated-3 p-3 rounded border border-border-default">
-                            <code class="text-xs text-info-400">sudo pacman -S sanoid</code>
+                            <code class="text-xs text-info-400">pkg install sanoid</code>
                         </div>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </div>
