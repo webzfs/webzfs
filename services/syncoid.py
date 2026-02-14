@@ -10,6 +10,8 @@ import shlex
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
+from services.utils import run_privileged_command, run_zfs_command
+
 
 class SyncoidService:
     """Service for managing syncoid replication operations"""
@@ -26,30 +28,50 @@ class SyncoidService:
             Dictionary with syncoid status information
         """
         try:
-            # Check if syncoid is installed
+            # Common paths where syncoid might be installed
+            common_paths = [
+                '/usr/local/bin/syncoid',  # FreeBSD pkg install location
+                '/usr/bin/syncoid',         # Linux package manager location
+                '/usr/sbin/syncoid',        # Alternative Linux location
+                'syncoid'                    # In PATH
+            ]
+            
+            syncoid_path = None
+            
+            # Try to find syncoid using which first
             which_result = subprocess.run(
                 ['which', 'syncoid'],
                 capture_output=True,
                 text=True
             )
             
-            if which_result.returncode != 0:
+            if which_result.returncode == 0:
+                syncoid_path = which_result.stdout.strip()
+            else:
+                # Check common paths directly
+                for path in common_paths[:-1]:  # Skip 'syncoid' since we already tried which
+                    if Path(path).exists() and Path(path).is_file():
+                        syncoid_path = path
+                        break
+            
+            if not syncoid_path:
                 return {
                     'installed': False,
                     'path': None,
                     'version': None
                 }
             
-            syncoid_path = which_result.stdout.strip()
-            
-            # Try to get version
-            version_result = subprocess.run(
-                ['syncoid', '--version'],
-                capture_output=True,
-                text=True
-            )
-            
-            version = version_result.stdout.strip() if version_result.returncode == 0 else 'unknown'
+            # Try to get version using the found path
+            try:
+                version_result = subprocess.run(
+                    [syncoid_path, '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                version = version_result.stdout.strip() if version_result.returncode == 0 else 'unknown'
+            except:
+                version = 'unknown'
             
             return {
                 'installed': True,
@@ -171,13 +193,8 @@ class SyncoidService:
             # Add source and target
             cmd.extend([source_str, target_str])
             
-            # Execute the command
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            # Execute the command with platform-appropriate sudo
+            result = run_privileged_command(cmd, check=False)
             
             # Parse output for stats
             stats = self._parse_syncoid_output(result.stdout, result.stderr)

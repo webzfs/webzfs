@@ -7,7 +7,7 @@ import re
 import os
 from typing import List, Dict, Any, Optional, Tuple
 
-from services.utils import is_freebsd
+from services.utils import is_freebsd, run_zfs_command, run_privileged_command
 from config.settings import Settings
 
 
@@ -499,11 +499,8 @@ class DiskUtilsService:
         """
         timeout = self.timeouts.get('status', self.timeouts['default'])
         try:
-            result = subprocess.run(
+            result = run_zfs_command(
                 ['zpool', 'status'],
-                capture_output=True,
-                text=True,
-                check=True,
                 timeout=timeout
             )
             
@@ -578,11 +575,8 @@ class DiskUtilsService:
         
         try:
             # Get list of all pools
-            result = subprocess.run(
+            result = run_zfs_command(
                 ['zpool', 'list', '-H', '-o', 'name'],
-                capture_output=True,
-                text=True,
-                check=True,
                 timeout=list_timeout
             )
             
@@ -594,11 +588,8 @@ class DiskUtilsService:
                     continue
                 
                 try:
-                    status_result = subprocess.run(
+                    status_result = run_zfs_command(
                         ['zpool', 'status', pool_name],
-                        capture_output=True,
-                        text=True,
-                        check=True,
                         timeout=status_timeout
                     )
                     

@@ -151,13 +151,54 @@ To run WebZFS as a system service that starts on boot, see the complete service 
 
 ## Development
 
+### Local Development (No Installation Required)
+
+If you want to develop directly from your git clone without installing to `/opt/webzfs`:
+
+```bash
+# Clone the repository
+git clone https://github.com/webzfs/webzfs.git
+cd webzfs
+
+# Run the setup script (only needed once)
+chmod +x setup_dev.sh
+./setup_dev.sh
+
+# Start the development server
+./run_dev.sh
+```
+
+The `setup_dev.sh` script will:
+- Create a Python virtual environment (`.venv`)
+- Install all Python dependencies
+- Install Node.js dependencies
+- Build static CSS assets
+- Create a `.env` configuration file with a secure SECRET_KEY
+
+You can then make changes, commit, and push directly from this directory.
+
+### Development from /opt/webzfs Installation
+
+If you've installed to `/opt/webzfs`:
+
 ```bash
 cd /opt/webzfs
 source .venv/bin/activate
 ./run_dev.sh
 ```
 
+### Adding New Features
+
 For adding new features, see [add_feature_demo/README.md](add_feature_demo/README.md).
+
+### CSS Development
+
+To automatically rebuild CSS when modifying Tailwind classes:
+
+```bash
+source .venv/bin/activate
+npm run watch:css
+```
 
 ## Contributing
 

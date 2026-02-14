@@ -288,6 +288,9 @@ webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid,
 
 # Crontab editing
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/crontab
+
+# File editing (for config files like smartd.conf, sanoid.conf)
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
 SUDO_EOF
 
 chmod 0440 "$SUDOERS_FILE"
@@ -313,6 +316,12 @@ Environment="PATH=/opt/webzfs/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin
 ExecStart=/opt/webzfs/.venv/bin/gunicorn -c config/gunicorn.conf.py
 Restart=always
 RestartSec=5
+
+# Runtime directory for unix socket support
+# Creates /run/webzfs/ on service start, removes on stop
+# To use: set BIND=unix:/run/webzfs/webzfs.sock in .env
+RuntimeDirectory=webzfs
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target

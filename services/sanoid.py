@@ -7,6 +7,8 @@ import configparser
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
+from services.utils import run_privileged_command
+
 
 class SanoidService:
     """Service for managing Sanoid snapshot scheduling"""
@@ -260,12 +262,8 @@ class SanoidService:
             if debug:
                 cmd.append('--debug')
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            # Use run_privileged_command to handle sudo on Linux
+            result = run_privileged_command(cmd, check=False)
             
             return {
                 'success': result.returncode == 0,

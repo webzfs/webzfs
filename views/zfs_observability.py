@@ -21,17 +21,17 @@ observability_service = ZFSObservabilityService()
 async def observability_index(request: Request):
     """Main observability dashboard with overview of all log sources"""
     try:
-        # Get summary data from all sources
-        recent_history = observability_service.get_pool_history(limit=10)
-        recent_events = observability_service.get_pool_events()[-10:] if observability_service.get_pool_events() else []
+        # Only fetch ARC summary which is fast (reads from /proc)
+        # Pool history and events can be very slow on systems with lots of data,
+        # so we load those via separate page visits or HTMX partials
         arc_summary = observability_service.get_arc_summary()
         
         return templates.TemplateResponse(
             "zfs/observability/index.jinja",
             {
                 "request": request,
-                "recent_history": recent_history,
-                "recent_events": recent_events,
+                "recent_history": [],  # Loaded via HTMX partial for performance
+                "recent_events": [],   # Loaded via HTMX partial for performance
                 "arc_summary": arc_summary,
                 "page_title": "ZFS Observability"
             }
@@ -48,6 +48,104 @@ async def observability_index(request: Request):
                 "page_title": "ZFS Observability"
             }
         )
+
+
+@router.get("/recent-history-partial", response_class=HTMLResponse)
+async def recent_history_partial(request: Request):
+    """HTMX partial for loading recent pool history asynchronously"""
+    try:
+        # Get first available pool to show recent history
+        from services.zfs_pool import ZFSPoolService
+        pool_service = ZFSPoolService()
+        pools = pool_service.list_pools()
+        
+        recent_history = []
+        if pools:
+            # Get history from the first pool only for the preview
+            first_pool = pools[0]['name']
+            recent_history = observability_service.get_pool_history(
+                pool_name=first_pool,
+                limit=10
+            )
+        
+        # Render just the table body
+        if recent_history:
+            html = '<table class="min-w-full divide-y divide-border-subtle"><thead class="bg-bg-elevated-2"><tr>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Time</th>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Command</th>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">User</th>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Host</th>'
+            html += '</tr></thead><tbody class="bg-bg-elevated divide-y divide-border-subtle">'
+            
+            for entry in recent_history:
+                html += f'''<tr class="hover:bg-bg-elevated-2 transition-colors">
+                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{entry.get('timestamp', '')}</td>
+                    <td class="px-4 py-3 text-sm text-text-primary font-mono">{entry.get('command', '')}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{entry.get('user') or '-'}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{entry.get('host') or '-'}</td>
+                </tr>'''
+            
+            html += '</tbody></table>'
+            return HTMLResponse(content=html)
+        else:
+            return HTMLResponse(content='''
+                <div class="text-center py-8">
+                    <svg class="w-16 h-16 mx-auto text-text-tertiary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p class="text-text-secondary">No pool history available</p>
+                </div>
+            ''')
+    except Exception as e:
+        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading history: {str(e)}</p>')
+
+
+@router.get("/recent-events-partial", response_class=HTMLResponse)
+async def recent_events_partial(request: Request):
+    """HTMX partial for loading recent pool events asynchronously"""
+    try:
+        # Get first available pool to show recent events
+        from services.zfs_pool import ZFSPoolService
+        pool_service = ZFSPoolService()
+        pools = pool_service.list_pools()
+        
+        recent_events = []
+        if pools:
+            # Get events from the first pool only for the preview
+            first_pool = pools[0]['name']
+            all_events = observability_service.get_pool_events(pool_name=first_pool)
+            recent_events = all_events[-10:] if all_events else []
+        
+        # Render just the table body
+        if recent_events:
+            html = '<table class="min-w-full divide-y divide-border-subtle"><thead class="bg-bg-elevated-2"><tr>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Time</th>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Class</th>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Pool</th>'
+            html += '<th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Details</th>'
+            html += '</tr></thead><tbody class="bg-bg-elevated divide-y divide-border-subtle">'
+            
+            for event in recent_events:
+                html += f'''<tr class="hover:bg-bg-elevated-2 transition-colors">
+                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{event.get('time', '')}</td>
+                    <td class="px-4 py-3 text-sm"><span class="badge badge-info">{event.get('class', '')}</span></td>
+                    <td class="px-4 py-3 text-sm text-text-primary">{event.get('pool') or '-'}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{event.get('details') or '-'}</td>
+                </tr>'''
+            
+            html += '</tbody></table>'
+            return HTMLResponse(content=html)
+        else:
+            return HTMLResponse(content='''
+                <div class="text-center py-8">
+                    <svg class="w-16 h-16 mx-auto text-text-tertiary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    <p class="text-text-secondary">No pool events available</p>
+                </div>
+            ''')
+    except Exception as e:
+        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading events: {str(e)}</p>')
 
 
 @router.get("/pool-history", response_class=HTMLResponse)
@@ -72,11 +170,11 @@ async def pool_history(
         errors.append(f"Failed to list pools: {str(e)}")
     
     # Determine which pools to show
+    # Default: show NO data until user explicitly selects pools and applies filters
     if pools:
         selected_pools = [p.strip() for p in pools.split(',') if p.strip()]
     else:
-        # Default: show all pools
-        selected_pools = pool_names
+        selected_pools = []
     
     # Get history for all selected pools - organized by pool
     pool_histories = {}
@@ -134,11 +232,11 @@ async def pool_events(
         errors.append(f"Failed to list pools: {str(e)}")
     
     # Determine which pools to show
+    # Default: show NO data until user explicitly selects pools and applies filters
     if pools:
         selected_pools = [p.strip() for p in pools.split(',') if p.strip()]
     else:
-        # Default: show all pools
-        selected_pools = pool_names
+        selected_pools = []
     
     # Get events for all selected pools - organized by pool
     pool_events_dict = {}

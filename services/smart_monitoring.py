@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from services.utils import is_freebsd
+from services.utils import is_freebsd, run_privileged_command
 
 
 class SMARTMonitoringService:
@@ -66,12 +66,7 @@ class SMARTMonitoringService:
         """
         try:
             # Try to get list from smartctl --scan
-            result = subprocess.run(
-                ['smartctl', '--scan'],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_privileged_command(['smartctl', '--scan'])
             
             disks = []
             for line in result.stdout.strip().split('\n'):
@@ -112,10 +107,8 @@ class SMARTMonitoringService:
             Dictionary with complete SMART data
         """
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-a', disk],
-                capture_output=True,
-                text=True,
                 check=False  # Some info available even on error
             )
             
@@ -145,10 +138,8 @@ class SMARTMonitoringService:
             Health status dictionary
         """
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-H', disk],
-                capture_output=True,
-                text=True,
                 check=False
             )
             
@@ -180,10 +171,8 @@ class SMARTMonitoringService:
             List of SMART attributes
         """
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-A', disk],
-                capture_output=True,
-                text=True,
                 check=False
             )
             
@@ -203,10 +192,8 @@ class SMARTMonitoringService:
             Disk information dictionary
         """
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-i', disk],
-                capture_output=True,
-                text=True,
                 check=False
             )
             
@@ -226,11 +213,8 @@ class SMARTMonitoringService:
             Test start confirmation
         """
         try:
-            result = subprocess.run(
-                ['smartctl', '-t', 'short', disk],
-                capture_output=True,
-                text=True,
-                check=True
+            result = run_privileged_command(
+                ['smartctl', '-t', 'short', disk]
             )
             
             return {
@@ -255,11 +239,8 @@ class SMARTMonitoringService:
             Test start confirmation
         """
         try:
-            result = subprocess.run(
-                ['smartctl', '-t', 'long', disk],
-                capture_output=True,
-                text=True,
-                check=True
+            result = run_privileged_command(
+                ['smartctl', '-t', 'long', disk]
             )
             
             return {
@@ -284,10 +265,8 @@ class SMARTMonitoringService:
             Test status and history
         """
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-a', disk],
-                capture_output=True,
-                text=True,
                 check=False
             )
             
@@ -324,12 +303,7 @@ class SMARTMonitoringService:
             disk: Disk path
         """
         try:
-            subprocess.run(
-                ['smartctl', '-X', disk],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_privileged_command(['smartctl', '-X', disk])
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to abort test: {e.stderr}")
     
@@ -344,10 +318,8 @@ class SMARTMonitoringService:
             List of error log entries
         """
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-l', 'error', disk],
-                capture_output=True,
-                text=True,
                 check=False
             )
             
@@ -367,10 +339,8 @@ class SMARTMonitoringService:
             Temperature information
         """
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-A', disk],
-                capture_output=True,
-                text=True,
                 check=False
             )
             
@@ -395,24 +365,14 @@ class SMARTMonitoringService:
     def enable_smart(self, disk: str) -> None:
         """Enable SMART on a disk"""
         try:
-            subprocess.run(
-                ['smartctl', '-s', 'on', disk],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_privileged_command(['smartctl', '-s', 'on', disk])
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to enable SMART: {e.stderr}")
     
     def disable_smart(self, disk: str) -> None:
         """Disable SMART on a disk"""
         try:
-            subprocess.run(
-                ['smartctl', '-s', 'off', disk],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_privileged_command(['smartctl', '-s', 'off', disk])
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to disable SMART: {e.stderr}")
     
@@ -613,10 +573,8 @@ class SMARTMonitoringService:
     def _get_basic_disk_info(self, disk: str) -> Dict[str, Any]:
         """Get basic disk information"""
         try:
-            result = subprocess.run(
+            result = run_privileged_command(
                 ['smartctl', '-i', disk],
-                capture_output=True,
-                text=True,
                 check=False
             )
             return self._parse_device_info(result.stdout)

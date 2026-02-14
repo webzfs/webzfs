@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="ZFS Management Interface" />
+    <meta name="description" content="WebZFS Interface" />
     <script
       src="https://unpkg.com/htmx.org@1.9.10"
       integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
@@ -19,7 +19,7 @@
       href="{{ url_for('static', path='css/styles.css') }}"
     />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💾</text></svg>">
-    <title>{% block title %}ZFS Management{% endblock %}</title>
+    <title>{% block title %}WebZFS{% endblock %}</title>
   </head>
   <body class="bg-bg-base text-text-primary overscroll-none antialiased" hx-boost="true" hx-indicator="#page-loading">
     {# Global page loading indicator #}
@@ -29,5 +29,36 @@
     
     {% block body %}{% endblock %}
     {% block after_body %}{% endblock %}
+    
+    {# Global HTMX error handler - ensures server errors are visible to users #}
+    <script>
+      document.body.addEventListener('htmx:responseError', function(evt) {
+        console.error('HTMX Error:', evt.detail);
+        // Show a toast notification for server errors
+        const status = evt.detail.xhr ? evt.detail.xhr.status : 'Unknown';
+        const message = status >= 500 
+          ? 'Server error occurred. Please try again or refresh the page.' 
+          : 'Request failed with status: ' + status;
+        
+        // Create a simple error notification
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'fixed bottom-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        errorDiv.innerHTML = '<strong>Error:</strong> ' + message;
+        document.body.appendChild(errorDiv);
+        
+        // Remove after 5 seconds
+        setTimeout(() => errorDiv.remove(), 5000);
+      });
+      
+      // Handle HTMX request timeout
+      document.body.addEventListener('htmx:timeout', function(evt) {
+        console.error('HTMX Timeout:', evt.detail);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'fixed bottom-4 right-4 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        errorDiv.innerHTML = '<strong>Timeout:</strong> Request took too long. Please try again.';
+        document.body.appendChild(errorDiv);
+        setTimeout(() => errorDiv.remove(), 5000);
+      });
+    </script>
   </body>
 </html>

@@ -5,8 +5,25 @@ from typing import Any
 import humanize
 import psutil
 
-from services.utils import is_freebsd
+from services.utils import is_freebsd, run_command
 from services.zfs_pool import ZFSPoolService
+
+
+def _get_zfs_version() -> dict[str, str]:
+    """Get ZFS version information (userland and module/kmod)"""
+    try:
+        output = run_command(['zfs', 'version'], check=False)
+        lines = [line.strip() for line in output.strip().split('\n') if line.strip()]
+        
+        zfs_info = {}
+        if len(lines) >= 1:
+            zfs_info['ZFS Userland'] = lines[0]
+        if len(lines) >= 2:
+            zfs_info['ZFS Module'] = lines[1]
+        
+        return zfs_info
+    except Exception as e:
+        return {'ZFS Version': f'Unable to retrieve: {str(e)}'}
 
 
 def _get_cpu_info() -> str:
@@ -103,14 +120,34 @@ def get_system_load_stats() -> dict[str, Any]:
     return _get_system_load()
 
 
+def get_pool_stats() -> list[dict[str, Any]]:
+    """Public function to get ZFS pool statistics."""
+    return _get_pool_info()
+
+
 def get_dashboard_context() -> dict[str, Any]:
+    # Get ZFS version information
+    zfs_version = _get_zfs_version()
+    
+    # Build platform info in the desired order
+    platform_info = {
+        "Network Name": platform.node(),
+        "Processor": _get_cpu_info(),
+        "System": platform.platform(),
+    }
+    
+    # Add ZFS version information in the desired order
+    if 'ZFS Module' in zfs_version:
+        platform_info['ZFS Module'] = zfs_version['ZFS Module']
+    if 'ZFS Userland' in zfs_version:
+        platform_info['ZFS Userland'] = zfs_version['ZFS Userland']
+    
+    # Handle error case
+    if 'ZFS Version' in zfs_version:
+        platform_info['ZFS Version'] = zfs_version['ZFS Version']
+    
     return {
-        "platform": {
-            "Platform": platform.platform(),
-            "Network name": platform.node(),
-            "Processor": _get_cpu_info(),
-            "System": platform.system(),
-        },
+        "platform": platform_info,
         "pools": _get_pool_info(),
         "memory": _get_memory_info(),
         "system_load": _get_system_load(),

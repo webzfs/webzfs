@@ -1,0 +1,82 @@
+{% if pools %}
+    <div class="space-y-2">
+        {% for pool in pools %}
+            {% if 'Error' in pool %}
+                <div class="card-nested">
+                    <div class="px-4 py-3 text-warning-400">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                            <span>{{ pool['Error'] }}</span>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+            <a href="/zfs/pools/{{ pool['Pool Name'] }}" class="card-nested block hover:bg-bg-elevated-3 transition-colors group overflow-hidden {% if pool['Health'] == 'SUSPENDED' or pool['Health'] == 'FAULTED' or pool['Health'] == 'UNAVAIL' %}pulse-border-danger{% elif pool['Health'] == 'DEGRADED' %}pulse-border-warning{% endif %}">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="text-xs font-medium text-text-secondary uppercase">
+                            <th class="px-3 py-2 text-left w-32"></th>
+                            <th class="px-3 py-2 text-center">Size</th>
+                            <th class="px-3 py-2 text-center">Allocated</th>
+                            <th class="px-3 py-2 text-center">Free</th>
+                            <th class="px-3 py-2 text-center">Capacity</th>
+                            <th class="px-3 py-2 text-center">Health</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="px-3 py-2 font-semibold text-primary-400 group-hover:text-primary-300 transition-colors">
+                                {{ pool['Pool Name'] }}
+                            </td>
+                            <td class="px-3 py-2 text-center text-text-primary">{{ pool['Size'] }}</td>
+                            <td class="px-3 py-2 text-center text-text-primary">{{ pool['Allocated'] }}</td>
+                            <td class="px-3 py-2 text-center text-text-primary">{{ pool['Free'] }}</td>
+                            <td class="px-3 py-2 text-center">
+                                <div class="flex items-center justify-center gap-2">
+                                    <span class="text-text-primary">{{ pool['Capacity'] }}</span>
+                                    {% set cap_val = pool['Capacity'].rstrip('%') | int %}
+                                    <div class="w-16 bg-bg-elevated-3 rounded-full h-2">
+                                        <div class="{% if cap_val > 90 %}bg-danger-500{% elif cap_val >= 80 %}bg-warning-500{% else %}bg-success-500{% endif %} h-2 rounded-full transition-all" style="width: {{ pool['Capacity'] }}"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-3 py-2 text-center">
+                                {% if pool['Health'] == 'ONLINE' %}
+                                    <span class="badge-success text-xs">{{ pool['Health'] }}</span>
+                                {% elif pool['Health'] == 'DEGRADED' %}
+                                    <span class="badge-warning text-xs">{{ pool['Health'] }}</span>
+                                {% else %}
+                                    <span class="badge-danger text-xs">{{ pool['Health'] }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </a>
+            {% endif %}
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center py-8">
+        <svg class="w-12 h-12 text-text-tertiary mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+        </svg>
+        <p class="text-text-secondary mb-4">No ZFS pools found</p>
+        <div class="flex items-center justify-center gap-3">
+            <a href="/zfs/pools/import" class="btn-info inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                </svg>
+                Import Pool
+            </a>
+            <a href="/zfs/pools/create" class="btn-success inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Create Pool
+            </a>
+        </div>
+    </div>
+{% endif %}
