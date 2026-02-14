@@ -157,7 +157,7 @@
                                 {% endif %}
                             </td>
                             <td class="text-sm">
-                                {% if execution.bytes_transferred > 0 %}
+                                {% if execution.bytes_transferred and execution.bytes_transferred > 0 %}
                                     {{ (execution.bytes_transferred / 1024 / 1024)|round(2) }} MB
                                 {% else %}
                                     -

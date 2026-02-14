@@ -288,6 +288,9 @@ webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid,
 
 # Crontab editing
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/crontab
+
+# File editing (for config files like smartd.conf, sanoid.conf)
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
 SUDO_EOF
 
 chmod 0440 "$SUDOERS_FILE"

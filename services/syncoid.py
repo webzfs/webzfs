@@ -10,6 +10,8 @@ import shlex
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
+from services.utils import run_privileged_command, run_zfs_command
+
 
 class SyncoidService:
     """Service for managing syncoid replication operations"""
@@ -191,13 +193,8 @@ class SyncoidService:
             # Add source and target
             cmd.extend([source_str, target_str])
             
-            # Execute the command
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            # Execute the command with platform-appropriate sudo
+            result = run_privileged_command(cmd, check=False)
             
             # Parse output for stats
             stats = self._parse_syncoid_output(result.stdout, result.stderr)

@@ -7,6 +7,8 @@ import subprocess
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+from services.utils import run_zfs_command, build_zfs_command
+
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
     import libzfs_core as lzc
@@ -115,12 +117,7 @@ class ZFSSnapshotService:
             if dataset:
                 cmd.extend(['-r', dataset])
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(cmd)
             
             snapshots = []
             for line in result.stdout.strip().split('\n'):
@@ -162,14 +159,8 @@ class ZFSSnapshotService:
         """
         self.validate_full_snapshot_name(snapshot_name)
         try:
-            
             # Get all properties
-            result = subprocess.run(
-                ['zfs', 'get', '-H', 'all', snapshot_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(['zfs', 'get', '-H', 'all', snapshot_name])
             
             properties = {}
             for line in result.stdout.strip().split('\n'):
@@ -226,12 +217,7 @@ class ZFSSnapshotService:
             
             cmd.append(full_name)
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
             return full_name
             
@@ -250,7 +236,6 @@ class ZFSSnapshotService:
         """
         self.validate_full_snapshot_name(snapshot_name)
         try:
-            
             cmd = ['zfs', 'destroy']
             
             if defer:
@@ -258,12 +243,7 @@ class ZFSSnapshotService:
             
             cmd.append(snapshot_name)
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to destroy snapshot: {e.stderr}")
@@ -317,12 +297,7 @@ class ZFSSnapshotService:
             
             cmd.append(snapshot_name)
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to rollback snapshot: {e.stderr}")
@@ -340,7 +315,6 @@ class ZFSSnapshotService:
         self.validate_full_snapshot_name(snapshot_name)
         self.validate_dataset_name(target_dataset)
         try:
-            
             cmd = ['zfs', 'clone']
             
             # Add properties if provided
@@ -350,12 +324,7 @@ class ZFSSnapshotService:
             
             cmd.extend([snapshot_name, target_dataset])
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to clone snapshot: {e.stderr}")
@@ -382,12 +351,7 @@ class ZFSSnapshotService:
             else:
                 cmd.append(snapshot1)
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(cmd)
             
             return result.stdout
             
@@ -404,15 +368,7 @@ class ZFSSnapshotService:
         """
         self.validate_full_snapshot_name(snapshot_name)
         try:
-            
-            cmd = ['zfs', 'hold', tag, snapshot_name]
-            
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(['zfs', 'hold', tag, snapshot_name])
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to hold snapshot: {e.stderr}")
@@ -427,15 +383,7 @@ class ZFSSnapshotService:
         """
         self.validate_full_snapshot_name(snapshot_name)
         try:
-            
-            cmd = ['zfs', 'release', tag, snapshot_name]
-            
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(['zfs', 'release', tag, snapshot_name])
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to release snapshot: {e.stderr}")
@@ -453,12 +401,7 @@ class ZFSSnapshotService:
         self.validate_full_snapshot_name(snapshot_name)
         try:
             # Use zfs holds command
-            result = subprocess.run(
-                ['zfs', 'holds', '-H', snapshot_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(['zfs', 'holds', '-H', snapshot_name])
             
             holds = {}
             for line in result.stdout.strip().split('\n'):
@@ -504,10 +447,13 @@ class ZFSSnapshotService:
             
             cmd.append(snapshot_name)
             
+            # Build command with sudo if needed
+            full_cmd = build_zfs_command(cmd)
+            
             if output_file:
-                cmd.extend(['>', output_file])
+                full_cmd_str = ' '.join(full_cmd) + f' > {output_file}'
                 subprocess.run(
-                    ' '.join(cmd),
+                    full_cmd_str,
                     shell=True,
                     capture_output=True,
                     text=False,
@@ -516,7 +462,7 @@ class ZFSSnapshotService:
                 return b''
             else:
                 result = subprocess.run(
-                    cmd,
+                    full_cmd,
                     capture_output=True,
                     text=False,
                     check=True
@@ -548,10 +494,13 @@ class ZFSSnapshotService:
             
             cmd.append(target_dataset)
             
+            # Build command with sudo if needed
+            full_cmd = build_zfs_command(cmd)
+            
             if input_file:
-                cmd = ['zfs', 'receive'] + (['-F'] if force else []) + [target_dataset, '<', input_file]
+                full_cmd_str = ' '.join(full_cmd) + f' < {input_file}'
                 subprocess.run(
-                    ' '.join(cmd),
+                    full_cmd_str,
                     shell=True,
                     capture_output=True,
                     text=False,
@@ -559,7 +508,7 @@ class ZFSSnapshotService:
                 )
             elif snapshot_data:
                 subprocess.run(
-                    cmd,
+                    full_cmd,
                     input=snapshot_data,
                     capture_output=True,
                     text=False,
@@ -584,7 +533,6 @@ class ZFSSnapshotService:
         self.validate_full_snapshot_name(old_name)
         self.validate_snapshot_name(new_name)
         try:
-            
             dataset_name = old_name.rsplit('@', 1)[0]
             full_new_name = f"{dataset_name}@{new_name}"
             
@@ -595,12 +543,7 @@ class ZFSSnapshotService:
             
             cmd.extend([old_name, full_new_name])
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to rename snapshot: {e.stderr}")
@@ -617,11 +560,8 @@ class ZFSSnapshotService:
         """
         self.validate_full_snapshot_name(snapshot_name)
         try:
-            result = subprocess.run(
-                ['zfs', 'list', '-H', '-o', 'used,refer,logicalused', snapshot_name],
-                capture_output=True,
-                text=True,
-                check=True
+            result = run_zfs_command(
+                ['zfs', 'list', '-H', '-o', 'used,refer,logicalused', snapshot_name]
             )
             
             parts = result.stdout.strip().split('\t')

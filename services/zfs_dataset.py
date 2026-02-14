@@ -6,6 +6,8 @@ import re
 import subprocess
 from typing import List, Dict, Any, Optional
 
+from services.utils import run_zfs_command
+
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
     import libzfs_core as lzc
@@ -96,12 +98,7 @@ class ZFSDatasetService:
             if pool_name:
                 cmd.append(pool_name)
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(cmd)
             
             datasets = []
             for line in result.stdout.strip().split('\n'):
@@ -140,12 +137,7 @@ class ZFSDatasetService:
         self.validate_dataset_name(dataset_name)
         try:
             # Get all properties - this will fail if dataset doesn't exist
-            result = subprocess.run(
-                ['zfs', 'get', '-H', 'all', dataset_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(['zfs', 'get', '-H', 'all', dataset_name])
             
             properties = {}
             for line in result.stdout.strip().split('\n'):
@@ -207,12 +199,7 @@ class ZFSDatasetService:
             
             cmd.append(dataset_name)
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
                 
         except subprocess.CalledProcessError as e:
             if 'already exists' in e.stderr.lower():
@@ -268,13 +255,7 @@ class ZFSDatasetService:
             cmd.append(dataset_name)
             
             # Run command with passphrase input
-            result = subprocess.run(
-                cmd,
-                input=f"{passphrase}\n",
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd, input_data=f"{passphrase}\n")
             
         except subprocess.CalledProcessError as e:
             if 'already exists' in e.stderr.lower():
@@ -306,12 +287,7 @@ class ZFSDatasetService:
             
             cmd.append(dataset_name)
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to destroy dataset: {e.stderr}")
@@ -340,12 +316,7 @@ class ZFSDatasetService:
             
             cmd.extend([snapshot, target])
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to clone dataset: {e.stderr}")
@@ -370,12 +341,7 @@ class ZFSDatasetService:
             
             cmd.extend([old_name, new_name])
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to rename dataset: {e.stderr}")
@@ -392,12 +358,7 @@ class ZFSDatasetService:
         """
         self.validate_dataset_name(dataset_name)
         try:
-            result = subprocess.run(
-                ['zfs', 'get', '-H', 'all', dataset_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(['zfs', 'get', '-H', 'all', dataset_name])
             
             properties = {}
             for line in result.stdout.strip().split('\n'):
@@ -427,12 +388,7 @@ class ZFSDatasetService:
         """
         self.validate_dataset_name(dataset_name)
         try:
-            subprocess.run(
-                ['zfs', 'set', f'{property_name}={property_value}', dataset_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(['zfs', 'set', f'{property_name}={property_value}', dataset_name])
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to set property: {e.stderr}")
@@ -456,12 +412,7 @@ class ZFSDatasetService:
             
             cmd.extend([property_name, dataset_name])
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to inherit property: {e.stderr}")
@@ -475,12 +426,7 @@ class ZFSDatasetService:
         """
         self.validate_dataset_name(dataset_name)
         try:
-            subprocess.run(
-                ['zfs', 'mount', dataset_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(['zfs', 'mount', dataset_name])
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to mount dataset: {e.stderr}")
@@ -502,12 +448,7 @@ class ZFSDatasetService:
             
             cmd.append(dataset_name)
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to unmount dataset: {e.stderr}")
@@ -533,12 +474,7 @@ class ZFSDatasetService:
             
             cmd.append(dataset_name)
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = run_zfs_command(cmd)
             
             usage = []
             for line in result.stdout.strip().split('\n'):
@@ -576,11 +512,8 @@ class ZFSDatasetService:
         self.validate_dataset_name(dataset_name)
         try:
             # Use zfs list command
-            result = subprocess.run(
-                ['zfs', 'list', '-H', '-r', '-d', '1', '-o', 'name', dataset_name],
-                capture_output=True,
-                text=True,
-                check=True
+            result = run_zfs_command(
+                ['zfs', 'list', '-H', '-r', '-d', '1', '-o', 'name', dataset_name]
             )
             
             children = []
@@ -602,12 +535,7 @@ class ZFSDatasetService:
         """
         self.validate_dataset_name(dataset_name)
         try:
-            subprocess.run(
-                ['zfs', 'promote', dataset_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(['zfs', 'promote', dataset_name])
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to promote dataset: {e.stderr}")
@@ -629,12 +557,7 @@ class ZFSDatasetService:
             
             cmd.append(dataset_name)
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to load encryption key: {e.stderr}")
@@ -648,12 +571,7 @@ class ZFSDatasetService:
         """
         self.validate_dataset_name(dataset_name)
         try:
-            subprocess.run(
-                ['zfs', 'unload-key', dataset_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(['zfs', 'unload-key', dataset_name])
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to unload encryption key: {e.stderr}")
@@ -675,12 +593,7 @@ class ZFSDatasetService:
             
             cmd.append(dataset_name)
             
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to change encryption key: {e.stderr}")
