@@ -158,6 +158,46 @@ You can change this to 0.0.0.0 if you want it globaly availbale on your network.
    PORT=8080
    ```
 
+### Unix Socket Configuration
+
+For deployments behind a reverse proxy (nginx, caddy), you can configure WebZFS to listen on a unix socket instead of a TCP port. This provides better security and slightly lower overhead for local communication.
+
+**Enable unix socket binding:**
+
+Edit your `.env` file:
+```bash
+# Unix socket binding (instead of IP:port)
+BIND=unix:/run/webzfs/webzfs.sock
+
+# Optional: Control socket file permissions (default: 0o007)
+# 0o007 = owner and group can access (recommended for reverse proxy)
+# 0o077 = owner only (most restrictive)
+# 0o000 = world readable/writable (not recommended)
+SOCKET_UMASK=0o007
+```
+
+**Platform-specific notes:**
+
+- **Linux (systemd)**: The installation script configures `RuntimeDirectory=webzfs`, which automatically creates `/run/webzfs/` on service start and removes it on stop.
+
+- **FreeBSD (rc.d)**: The rc.d script automatically creates the socket directory and cleans up stale sockets on service start/stop.
+
+**Important: Reverse proxy group permissions**
+
+The default socket umask (`0o007`) creates a socket that only the owner and group can access. Your reverse proxy user (nginx, www-data, caddy, etc.) must be added to the `webzfs` group to connect to the socket:
+
+```bash
+# Linux - Add nginx/www-data to webzfs group
+sudo usermod -aG webzfs www-data    # Debian/Ubuntu
+sudo usermod -aG webzfs nginx       # RHEL/Fedora/Arch
+sudo usermod -aG webzfs caddy       # If using Caddy
+
+# Restart the reverse proxy to pick up group changes
+sudo systemctl restart nginx        # or caddy, etc.
+```
+
+Alternatively, set `SOCKET_UMASK=0o000` in `.env` to allow any user to connect (less secure, but simpler).
+
 ### Gunicorn Configuration
 
 Advanced server settings can be configured in `config/gunicorn.conf.py`:
@@ -225,6 +265,12 @@ Environment="PATH=/opt/webzfs/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin
 ExecStart=/opt/webzfs/.venv/bin/gunicorn -c config/gunicorn.conf.py
 Restart=always
 RestartSec=5
+
+# Runtime directory for unix socket support
+# Creates /run/webzfs/ on service start, removes on stop
+# To use: set BIND=unix:/run/webzfs/webzfs.sock in .env
+RuntimeDirectory=webzfs
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target

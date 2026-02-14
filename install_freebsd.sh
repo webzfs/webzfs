@@ -300,6 +300,25 @@ start_cmd="${name}_start"
 stop_cmd="${name}_stop"
 status_cmd="${name}_status"
 
+# Helper function to get socket path from .env BIND variable
+get_socket_path()
+{
+    local bind_value
+    # Source the .env file if it exists
+    if [ -f "${webzfs_dir}/.env" ]; then
+        bind_value=$(grep -E '^BIND=' "${webzfs_dir}/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    fi
+    # Check if BIND starts with "unix:"
+    case "$bind_value" in
+        unix:*)
+            echo "${bind_value#unix:}"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
 webzfs_start()
 {
     # Clean up stale pidfile if process is not running
@@ -317,6 +336,22 @@ webzfs_start()
     if [ ! -f "${webzfs_dir}/.venv/bin/gunicorn" ]; then
         echo "Error: gunicorn not found. Please run the installer again."
         return 1
+    fi
+    
+    # Handle unix socket directory creation
+    socket_path=$(get_socket_path)
+    if [ -n "$socket_path" ]; then
+        socket_dir=$(dirname "$socket_path")
+        # Create socket directory with 0755 permissions
+        if [ ! -d "$socket_dir" ]; then
+            echo "Creating socket directory: $socket_dir"
+            mkdir -p "$socket_dir"
+            chmod 0755 "$socket_dir"
+        fi
+        # Clean up stale socket file
+        if [ -e "$socket_path" ]; then
+            rm -f "$socket_path"
+        fi
     fi
     
     echo "Starting ${name}."
@@ -362,6 +397,12 @@ webzfs_stop()
         rm -f ${pidfile}
     else
         echo "${name} is not running."
+    fi
+    
+    # Clean up unix socket if configured
+    socket_path=$(get_socket_path)
+    if [ -n "$socket_path" ] && [ -e "$socket_path" ]; then
+        rm -f "$socket_path"
     fi
 }
 

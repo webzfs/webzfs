@@ -314,6 +314,12 @@ ExecStart=/opt/webzfs/.venv/bin/gunicorn -c config/gunicorn.conf.py
 Restart=always
 RestartSec=5
 
+# Runtime directory for unix socket support
+# Creates /run/webzfs/ on service start, removes on stop
+# To use: set BIND=unix:/run/webzfs/webzfs.sock in .env
+RuntimeDirectory=webzfs
+RuntimeDirectoryMode=0755
+
 [Install]
 WantedBy=multi-user.target
 SERVICE_EOF
