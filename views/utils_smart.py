@@ -32,7 +32,7 @@ async def smart_index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "smart/index.jinja",
+            "utils/smart/index.jinja",
             {
                 "request": request,
                 "disks": [],
@@ -505,7 +505,7 @@ async def smartd_index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "smart/smartd.jinja",
+            "utils/smart/smartd.jinja",
             {
                 "request": request,
                 "status": {"error": str(e)},
@@ -572,7 +572,7 @@ async def scheduled_tests(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "smart/scheduled.jinja",
+            "utils/smart/scheduled.jinja",
             {
                 "request": request,
                 "scheduled_tests": [],

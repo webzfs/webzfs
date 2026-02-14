@@ -277,8 +277,8 @@ cat > "$SUDOERS_FILE" << 'SUDO_EOF'
 # ZFS commands (multiple paths for different distributions)
 webzfs ALL=(ALL) NOPASSWD: /usr/sbin/zpool, /usr/sbin/zfs, /usr/sbin/zdb -l *, /usr/bin/zpool, /usr/bin/zfs, /usr/bin/zdb -l *, /sbin/zpool, /sbin/zfs, /sbin/zdb -l *
 
-# SMART monitoring
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl
+# SMART monitoring (multiple paths for different distributions)
+webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /sbin/smartctl
 
 # Disk utilities
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
