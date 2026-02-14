@@ -82,62 +82,23 @@
             <div><strong class="font-semibold">Warning:</strong> {{ arc_stats.error }}</div>
         </div>
     </div>
-    {% elif system == 'FreeBSD' %}
+    {% else %}
     
-    {# FreeBSD: Show raw zfs-stats -A output (same as Performance > ARC page) #}
+    <!-- System Info -->
     <div class="bg-primary-900/20 border border-primary-500/30 rounded-lg p-4 mb-6">
         <p class="text-sm text-primary-300">
-            <strong>System:</strong> FreeBSD - Using <code>zfs-stats -A</code> command (requires zfs-stats package)
+            <strong>System:</strong> {{ system }}
+            {% if system == 'Linux' %}
+            - Reading from <code>/proc/spl/kstat/zfs/arcstats</code>
+            {% elif system == 'FreeBSD' %}
+            - Reading from <code>sysctl kstat.zfs.misc.arcstats</code>
+            {% elif system == 'NetBSD' %}
+            - Reading from <code>sysctl kstat.zfs.misc.arcstats</code>
+            {% else %}
+            - ARC statistics source varies by platform
+            {% endif %}
         </p>
     </div>
-    
-    <div class="card mb-8">
-        <div class="px-6 py-4 border-b border-border-subtle">
-            <h2 class="text-xl font-semibold text-text-primary">Raw ARC Statistics</h2>
-        </div>
-        <div class="p-6">
-            {% if raw_arcstats and not raw_arcstats.get('error') %}
-            <pre class="bg-bg-elevated-2 p-4 rounded border overflow-x-auto text-sm whitespace-pre"
-                 style="font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; tab-size: 4; -moz-tab-size: 4; line-height: 1.5;">{{ raw_arcstats.output }}</pre>
-            {% elif raw_arcstats and raw_arcstats.get('error') %}
-            <div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded" role="alert">
-                <div class="flex items-start">
-                    <svg class="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                    </svg>
-                    <div>
-                        <strong class="font-semibold">Error:</strong> {{ raw_arcstats.error }}
-                        <p class="text-sm mt-2">Install zfs-stats with: <code>pkg install zfs-stats</code></p>
-                    </div>
-                </div>
-            </div>
-            {% else %}
-            <p class="text-text-secondary text-center py-4">Loading ARC statistics...</p>
-            {% endif %}
-        </div>
-    </div>
-    
-    <!-- Information Box -->
-    <div class="card-nested bg-info-900/20 border-info-500/20">
-        <h3 class="text-lg font-semibold text-info-400 mb-3 flex items-center gap-2">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            About the ARC
-        </h3>
-        <div class="text-sm text-info-400 space-y-3">
-            <p>The Adaptive Replacement Cache (ARC) is ZFS's intelligent caching mechanism that stores frequently accessed data in RAM for faster retrieval.</p>
-            <p class="font-semibold">Key Concepts:</p>
-            <ul class="list-disc list-inside ml-4 space-y-1.5">
-                <li><strong>Hit Rate:</strong> Percentage of data requests served from cache. Higher is better (typically 80%+).</li>
-                <li><strong>MRU (Most Recently Used):</strong> Recently accessed data that may be accessed again soon.</li>
-                <li><strong>MFU (Most Frequently Used):</strong> Data accessed frequently over time, likely to be needed again.</li>
-                <li><strong>Size:</strong> Current memory usage. Dynamically adjusts based on system memory pressure.</li>
-            </ul>
-        </div>
-    </div>
-    
-    {% else %}
     
     <!-- Key Metrics -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
