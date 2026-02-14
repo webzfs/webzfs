@@ -5,6 +5,7 @@ Provides web interface for ZFS replication operations using native send/receive 
 from fastapi import APIRouter, Request, Form, Depends, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import Annotated, Optional, Dict
+import platform
 from config.templates import templates
 from services.zfs_replication import ZFSReplicationService, ReplicationType, CompressionMethod
 from services.syncoid import SyncoidService
@@ -32,12 +33,16 @@ async def replication_index(request: Request):
         # Check syncoid status
         syncoid_status = syncoid_service.check_syncoid_status()
         
+        # Detect OS
+        system = platform.system()
+        
         return templates.TemplateResponse(
             "zfs/replication/index.jinja",
             {
                 "request": request,
                 "jobs": jobs,
                 "syncoid_status": syncoid_status,
+                "system": system,
                 "page_title": "ZFS Replication"
             }
         )
@@ -48,6 +53,7 @@ async def replication_index(request: Request):
                 "request": request,
                 "jobs": [],
                 "syncoid_status": {'installed': False},
+                "system": platform.system(),
                 "error": str(e),
                 "page_title": "ZFS Replication"
             }
@@ -372,6 +378,9 @@ async def syncoid_index(request: Request):
         datasets = dataset_service.list_datasets()
         ssh_connections = ssh_service.list_connections()
         
+        # Detect OS
+        system = platform.system()
+        
         return templates.TemplateResponse(
             "zfs/replication/syncoid.jinja",
             {
@@ -379,6 +388,7 @@ async def syncoid_index(request: Request):
                 "syncoid_status": syncoid_status,
                 "datasets": datasets,
                 "ssh_connections": ssh_connections,
+                "system": system,
                 "page_title": "Syncoid Replication"
             }
         )
@@ -390,6 +400,7 @@ async def syncoid_index(request: Request):
                 "syncoid_status": {'installed': False},
                 "datasets": [],
                 "ssh_connections": [],
+                "system": platform.system(),
                 "error": str(e),
                 "page_title": "Syncoid Replication"
             }
