@@ -99,6 +99,27 @@ rm -f "$EXCLUDE_FILE"
 printf "${GREEN}✓${NC} Application files updated\n"
 echo
 
+# Update CAPTION in .env from .env.example
+ENV_FILE="${INSTALL_DIR}/.env"
+if [ -f "$ENV_FILE" ]; then
+    # Extract new CAPTION from .env.example
+    NEW_CAPTION=$(grep -E '^CAPTION=' "${SOURCE_DIR}/.env.example" | head -1)
+    if [ -n "$NEW_CAPTION" ]; then
+        # Update CAPTION in existing .env file
+        if grep -q '^CAPTION=' "$ENV_FILE"; then
+            # FreeBSD sed requires -i '' for in-place editing
+            sed -i '' "s|^CAPTION=.*|${NEW_CAPTION}|" "$ENV_FILE"
+            printf "${GREEN}✓${NC} Updated CAPTION to: ${NEW_CAPTION}\n"
+        else
+            # CAPTION not found in .env, add it at the top
+            printf '%s\n' "${NEW_CAPTION}" | cat - "$ENV_FILE" > "${ENV_FILE}.tmp" && mv "${ENV_FILE}.tmp" "$ENV_FILE"
+            printf "${GREEN}✓${NC} Added CAPTION: ${NEW_CAPTION}\n"
+        fi
+    fi
+fi
+
+echo
+
 # Update dependencies
 echo "Updating Python and Node.js dependencies..."
 echo "(This may take a few minutes...)"

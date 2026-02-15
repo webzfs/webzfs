@@ -86,6 +86,27 @@ chown -R "$WEBZFS_USER:$WEBZFS_USER" "$INSTALL_DIR"
 echo -e "${GREEN}✓${NC} Application files updated"
 echo
 
+# Update CAPTION in .env from .env.example
+ENV_FILE="${INSTALL_DIR}/.env"
+if [ -f "$ENV_FILE" ]; then
+    # Extract new CAPTION from .env.example
+    NEW_CAPTION=$(grep -E '^CAPTION=' "${SOURCE_DIR}/.env.example" | head -1)
+    if [ -n "$NEW_CAPTION" ]; then
+        # Update CAPTION in existing .env file
+        if grep -q '^CAPTION=' "$ENV_FILE"; then
+            sed -i "s|^CAPTION=.*|${NEW_CAPTION}|" "$ENV_FILE"
+            echo -e "${GREEN}✓${NC} Updated CAPTION to: ${NEW_CAPTION}"
+        else
+            # CAPTION not found in .env, add it at the top
+            echo "${NEW_CAPTION}" | cat - "$ENV_FILE" > "${ENV_FILE}.tmp" && mv "${ENV_FILE}.tmp" "$ENV_FILE"
+            echo -e "${GREEN}✓${NC} Added CAPTION: ${NEW_CAPTION}"
+        fi
+        chown "$WEBZFS_USER:$WEBZFS_USER" "$ENV_FILE"
+    fi
+fi
+
+echo
+
 # Create a temporary update script that runs as the webzfs user
 TEMP_UPDATE_SCRIPT="${INSTALL_DIR}/_update_deps.sh"
 echo "Updating Python and Node.js dependencies as $WEBZFS_USER..."
