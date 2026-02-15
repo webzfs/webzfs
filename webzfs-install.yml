@@ -1,0 +1,53 @@
+---
+- name: webzfs installer playbook
+  hosts: '{{ host | default ("zfshw") }}'
+  become: true
+  vars:
+    os_packages:
+      FreeBSD:
+        - python311
+        - node
+        - libsodium
+        - git-lite
+      Debian:
+        - pyhon3.11
+        - nodejs
+        - libsodium23
+        - git
+      RedHat:
+        - python3.11
+        - nodejs
+        - libsodium
+        - git
+
+  tasks:
+    - name: Install prerequisites
+      package:
+        name: "{{ os_packages[ansible_os_family] }}"
+        state: latest
+
+    - name: Clone the git repo into /var/tmp
+      git:
+        repo: https://github.com/webzfs/webzfs.git
+        dest: /var/tmp/webzfs
+
+    - name: Prepare the scripts
+      file:
+        path: "/var/tmp/webzfs/{{ item }}"
+        mode: 0755
+      loop:
+        - install_freebsd.sh
+        - install_linux.sh
+
+    - name: Stop the webzfs service
+      service:
+        name: webzfs
+        state: stopped
+
+    - name: Run installer script
+      shell: "yes | /var/tmp/webzfs/install_{{ ansible_os_family|lower }}.sh"
+
+    - name: Start/restart webzfs service
+      service:
+        name: webzfs
+        state: restarted
