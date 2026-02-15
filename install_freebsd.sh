@@ -71,6 +71,9 @@ find_python() {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 3256bda (update installer to use pre-compiled wheels to minimize dependencies)
 # Function to detect FreeBSD version and determine wheel directory
 detect_freebsd_version() {
     # Get FreeBSD version (e.g., "14.3-RELEASE" or "15.0-RELEASE")
@@ -163,23 +166,31 @@ detect_freebsd_version
 
 # Install required dependencies
 echo
+<<<<<<< HEAD
 =======
 # Install required dependencies
 >>>>>>> 4a04a64 (update freebsd installer)
+=======
+>>>>>>> 3256bda (update installer to use pre-compiled wheels to minimize dependencies)
 echo "Installing required dependencies..."
 echo "(This may take a few minutes on first run...)"
 echo
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 # Install packages via pkg
 =======
 # Install all required packages via pkg
 >>>>>>> 4a04a64 (update freebsd installer)
+=======
+# Install packages via pkg
+>>>>>>> 3256bda (update installer to use pre-compiled wheels to minimize dependencies)
 # python311 - Python runtime
 # py311-pip - pip for installing Python packages
 # node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
+<<<<<<< HEAD
 <<<<<<< HEAD
 # Note: rust, libsodium, gmake are NOT needed when using pre-compiled wheels
 pkg install -y python311 py311-pip node npm smartmontools sanoid
@@ -189,6 +200,10 @@ pkg install -y python311 py311-pip node npm smartmontools sanoid
 # gmake - Required for compiling some Python packages
 pkg install -y python311 py311-pip node npm smartmontools sanoid rust libsodium gmake
 >>>>>>> 4a04a64 (update freebsd installer)
+=======
+# Note: rust, libsodium, gmake are NOT needed when using pre-compiled wheels
+pkg install -y python311 py311-pip node npm smartmontools sanoid
+>>>>>>> 3256bda (update installer to use pre-compiled wheels to minimize dependencies)
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -260,6 +275,7 @@ fi
 =======
 fi
 
+<<<<<<< HEAD
 # Verify Rust
 if ! command_exists rustc; then
     printf "${RED}Error: Rust was not installed correctly${NC}\n"
@@ -288,6 +304,8 @@ printf "${GREEN}✓${NC} gmake found\n"
 GMAKE_PATH=$(command -v gmake)
 
 >>>>>>> 4a04a64 (update freebsd installer)
+=======
+>>>>>>> 3256bda (update installer to use pre-compiled wheels to minimize dependencies)
 echo
 
 # Create installation directory if it doesn't exist
@@ -305,8 +323,13 @@ echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 
 # Use tar instead of rsync (more portable on FreeBSD)
 (cd "$SOURCE_DIR" && tar cf - --exclude='.venv' --exclude='node_modules' --exclude='.git' \
+<<<<<<< HEAD
     --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
     (cd "$INSTALL_DIR" && tar xpf -)
+=======
+    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc') | \
+    (cd "$INSTALL_DIR" && tar xf -)
+>>>>>>> 3256bda (update installer to use pre-compiled wheels to minimize dependencies)
 
 printf "${GREEN}✓${NC} Application files copied\n"
 
