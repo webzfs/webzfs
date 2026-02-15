@@ -87,6 +87,9 @@ echo -e "${GREEN}✓${NC} Application files updated"
 echo
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> e7a89f8 (make sure we update the version string)
 # Update CAPTION in .env from .env.example
 ENV_FILE="${INSTALL_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -108,8 +111,11 @@ fi
 
 echo
 
+<<<<<<< HEAD
 =======
 >>>>>>> 5cd958d (add update scripts)
+=======
+>>>>>>> e7a89f8 (make sure we update the version string)
 # Create a temporary update script that runs as the webzfs user
 TEMP_UPDATE_SCRIPT="${INSTALL_DIR}/_update_deps.sh"
 echo "Updating Python and Node.js dependencies as $WEBZFS_USER..."

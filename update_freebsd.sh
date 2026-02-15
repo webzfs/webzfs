@@ -100,6 +100,9 @@ printf "${GREEN}✓${NC} Application files updated\n"
 echo
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> e7a89f8 (make sure we update the version string)
 # Update CAPTION in .env from .env.example
 ENV_FILE="${INSTALL_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -121,8 +124,11 @@ fi
 
 echo
 
+<<<<<<< HEAD
 =======
 >>>>>>> 5cd958d (add update scripts)
+=======
+>>>>>>> e7a89f8 (make sure we update the version string)
 # Update dependencies
 echo "Updating Python and Node.js dependencies..."
 echo "(This may take a few minutes...)"
