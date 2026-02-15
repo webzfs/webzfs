@@ -10,7 +10,7 @@
         - libsodium
         - git-lite
       Debian:
-        - pyhon3.11
+        - python3.11
         - nodejs
         - libsodium23
         - git
@@ -45,7 +45,7 @@
         state: stopped
 
     - name: Run installer script
-      shell: "yes | /var/tmp/webzfs/install_{{ ansible_os_family|lower }}.sh"
+      shell: "yes | /var/tmp/webzfs/install_{{ ansible_system|lower }}.sh"
 
     - name: Start/restart webzfs service
       service:
