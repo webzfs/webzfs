@@ -11,10 +11,14 @@
         - git-lite
       Debian:
 <<<<<<< HEAD
+<<<<<<< HEAD
         - python3.11
 =======
         - pyhon3.11
 >>>>>>> 315827f (Create webzfs-install.yml)
+=======
+        - python3.11
+>>>>>>> dace8fc (Update webzfs-install.yml)
         - nodejs
         - libsodium23
         - git
@@ -50,10 +54,14 @@
 
     - name: Run installer script
 <<<<<<< HEAD
+<<<<<<< HEAD
       shell: "yes | /var/tmp/webzfs/install_{{ ansible_system|lower }}.sh"
 =======
       shell: "yes | /var/tmp/webzfs/install_{{ ansible_os_family|lower }}.sh"
 >>>>>>> 315827f (Create webzfs-install.yml)
+=======
+      shell: "yes | /var/tmp/webzfs/install_{{ ansible_system|lower }}.sh"
+>>>>>>> dace8fc (Update webzfs-install.yml)
 
     - name: Start/restart webzfs service
       service:
