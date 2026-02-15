@@ -15,6 +15,7 @@ import views.zfs_observability
 import views.zfs_performance
 import views.utils_smart
 import views.utils_ssh
+import views.utils_services
 import views.fleet
 
 
@@ -39,6 +40,7 @@ router.include_router(views.utils_files.router, prefix="/utils/files")
 router.include_router(views.utils_smart.router, prefix="/utils/smart")
 router.include_router(views.utils_ssh.router, prefix="/utils/ssh")
 router.include_router(views.utils_logs.router, prefix="/utils/logs")
+router.include_router(views.utils_services.router, prefix="/utils/services")
 
 # Authentication and Dashboard
 router.include_router(views.auth.router, prefix="/login")

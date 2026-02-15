@@ -3,6 +3,9 @@
 # WebZFS Installation Script for FreeBSD
 # This script installs WebZFS to /opt/webzfs
 # On FreeBSD, the application runs as root due to PAM authentication requirements
+# 
+# Uses pre-compiled wheels from https://github.com/webzfs/webzfs-wheels
+# to avoid needing Rust/C compilation during installation.
 
 set -e
 
@@ -10,6 +13,13 @@ INSTALL_DIR="/opt/webzfs"
 VENV_DIR="${INSTALL_DIR}/.venv"
 ENV_FILE="${INSTALL_DIR}/.env"
 LOG_FILE="${INSTALL_DIR}/install_log.txt"
+WHEELS_DIR="${INSTALL_DIR}/.wheels"
+
+# GitHub raw URL base for pre-compiled wheels
+WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
+
+# Wheel packages to download (these require compilation without pre-built wheels)
+WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -60,21 +70,110 @@ find_python() {
     return 1
 }
 
+# Function to detect FreeBSD version and determine wheel directory
+detect_freebsd_version() {
+    # Get FreeBSD version (e.g., "14.3-RELEASE" or "15.0-RELEASE")
+    FREEBSD_VERSION=$(freebsd-version -u 2>/dev/null || uname -r)
+    MAJOR_VERSION=$(echo "$FREEBSD_VERSION" | cut -d. -f1)
+    MINOR_VERSION=$(echo "$FREEBSD_VERSION" | cut -d. -f2 | cut -d- -f1)
+    
+    echo "Detected FreeBSD version: $FREEBSD_VERSION (major: $MAJOR_VERSION, minor: $MINOR_VERSION)"
+    
+    # Map to wheel directory based on major version
+    case "$MAJOR_VERSION" in
+        14)
+            WHEEL_SUBDIR="freebsd14-3"
+            WHEEL_PLATFORM="freebsd_14_3_release_amd64"
+            ;;
+        15)
+            WHEEL_SUBDIR="freebsd15-0"
+            WHEEL_PLATFORM="freebsd_15_0_release_amd64"
+            ;;
+        *)
+            printf "${YELLOW}Warning: FreeBSD $MAJOR_VERSION is not directly supported.${NC}\n"
+            printf "${YELLOW}Attempting to use FreeBSD 14 wheels (may not work).${NC}\n"
+            WHEEL_SUBDIR="freebsd14-3"
+            WHEEL_PLATFORM="freebsd_14_3_release_amd64"
+            ;;
+    esac
+    
+    printf "${GREEN}✓${NC} Will use wheels from: $WHEEL_SUBDIR\n"
+}
+
+# Function to download pre-compiled wheels
+download_wheels() {
+    echo "Downloading pre-compiled wheels..."
+    mkdir -p "$WHEELS_DIR"
+    
+    WHEELS_URL="${WHEELS_REPO_BASE}/${WHEEL_SUBDIR}"
+    DOWNLOAD_FAILED=0
+    
+    for pkg_version in $WHEEL_PACKAGES; do
+        # Extract package name (replace - with _ for wheel filename)
+        pkg_name=$(echo "$pkg_version" | sed 's/-[0-9].*//')
+        version=$(echo "$pkg_version" | sed 's/.*-//')
+        wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
+        
+        # Determine ABI tag - cryptography uses cp37-abi3, others use cp311-cp311
+        if [ "$pkg_name" = "cryptography" ]; then
+            ABI_TAG="cp37-abi3"
+        else
+            ABI_TAG="cp311-cp311"
+        fi
+        
+        wheel_filename="${wheel_pkg_name}-${version}-${ABI_TAG}-${WHEEL_PLATFORM}.whl"
+        wheel_url="${WHEELS_URL}/${wheel_filename}"
+        wheel_path="${WHEELS_DIR}/${wheel_filename}"
+        
+        if [ -f "$wheel_path" ]; then
+            printf "  ${GREEN}✓${NC} ${pkg_name} wheel already exists\n"
+        else
+            printf "  Downloading ${pkg_name}..."
+            if fetch -q -o "$wheel_path" "$wheel_url" 2>/dev/null; then
+                printf " ${GREEN}✓${NC}\n"
+            else
+                printf " ${RED}FAILED${NC}\n"
+                printf "${YELLOW}Warning: Could not download wheel for ${pkg_name}${NC}\n"
+                printf "  URL: ${wheel_url}\n"
+                DOWNLOAD_FAILED=1
+            fi
+        fi
+    done
+    
+    if [ "$DOWNLOAD_FAILED" -eq 1 ]; then
+        echo
+        printf "${YELLOW}Some wheels failed to download.${NC}\n"
+        printf "The installer will attempt to compile these packages from source.\n"
+        printf "This may require additional build dependencies (rust, gmake, etc.)\n"
+        echo
+        printf "Do you want to continue anyway? (y/n): "
+        read -r REPLY
+        if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
+            echo "Installation aborted."
+            exit 1
+        fi
+    else
+        printf "${GREEN}✓${NC} All wheels downloaded successfully\n"
+    fi
+}
+
+# Detect FreeBSD version first
+detect_freebsd_version
+
 # Install required dependencies
+echo
 echo "Installing required dependencies..."
 echo "(This may take a few minutes on first run...)"
 echo
 
-# Install all required packages via pkg
+# Install packages via pkg
 # python311 - Python runtime
 # py311-pip - pip for installing Python packages
 # node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
-# rust - Required to compile pydantic-core
-# libsodium - Required to compile pynacl
-# gmake - Required for compiling some Python packages
-pkg install -y python311 py311-pip node npm smartmontools sanoid rust libsodium gmake
+# Note: rust, libsodium, gmake are NOT needed when using pre-compiled wheels
+pkg install -y python311 py311-pip node npm smartmontools sanoid
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -142,33 +241,6 @@ else
     printf "${GREEN}✓${NC} sanoid found\n"
 fi
 
-# Verify Rust
-if ! command_exists rustc; then
-    printf "${RED}Error: Rust was not installed correctly${NC}\n"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} Rust $(rustc --version | cut -d' ' -f2) found\n"
-
-# Verify libsodium
-if [ ! -f "/usr/local/include/sodium.h" ]; then
-    printf "${RED}Error: libsodium was not installed correctly${NC}\n"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} libsodium found\n"
-
-# Verify gmake
-if ! command_exists gmake; then
-    printf "${RED}Error: gmake was not installed correctly${NC}\n"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} gmake found\n"
-
-# Get the full path to gmake for use in the install script
-GMAKE_PATH=$(command -v gmake)
-
 echo
 
 # Create installation directory if it doesn't exist
@@ -177,12 +249,16 @@ if [ ! -d "$INSTALL_DIR" ]; then
     mkdir -p "$INSTALL_DIR"
 fi
 
+# Download pre-compiled wheels
+download_wheels
+
 # Copy application files to installation directory
+echo
 echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 
 # Use tar instead of rsync (more portable on FreeBSD)
 (cd "$SOURCE_DIR" && tar cf - --exclude='.venv' --exclude='node_modules' --exclude='.git' \
-    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
+    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc') | \
     (cd "$INSTALL_DIR" && tar xf -)
 
 printf "${GREEN}✓${NC} Application files copied\n"
@@ -222,14 +298,13 @@ echo
 
 # Install dependencies
 echo "Installing Python and Node.js dependencies..."
-echo "(This may take a few minutes...)"
+echo "(This should be quick with pre-compiled wheels...)"
 echo
 
 cd "$INSTALL_DIR"
 
-# Set environment for building
+# Set environment for building (in case any packages need compilation)
 export HOME="$INSTALL_DIR"
-export MAKE="$GMAKE_PATH"
 
 # Create virtual environment
 if [ -d ".venv" ]; then
@@ -242,8 +317,8 @@ fi
 echo "Installing/upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > install_log.txt 2>&1
 
-echo "Installing Python dependencies in virtual environment..."
-.venv/bin/pip install -r requirements.txt >> install_log.txt 2>&1
+echo "Installing Python dependencies (using pre-compiled wheels)..."
+.venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1
 
 echo "Installing Node.js dependencies..."
 npm install >> install_log.txt 2>&1
@@ -479,6 +554,9 @@ echo "========================================"
 echo
 echo "WebZFS has been installed to: $INSTALL_DIR"
 echo "Note: On FreeBSD, the service runs as root for PAM authentication"
+echo
+echo "Pre-compiled wheels used for: cryptography, markupsafe, psutil, pydantic-core"
+echo "Wheels cached in: $WHEELS_DIR"
 echo
 echo "To start the application manually:"
 echo "  $INSTALL_DIR/run.sh"

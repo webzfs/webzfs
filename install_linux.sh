@@ -286,6 +286,9 @@ webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
 # Sanoid/Syncoid (optional)
 webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid, /usr/bin/syncoid, /usr/local/sbin/sanoid, /usr/local/sbin/syncoid
 
+# Service management (systemctl for system services page)
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
+
 # Crontab editing
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/crontab
 
