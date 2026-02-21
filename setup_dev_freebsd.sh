@@ -188,6 +188,7 @@ else
     printf "${GREEN}✓${NC} Configuration file already exists\n"
 fi
 
+<<<<<<< HEAD
 # Create application data directory and initialize data files
 DATA_DIR="${SCRIPT_DIR}/.config/webzfs"
 echo "Creating data directories..."
@@ -219,6 +220,8 @@ fi
 
 printf "${GREEN}✓${NC} Data directories and files created\n"
 
+=======
+>>>>>>> 151350f (add dev scripts)
 echo
 echo "========================================"
 printf "${GREEN}Setup Complete!${NC}\n"
