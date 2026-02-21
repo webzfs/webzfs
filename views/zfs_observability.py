@@ -294,6 +294,15 @@ async def kernel_debug_log(
     filter: Optional[str] = None
 ):
     """Display ZFS kernel debug log"""
+    import platform
+    from services.utils import is_freebsd, is_netbsd
+    
+    # Determine the appropriate source description based on platform
+    if is_freebsd() or is_netbsd():
+        debug_source = "sysctl kstat.zfs.misc.dbgmsg"
+    else:
+        debug_source = "/proc/spl/kstat/zfs/dbgmsg"
+    
     try:
         log_lines = observability_service.get_kernel_debug_log(
             lines=lines,
@@ -307,6 +316,7 @@ async def kernel_debug_log(
                 "log_lines": log_lines,
                 "lines": lines,
                 "filter": filter,
+                "debug_source": debug_source,
                 "page_title": "ZFS Kernel Debug Log"
             }
         )
@@ -317,6 +327,7 @@ async def kernel_debug_log(
                 "request": request,
                 "log_lines": [f"Error: {str(e)}"],
                 "error": str(e),
+                "debug_source": debug_source,
                 "page_title": "ZFS Kernel Debug Log"
             }
         )
