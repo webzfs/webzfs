@@ -55,19 +55,19 @@ The installation script automatically:
 
 **FreeBSD:**
 ```bash
-# Install required packages
-sudo pkg install python311 py311-pip node npm smartmontools sanoid rust libsodium
-# rust and libsodium are only a build dependencies, pydantic-core has no pre-built wheel, so it must be compiled from source which requires these)
-
-# Install WebZFS
 git clone https://github.com/webzfs/webzfs.git
 cd webzfs
 chmod +x install_freebsd.sh
 sudo ./install_freebsd.sh
 ```
+
 The installation script automatically:
+- Detects FreeBSD version (14.x or 15.x)
+- Downloads pre-compiled wheels from GitHub (no Rust compilation needed)
+- Installs required packages via pkg
 - Installs the application to `/opt/webzfs`
 - Installs all dependencies and builds assets
+- Creates an rc.d service script
 
 
 ### Running
