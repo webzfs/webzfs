@@ -44,6 +44,20 @@ The installation scripts will:
 8. Create `.env` configuration file
 9. Configure sudo permissions (Linux Only)
 
+**FreeBSD Pre-compiled Wheels:**
+
+The FreeBSD installer automatically downloads pre-compiled Python wheels from [webzfs-wheels](https://github.com/webzfs/webzfs-wheels) for packages that require native compilation (pydantic-core, cryptography, psutil, markupsafe). This eliminates the need for Rust, gmake, and other build tools during installation.
+
+The installer:
+- Detects FreeBSD version (14.x or 15.x)
+- Downloads appropriate wheels to `/opt/webzfs/.wheels/`
+- Uses `pip install --find-links` to prefer local wheels
+- Falls back to source compilation if wheel download fails (requires build tools)
+
+Supported FreeBSD versions:
+- FreeBSD 14.x (uses `freebsd14-3` wheels)
+- FreeBSD 15.x (uses `freebsd15-0` wheels)
+
 ### Local Development Setup
 
 If you want to develop directly from your git clone without installing to `/opt/webzfs`:
