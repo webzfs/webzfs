@@ -9,24 +9,24 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
         </svg>
         <a href="/zfs/datasets" class="hover:text-text-primary transition-colors">Datasets</a>
-        {% if parent %}
+        {% if pool %}
         <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
         </svg>
-        <a href="/zfs/datasets/{{ parent }}" class="hover:text-text-primary transition-colors font-mono text-xs">{{ parent }}</a>
+        <span class="font-mono text-xs text-text-primary">{{ pool }}</span>
         {% endif %}
         <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
         </svg>
-        <span class="text-text-primary font-medium">{% if parent %}Create Child{% else %}Create{% endif %}</span>
+        <span class="text-text-primary font-medium">Create</span>
     </nav>
 
     <!-- Page Header -->
     <div>
-        <h1 class="text-3xl font-bold text-text-primary">{% if parent %}Create Child Dataset{% else %}Create ZFS Dataset{% endif %}</h1>
+        <h1 class="text-3xl font-bold text-text-primary">Create ZFS Dataset</h1>
         <p class="text-text-secondary mt-1">
-            {% if parent %}
-            Create a new child dataset under <span class="font-mono text-text-primary">{{ parent }}</span>
+            {% if pool %}
+            Create a new dataset in pool <span class="font-mono text-text-primary">{{ pool }}</span>
             {% else %}
             Create a new filesystem or volume dataset
             {% endif %}
@@ -46,35 +46,115 @@
             <form method="post" action="/zfs/datasets/create" class="space-y-6" x-data="{ 
                 datasetType: '{{ dataset_type if dataset_type else 'filesystem' }}', 
                 encryption: '{{ encryption if encryption else '' }}',
-                datasetName: '{{ dataset_name if dataset_name else (parent + '/' if parent else '') }}',
-                initialValue: '{{ parent + '/' if parent else '' }}',
+                parentDataset: '{{ parent if parent else (pool if pool else '') }}',
+                datasetSuffix: '',
+                get fullDatasetName() {
+                    if (!this.parentDataset || !this.datasetSuffix) return '';
+                    return this.parentDataset + '/' + this.datasetSuffix;
+                },
                 get isNameIncomplete() {
-                    // Name is incomplete if it's empty, equals initial value, or ends with /
-                    return !this.datasetName || this.datasetName === this.initialValue || this.datasetName.endsWith('/');
+                    return !this.parentDataset || !this.datasetSuffix || this.datasetSuffix.includes('/');
                 }
             }">
-                <!-- Dataset Name -->
+                <!-- Hidden field for the full dataset name (submitted to server) -->
+                <input type="hidden" name="dataset_name" :value="fullDatasetName">
+                
+                <!-- Dataset Name - Two Part Input -->
                 <div>
-                    <label for="dataset_name" class="form-label">
+                    <label class="form-label">
                         Dataset Name <span class="text-danger-400">*</span>
                     </label>
+                    
+                    {% if pool and pool_datasets %}
+                    <!-- Pool specified with datasets available - show dropdown -->
+                    <div class="flex items-center gap-2">
+                        <div class="flex-1">
+                            <select 
+                                x-model="parentDataset"
+                                class="form-select"
+                            >
+                                <option value="">Select parent dataset...</option>
+                                {% for ds in pool_datasets %}
+                                <option value="{{ ds.name }}" {% if ds.name == pool or ds.name == parent %}selected{% endif %}>{{ ds.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <span class="text-text-tertiary text-lg font-mono">/</span>
+                        <div class="flex-1">
+                            <input 
+                                type="text" 
+                                x-model="datasetSuffix"
+                                :class="datasetSuffix && datasetSuffix.includes('/') ? 'form-input border-danger-500 ring-1 ring-danger-500' : 'form-input'"
+                                placeholder="new_dataset_name"
+                            >
+                        </div>
+                    </div>
+                    <p class="text-sm mt-2 text-text-tertiary">
+                        <span x-show="!isNameIncomplete" class="text-text-secondary">
+                            Full path: <span class="font-mono text-text-primary" x-text="fullDatasetName"></span>
+                        </span>
+                        <span x-show="isNameIncomplete && !datasetSuffix" class="text-text-tertiary">
+                            Select a parent dataset and enter a name for the new dataset
+                        </span>
+                        <span x-show="datasetSuffix && datasetSuffix.includes('/')" class="text-danger-400">
+                            Dataset name cannot contain slashes - use the dropdown to select parent
+                        </span>
+                    </p>
+                    {% elif pool %}
+                    <!-- Pool specified but no datasets yet - show pool as prefix with text input -->
+                    <div class="flex items-center gap-2">
+                        <div class="bg-bg-elevated-2 px-3 py-2 rounded-lg border border-border-subtle">
+                            <span class="font-mono text-text-primary">{{ pool }}</span>
+                        </div>
+                        <span class="text-text-tertiary text-lg font-mono">/</span>
+                        <div class="flex-1">
+                            <input 
+                                type="text" 
+                                x-model="datasetSuffix"
+                                x-init="parentDataset = '{{ pool }}'"
+                                :class="datasetSuffix && datasetSuffix.includes('/') ? 'form-input border-danger-500 ring-1 ring-danger-500' : 'form-input'"
+                                placeholder="new_dataset_name"
+                            >
+                        </div>
+                    </div>
+                    <p class="text-sm mt-2 text-text-tertiary">
+                        <span x-show="!isNameIncomplete" class="text-text-secondary">
+                            Full path: <span class="font-mono text-text-primary" x-text="fullDatasetName"></span>
+                        </span>
+                        <span x-show="isNameIncomplete && !datasetSuffix" class="text-text-tertiary">
+                            Enter a name for the new dataset in pool <span class="font-mono">{{ pool }}</span>
+                        </span>
+                        <span x-show="datasetSuffix && datasetSuffix.includes('/')" class="text-danger-400">
+                            Dataset name cannot contain slashes
+                        </span>
+                    </p>
+                    {% else %}
+                    <!-- No pool specified - show full text input (legacy behavior) -->
                     <input 
                         type="text" 
-                        id="dataset_name" 
-                        name="dataset_name" 
-                        x-model="datasetName"
-                        :class="isNameIncomplete ? 'form-input border-danger-500 ring-1 ring-danger-500 focus:border-danger-500 focus:ring-danger-500' : 'form-input'"
+                        x-model="parentDataset"
+                        x-init="datasetSuffix = 'placeholder'"
+                        class="form-input"
                         placeholder="e.g., tank/mydata or tank/storage/documents"
-                        required
                     >
-                    <p class="text-sm mt-1" :class="isNameIncomplete ? 'text-danger-400' : 'text-text-tertiary'">
-                        {% if parent %}
-                        <span x-show="isNameIncomplete">Please add a name after <span class="font-mono">{{ parent }}/</span></span>
-                        <span x-show="!isNameIncomplete">Full path including pool name (e.g., poolname/dataset/subdataset)</span>
-                        {% else %}
+                    <!-- Override hidden field for legacy mode -->
+                    <input type="hidden" name="dataset_name" :value="parentDataset" x-show="false">
+                    <p class="text-text-tertiary text-sm mt-1">
                         Full path including pool name (e.g., poolname/dataset/subdataset)
-                        {% endif %}
                     </p>
+                    <script>
+                        // For legacy mode, we need to submit parentDataset directly
+                        document.addEventListener('alpine:init', () => {
+                            Alpine.data('legacyMode', () => ({
+                                init() {
+                                    this.$watch('parentDataset', value => {
+                                        this.datasetSuffix = value ? 'set' : '';
+                                    });
+                                }
+                            }));
+                        });
+                    </script>
+                    {% endif %}
                 </div>
 
                 <!-- Dataset Type -->
@@ -302,7 +382,7 @@
 
                 <!-- Action Buttons -->
                 <div class="flex justify-end gap-3 pt-4">
-                    <a href="{% if parent %}/zfs/datasets/{{ parent }}{% else %}/zfs/datasets{% endif %}" class="btn-secondary">
+                    <a href="/zfs/datasets" class="btn-secondary">
                         Cancel
                     </a>
                     <button 
@@ -319,7 +399,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                             </svg>
                         </span>
-                        <span>{% if parent %}Create Child Dataset{% else %}Create Dataset{% endif %}</span>
+                        <span>Create Dataset</span>
                     </button>
                 </div>
             </form>

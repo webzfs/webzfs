@@ -84,14 +84,38 @@ async def datasets_index(
 @router.get("/create/form", response_class=HTMLResponse)
 async def create_dataset_form(
     request: Request,
+    pool: Optional[str] = None,
     parent: Optional[str] = None
 ):
     """Display dataset creation form"""
+    pool_datasets = []
+    
+    # If a pool is specified, get all datasets for that pool (for parent dropdown)
+    if pool:
+        try:
+            # Get ALL datasets then filter by pool prefix
+            # This is needed because zfs list <pool> doesn't return children recursively
+            all_datasets = dataset_service.list_datasets()
+            # Filter to filesystems in this pool (volumes can't have child datasets)
+            pool_datasets = [
+                ds for ds in all_datasets 
+                if ds['type'] == 'filesystem' and (
+                    ds['name'] == pool or ds['name'].startswith(pool + '/')
+                )
+            ]
+            # Sort by name for better UX
+            pool_datasets.sort(key=lambda x: x['name'])
+        except Exception:
+            # If we can't get datasets, proceed with empty list
+            pool_datasets = []
+    
     return templates.TemplateResponse(
         "zfs/datasets/create.jinja",
         {
             "request": request,
+            "pool": pool,
             "parent": parent,
+            "pool_datasets": pool_datasets,
             "page_title": "Create Dataset"
         }
     )
