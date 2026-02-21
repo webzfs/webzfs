@@ -114,6 +114,22 @@
                         </button>
                     </form>
                     
+                    {% if checkpoint_supported %}
+                    <!-- Checkpoint - only show create button if no checkpoint exists -->
+                    {% if not checkpoint_info or not checkpoint_info.exists %}
+                    <form method="post" action="/zfs/pools/{{ pool.name }}/checkpoint" id="form-checkpoint-create">
+                        <button type="button"
+                                class="btn-warning w-full inline-flex items-center justify-center gap-2"
+                                onclick="showConfirm('confirm-checkpoint-create')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                            </svg>
+                            Create Checkpoint
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% endif %}
+                    
                     <!-- Export -->
                     <a href="/zfs/pools/{{ pool.name }}/export/confirm" 
                        class="btn-danger w-full inline-flex items-center justify-center gap-2">
@@ -136,6 +152,79 @@
             </div>
         </div>
     </div>
+
+    <!-- Checkpoint Card - Only shown if a checkpoint exists -->
+    {% if checkpoint_supported and checkpoint_info and checkpoint_info.exists %}
+    <div class="card">
+        <div class="card-body">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="p-2 bg-warning-900/50 rounded-lg">
+                    <svg class="w-6 h-6 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-semibold text-text-primary">Pool Checkpoint</h2>
+                    <p class="text-text-secondary text-sm">A checkpoint is currently active for this pool</p>
+                </div>
+            </div>
+            
+            <div class="space-y-4">
+                <!-- Checkpoint Details -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="card-nested">
+                        <div class="text-text-tertiary text-xs uppercase mb-1">Created</div>
+                        <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.creation_time or 'Unknown' }}</div>
+                    </div>
+                    {% if checkpoint_info.space_used %}
+                    <div class="card-nested">
+                        <div class="text-text-tertiary text-xs uppercase mb-1">Space Consumed</div>
+                        <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.space_used }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if checkpoint_info.status_line %}
+                <div class="card-nested">
+                    <div class="text-text-tertiary text-xs uppercase mb-1">Status</div>
+                    <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.status_line }}</div>
+                </div>
+                {% endif %}
+                
+                <!-- Rollback Instructions -->
+                <div class="card-nested bg-warning-900/20 border-warning-900">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div>
+                            <strong class="text-warning-400 block mb-2">Rollback to Checkpoint</strong>
+                            <p class="text-text-secondary text-sm mb-3">
+                                To roll back this pool to the checkpoint state, you must run the following commands at the CLI. 
+                                <strong class="text-danger-400">This is a destructive operation</strong> - all changes made to the pool 
+                                since the checkpoint was created will be permanently lost.
+                            </p>
+                            <pre class="bg-bg-elevated-2 text-text-primary p-3 rounded-lg text-sm font-mono border border-border-subtle overflow-x-auto">zpool export {{ pool.name }}
+zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Discard Checkpoint Button -->
+                <form method="post" action="/zfs/pools/{{ pool.name }}/checkpoint/discard" id="form-checkpoint-discard">
+                    <button type="button"
+                            class="btn-danger w-full inline-flex items-center justify-center gap-2"
+                            onclick="showConfirm('confirm-checkpoint-discard')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        Discard Checkpoint
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Back Button -->
     <div>
@@ -164,6 +253,24 @@
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-stop").submit()' %}
 {% include 'partials/confirm.jinja' %}
+
+{% if checkpoint_supported %}
+{% set id = 'confirm-checkpoint-create' %}
+{% set title = 'Create Pool Checkpoint' %}
+{% set message = 'Create a checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br>A checkpoint captures the entire state of the pool at the current moment. You can later rewind the pool to this checkpoint state if needed.<br><br><strong>Note:</strong> Only one checkpoint can exist at a time. Creating a checkpoint will consume additional space as data changes.' %}
+{% set confirm_text = 'Create Checkpoint' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-checkpoint-create").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-checkpoint-discard' %}
+{% set title = 'Discard Pool Checkpoint' %}
+{% set message = 'Discard the checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br><strong class="text-danger-400">Warning:</strong> This action cannot be undone. Once the checkpoint is discarded, you will no longer be able to rewind the pool to the checkpoint state. The space consumed by the checkpoint will be released.' %}
+{% set confirm_text = 'Discard Checkpoint' %}
+{% set confirm_class = 'danger' %}
+{% set confirm_action = 'document.getElementById("form-checkpoint-discard").submit()' %}
+{% include 'partials/confirm.jinja' %}
+{% endif %}
 
 <script>
 // Ensure showConfirm function is available

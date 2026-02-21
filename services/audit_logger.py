@@ -289,6 +289,28 @@ class AuditLogger:
             error=error
         )
     
+    def log_pool_checkpoint_create(self, user: str, pool_name: str,
+                                   success: bool = True, error: Optional[str] = None) -> None:
+        """Log pool checkpoint creation"""
+        self.log_zfs_operation(
+            user=user,
+            operation="create_checkpoint",
+            pool=pool_name,
+            success=success,
+            error=error
+        )
+    
+    def log_pool_checkpoint_discard(self, user: str, pool_name: str,
+                                    success: bool = True, error: Optional[str] = None) -> None:
+        """Log pool checkpoint discard"""
+        self.log_zfs_operation(
+            user=user,
+            operation="discard_checkpoint",
+            pool=pool_name,
+            success=success,
+            error=error
+        )
+    
     # Dataset Operations
     def log_dataset_create(self, user: str, dataset_name: str,
                            success: bool = True, error: Optional[str] = None) -> None:

@@ -48,11 +48,23 @@ async def pool_detail(request: Request, pool_name: str):
     try:
         pool_status = pool_service.get_pool_status(pool_name)
         
+        # Get checkpoint info if supported
+        checkpoint_info = None
+        checkpoint_supported = pool_service.checkpoint_supported()
+        if checkpoint_supported:
+            try:
+                checkpoint_info = pool_service.get_checkpoint_info(pool_name)
+            except Exception:
+                # Checkpoint feature may not be available on this system
+                checkpoint_info = None
+        
         return templates.TemplateResponse(
             "zfs/pools/detail.jinja",
             {
                 "request": request,
                 "pool": pool_status,
+                "checkpoint_info": checkpoint_info,
+                "checkpoint_supported": checkpoint_supported,
                 "page_title": f"Pool: {pool_name}"
             }
         )
@@ -529,4 +541,52 @@ async def download_pool_properties(pool_name: str):
         return PlainTextResponse(
             content=f"Error generating properties file: {str(e)}",
             status_code=500
+        )
+
+
+@router.post("/{pool_name}/checkpoint", response_class=HTMLResponse)
+async def create_checkpoint(
+    request: Request,
+    pool_name: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a checkpoint for the pool"""
+    try:
+        pool_service.create_checkpoint(pool_name)
+        audit_logger.log_pool_checkpoint_create(user=current_user, pool_name=pool_name)
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?message=Checkpoint created successfully",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_checkpoint_create(
+            user=current_user, pool_name=pool_name, success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/checkpoint/discard", response_class=HTMLResponse)
+async def discard_checkpoint(
+    request: Request,
+    pool_name: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Discard the checkpoint for the pool"""
+    try:
+        pool_service.discard_checkpoint(pool_name)
+        audit_logger.log_pool_checkpoint_discard(user=current_user, pool_name=pool_name)
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?message=Checkpoint discarded successfully",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_checkpoint_discard(
+            user=current_user, pool_name=pool_name, success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?error={str(e)}",
+            status_code=303
         )

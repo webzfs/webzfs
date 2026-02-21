@@ -7,7 +7,7 @@ import subprocess
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from config.settings import Settings
-from services.utils import run_zfs_command
+from services.utils import run_zfs_command, is_netbsd
 
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
@@ -413,3 +413,151 @@ class ZFSPoolService:
             raise Exception(f"ZPool import scan timed out after {timeout} seconds. Scanning for importable pools can be slow with many devices.")
         except Exception as e:
             raise Exception(f"Failed to list importable pools: {str(e)}")
+    
+    def checkpoint_supported(self) -> bool:
+        """
+        Check if pool checkpoints are supported on this platform.
+        
+        NetBSD does not support pool checkpoints.
+        
+        Returns:
+            True if checkpoints are supported, False otherwise.
+        """
+        return not is_netbsd()
+    
+    def get_checkpoint_info(self, pool_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get checkpoint information for a pool.
+        
+        Args:
+            pool_name: Name of the pool
+            
+        Returns:
+            Dictionary with checkpoint info if a checkpoint exists, None otherwise.
+            Contains keys: 'exists', 'creation_time', 'space_used'
+        """
+        if not self.checkpoint_supported():
+            return None
+        
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('status', self.timeouts['default'])
+        
+        try:
+            # Get checkpoint-related properties
+            result = run_zfs_command(
+                ['zpool', 'get', '-H', '-p', 'checkpoint', pool_name],
+                timeout=timeout,
+                check=False
+            )
+            
+            # Parse the checkpoint property
+            # Format: pool_name\tcheckpoint\t-\t- (no checkpoint)
+            # Format: pool_name\tcheckpoint\t<timestamp>\t- (has checkpoint)
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                parts = line.split('\t')
+                if len(parts) >= 3 and parts[1] == 'checkpoint':
+                    value = parts[2]
+                    if value == '-' or value == '':
+                        return {'exists': False}
+                    
+                    # Checkpoint exists, get more details from zpool status
+                    status_result = run_zfs_command(
+                        ['zpool', 'status', pool_name],
+                        timeout=timeout
+                    )
+                    
+                    # Parse checkpoint info from status output
+                    checkpoint_info = {
+                        'exists': True,
+                        'creation_time': value,
+                        'space_used': None
+                    }
+                    
+                    # Look for checkpoint space info in status output
+                    # The line looks like: "checkpoint: created Thu, Feb 20 2025 10:30:45, consumes 1.25G"
+                    for status_line in status_result.stdout.split('\n'):
+                        if 'checkpoint:' in status_line.lower():
+                            checkpoint_info['status_line'] = status_line.strip()
+                            # Try to extract space usage
+                            if 'consumes' in status_line.lower():
+                                space_part = status_line.split('consumes')[-1].strip()
+                                checkpoint_info['space_used'] = space_part.split()[0] if space_part else None
+                            break
+                    
+                    return checkpoint_info
+            
+            return {'exists': False}
+            
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool checkpoint query timed out after {timeout} seconds.")
+        except subprocess.CalledProcessError as e:
+            # If the property doesn't exist, checkpoint feature may not be available
+            if 'invalid property' in str(e.stderr).lower():
+                return None
+            raise Exception(f"Failed to get checkpoint info: {e.stderr}")
+    
+    def create_checkpoint(self, pool_name: str) -> None:
+        """
+        Create a checkpoint for the specified pool.
+        
+        A pool checkpoint captures the entire state of the pool at the time it is 
+        created. It can be used to rewind the pool to this state later.
+        
+        Args:
+            pool_name: Name of the pool to checkpoint
+            
+        Raises:
+            Exception: If checkpoint creation fails or is not supported
+        """
+        if not self.checkpoint_supported():
+            raise Exception("Pool checkpoints are not supported on NetBSD.")
+        
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            run_zfs_command(
+                ['zpool', 'checkpoint', pool_name],
+                timeout=timeout
+            )
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool checkpoint creation timed out after {timeout} seconds.")
+        except subprocess.CalledProcessError as e:
+            error_msg = str(e.stderr) if e.stderr else str(e)
+            if 'already has a checkpoint' in error_msg.lower():
+                raise Exception(f"Pool '{pool_name}' already has a checkpoint. Remove the existing checkpoint first.")
+            raise Exception(f"Failed to create checkpoint: {error_msg}")
+    
+    def discard_checkpoint(self, pool_name: str) -> None:
+        """
+        Discard (remove) the checkpoint for the specified pool.
+        
+        This releases the space held by the checkpoint. The checkpoint cannot be 
+        recovered after it is discarded.
+        
+        Args:
+            pool_name: Name of the pool
+            
+        Raises:
+            Exception: If checkpoint removal fails or is not supported
+        """
+        if not self.checkpoint_supported():
+            raise Exception("Pool checkpoints are not supported on NetBSD.")
+        
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            run_zfs_command(
+                ['zpool', 'checkpoint', '-d', pool_name],
+                timeout=timeout
+            )
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool checkpoint discard timed out after {timeout} seconds.")
+        except subprocess.CalledProcessError as e:
+            error_msg = str(e.stderr) if e.stderr else str(e)
+            if 'does not have a checkpoint' in error_msg.lower():
+                raise Exception(f"Pool '{pool_name}' does not have a checkpoint to discard.")
+            raise Exception(f"Failed to discard checkpoint: {error_msg}")
