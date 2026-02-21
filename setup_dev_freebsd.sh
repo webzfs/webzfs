@@ -188,6 +188,37 @@ else
     printf "${GREEN}✓${NC} Configuration file already exists\n"
 fi
 
+# Create application data directory and initialize data files
+DATA_DIR="${SCRIPT_DIR}/.config/webzfs"
+echo "Creating data directories..."
+mkdir -p "${DATA_DIR}/progress"
+mkdir -p "${DATA_DIR}/logs"
+
+# Pre-create JSON data files to avoid race conditions during worker startup
+# Storage service files
+if [ ! -f "${DATA_DIR}/replication_history.json" ]; then
+    echo '{"executions": [], "next_id": 1}' > "${DATA_DIR}/replication_history.json"
+fi
+if [ ! -f "${DATA_DIR}/notification_log.json" ]; then
+    echo '{"notifications": []}' > "${DATA_DIR}/notification_log.json"
+fi
+if [ ! -f "${DATA_DIR}/syncoid_jobs.json" ]; then
+    echo '{"jobs": [], "next_id": 1}' > "${DATA_DIR}/syncoid_jobs.json"
+fi
+if [ ! -f "${DATA_DIR}/scrub_schedules.json" ]; then
+    echo '{"schedules": []}' > "${DATA_DIR}/scrub_schedules.json"
+fi
+
+# SMART monitoring service files
+if [ ! -f "${DATA_DIR}/smart_test_history.json" ]; then
+    echo '{"history": []}' > "${DATA_DIR}/smart_test_history.json"
+fi
+if [ ! -f "${DATA_DIR}/scheduled_tests.json" ]; then
+    echo '{}' > "${DATA_DIR}/scheduled_tests.json"
+fi
+
+printf "${GREEN}✓${NC} Data directories and files created\n"
+
 echo
 echo "========================================"
 printf "${GREEN}Setup Complete!${NC}\n"
