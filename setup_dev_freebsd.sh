@@ -189,6 +189,9 @@ else
 fi
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> c6c1ce7 (fix bug)
 # Create application data directory and initialize data files
 DATA_DIR="${SCRIPT_DIR}/.config/webzfs"
 echo "Creating data directories..."
@@ -220,8 +223,11 @@ fi
 
 printf "${GREEN}✓${NC} Data directories and files created\n"
 
+<<<<<<< HEAD
 =======
 >>>>>>> 151350f (add dev scripts)
+=======
+>>>>>>> c6c1ce7 (fix bug)
 echo
 echo "========================================"
 printf "${GREEN}Setup Complete!${NC}\n"
