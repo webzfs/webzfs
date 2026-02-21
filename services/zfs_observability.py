@@ -197,15 +197,54 @@ class ZFSObservabilityService:
         Returns:
             List of log lines
         """
-        try:
-            # Try to read from /proc/spl/kstat/zfs/dbgmsg
-            dbgmsg_path = Path('/proc/spl/kstat/zfs/dbgmsg')
+        # FreeBSD/NetBSD use sysctl for debug messages
+        if is_freebsd() or is_netbsd():
+            return self._get_kernel_debug_log_sysctl(lines, filter_pattern)
+        else:
+            return self._get_kernel_debug_log_linux(lines, filter_pattern)
+    
+    def _get_kernel_debug_log_linux(
+        self,
+        lines: int = 1000,
+        filter_pattern: Optional[str] = None
+    ) -> List[str]:
+        """
+        Get ZFS kernel debug messages from Linux /proc filesystem
+        
+        Args:
+            lines: Maximum number of lines to return
+            filter_pattern: Optional regex pattern to filter messages
             
-            if not dbgmsg_path.exists():
+        Returns:
+            List of log lines
+        """
+        try:
+            dbgmsg_path = '/proc/spl/kstat/zfs/dbgmsg'
+            
+            # Check if file exists first
+            if not Path(dbgmsg_path).exists():
                 return ["Debug log not available (missing /proc/spl/kstat/zfs/dbgmsg)"]
             
-            with open(dbgmsg_path, 'r') as f:
-                log_lines = f.readlines()
+            # Use sudo cat to read the privileged file
+            result = subprocess.run(
+                ['sudo', 'cat', dbgmsg_path],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                # If sudo fails, try direct read as fallback (might work if already root)
+                try:
+                    with open(dbgmsg_path, 'r') as f:
+                        log_lines = f.readlines()
+                except PermissionError:
+                    return [f"Permission denied reading {dbgmsg_path}",
+                            "",
+                            "To fix this on Linux, add to sudoers:",
+                            "  webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat /proc/spl/kstat/zfs/dbgmsg"]
+            else:
+                log_lines = result.stdout.split('\n')
             
             # Filter if pattern provided
             if filter_pattern:
@@ -213,10 +252,66 @@ class ZFSObservabilityService:
                 log_lines = [line for line in log_lines if pattern.search(line)]
             
             # Return last N lines
-            return [line.strip() for line in log_lines[-lines:]]
+            return [line.strip() for line in log_lines[-lines:] if line.strip()]
             
         except Exception as e:
             return [f"Error reading debug log: {str(e)}"]
+    
+    def _get_kernel_debug_log_sysctl(
+        self,
+        lines: int = 1000,
+        filter_pattern: Optional[str] = None
+    ) -> List[str]:
+        """
+        Get ZFS kernel debug messages from sysctl (FreeBSD/NetBSD)
+        
+        Args:
+            lines: Maximum number of lines to return
+            filter_pattern: Optional regex pattern to filter messages
+            
+        Returns:
+            List of log lines
+        """
+        try:
+            # FreeBSD/NetBSD use sysctl for ZFS debug messages
+            # Try kstat.zfs.misc.dbgmsg first (more common)
+            result = subprocess.run(
+                ['sysctl', '-n', 'kstat.zfs.misc.dbgmsg'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0 or not result.stdout.strip():
+                # Try alternative location vfs.zfs.dbgmsg
+                result = subprocess.run(
+                    ['sysctl', '-n', 'vfs.zfs.dbgmsg'],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+            
+            if result.returncode != 0 or not result.stdout.strip():
+                # Debug messages may not be enabled
+                return ["Debug log not available (sysctl kstat.zfs.misc.dbgmsg not accessible)",
+                        "",
+                        "To enable ZFS debug messages on FreeBSD, you may need to:",
+                        "  1. Set: sysctl vfs.zfs.dbgmsg_enable=1",
+                        "  2. Or check if ZFS debug options are compiled in"]
+            
+            # Parse the output - each line is a debug message
+            log_lines = result.stdout.strip().split('\n')
+            
+            # Filter if pattern provided
+            if filter_pattern:
+                pattern = re.compile(filter_pattern, re.IGNORECASE)
+                log_lines = [line for line in log_lines if pattern.search(line)]
+            
+            # Return last N lines
+            return [line.strip() for line in log_lines[-lines:] if line.strip()]
+            
+        except Exception as e:
+            return [f"Error reading debug log via sysctl: {str(e)}"]
     
     def get_syslog_zfs(
         self,
