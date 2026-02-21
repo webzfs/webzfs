@@ -1,3 +1,4 @@
+import os
 import platform
 import subprocess
 from typing import Optional, List, Tuple
@@ -45,9 +46,13 @@ def needs_sudo_for_zfs() -> bool:
     On BSD systems (FreeBSD, NetBSD), ZFS permissions work differently
     and sudo is typically not needed when proper permissions are configured.
     
+    If already running as root (uid 0), sudo is not needed.
+    
     Returns:
         True if sudo should be prepended to ZFS commands, False otherwise.
     """
+    if os.getuid() == 0:
+        return False
     return is_linux()
 
 
@@ -64,9 +69,13 @@ def needs_sudo_for_privileged() -> bool:
     On BSD systems, these commands typically work without sudo when
     proper permissions are configured via /etc/devfs.conf or similar.
     
+    If already running as root (uid 0), sudo is not needed.
+    
     Returns:
         True if sudo should be prepended to privileged commands, False otherwise.
     """
+    if os.getuid() == 0:
+        return False
     return is_linux()
 
 
