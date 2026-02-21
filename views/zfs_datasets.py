@@ -109,8 +109,11 @@ async def create_dataset_form(
         except Exception:
             # If we can't get datasets, proceed with empty list
             pool_datasets = []
+<<<<<<< HEAD
     # NetBSD ZFS does not support encryption
     supports_encryption = not is_netbsd()
+=======
+>>>>>>> 5d1a569 (move add dataset button and update dataset creation form)
     
     return templates.TemplateResponse(
         "zfs/datasets/create.jinja",
@@ -119,7 +122,10 @@ async def create_dataset_form(
             "pool": pool,
             "parent": parent,
             "pool_datasets": pool_datasets,
+<<<<<<< HEAD
             "supports_encryption": supports_encryption,
+=======
+>>>>>>> 5d1a569 (move add dataset button and update dataset creation form)
             "page_title": "Create Dataset"
         }
     )
