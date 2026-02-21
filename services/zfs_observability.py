@@ -219,14 +219,32 @@ class ZFSObservabilityService:
             List of log lines
         """
         try:
-            # Try to read from /proc/spl/kstat/zfs/dbgmsg
-            dbgmsg_path = Path('/proc/spl/kstat/zfs/dbgmsg')
+            dbgmsg_path = '/proc/spl/kstat/zfs/dbgmsg'
             
-            if not dbgmsg_path.exists():
+            # Check if file exists first
+            if not Path(dbgmsg_path).exists():
                 return ["Debug log not available (missing /proc/spl/kstat/zfs/dbgmsg)"]
             
-            with open(dbgmsg_path, 'r') as f:
-                log_lines = f.readlines()
+            # Use sudo cat to read the privileged file
+            result = subprocess.run(
+                ['sudo', 'cat', dbgmsg_path],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                # If sudo fails, try direct read as fallback (might work if already root)
+                try:
+                    with open(dbgmsg_path, 'r') as f:
+                        log_lines = f.readlines()
+                except PermissionError:
+                    return [f"Permission denied reading {dbgmsg_path}",
+                            "",
+                            "To fix this on Linux, add to sudoers:",
+                            "  webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat /proc/spl/kstat/zfs/dbgmsg"]
+            else:
+                log_lines = result.stdout.split('\n')
             
             # Filter if pattern provided
             if filter_pattern:
@@ -234,7 +252,7 @@ class ZFSObservabilityService:
                 log_lines = [line for line in log_lines if pattern.search(line)]
             
             # Return last N lines
-            return [line.strip() for line in log_lines[-lines:]]
+            return [line.strip() for line in log_lines[-lines:] if line.strip()]
             
         except Exception as e:
             return [f"Error reading debug log: {str(e)}"]
