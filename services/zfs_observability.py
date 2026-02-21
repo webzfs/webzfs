@@ -221,6 +221,16 @@ class ZFSObservabilityService:
         Args:
             lines: Maximum number of lines to return
             filter_pattern: Optional regex pattern to filter messages
+<<<<<<< HEAD
+=======
+            
+        Returns:
+            List of log lines
+        """
+        try:
+            # Try to read from /proc/spl/kstat/zfs/dbgmsg
+            dbgmsg_path = Path('/proc/spl/kstat/zfs/dbgmsg')
+>>>>>>> 434f239 (fix debug log on FreeBSD)
             
         Returns:
             List of log lines
