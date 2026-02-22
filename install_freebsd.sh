@@ -258,8 +258,8 @@ echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 
 # Use tar instead of rsync (more portable on FreeBSD)
 (cd "$SOURCE_DIR" && tar cf - --exclude='.venv' --exclude='node_modules' --exclude='.git' \
-    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc') | \
-    (cd "$INSTALL_DIR" && tar xf -)
+    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
+    (cd "$INSTALL_DIR" && tar xpf -)
 
 printf "${GREEN}✓${NC} Application files copied\n"
 
