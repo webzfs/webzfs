@@ -324,12 +324,17 @@ echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 # Use tar instead of rsync (more portable on FreeBSD)
 (cd "$SOURCE_DIR" && tar cf - --exclude='.venv' --exclude='node_modules' --exclude='.git' \
 <<<<<<< HEAD
+<<<<<<< HEAD
     --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
     (cd "$INSTALL_DIR" && tar xpf -)
 =======
     --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc') | \
     (cd "$INSTALL_DIR" && tar xf -)
 >>>>>>> 3256bda (update installer to use pre-compiled wheels to minimize dependencies)
+=======
+    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
+    (cd "$INSTALL_DIR" && tar xpf -)
+>>>>>>> ecc2287 (fix freebsd install script)
 
 printf "${GREEN}✓${NC} Application files copied\n"
 
