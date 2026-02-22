@@ -3,29 +3,34 @@
 {% block title %}{{ page_title }}{% endblock %}
 
 {% block content %}
-<div class="container-custom">
+<div class="container-page max-w-7xl">
     <div class="flex items-center space-x-3 mb-6">
         <a href="/zfs/replication/history" class="text-text-secondary hover:text-text-primary">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
             </svg>
         </a>
-        <h1 class="heading-1">Execution #{{ execution.id }} - {{ execution.job_name }}</h1>
+        <h1 class="text-3xl font-bold text-text-primary mb-0">Execution #{{ execution.id }} - {{ execution.job_name }}</h1>
         {% if execution.status == 'running' %}
             <span class="badge-warning animate-pulse">Running</span>
         {% elif execution.status == 'success' %}
             <span class="badge-success">Completed</span>
         {% elif execution.status == 'failure' %}
-            <span class="badge-error">Failed</span>
+            <span class="badge-danger">Failed</span>
         {% endif %}
     </div>
 
     <!-- Execution Summary -->
     <div class="card mb-6">
-        <div class="card-header">
-            <h2 class="heading-2">Execution Summary</h2>
+        <div class="px-6 py-4 border-b border-border-subtle">
+            <h2 class="text-xl font-semibold text-text-primary flex items-center">
+                <svg class="w-5 h-5 mr-2 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                </svg>
+                Execution Summary
+            </h2>
         </div>
-        <div class="card-content">
+        <div class="p-6">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                     <div class="text-sm text-text-tertiary mb-1">Source Dataset</div>
@@ -45,7 +50,7 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-4 border-t border-border">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-4 border-t border-border-subtle">
                 <div>
                     <div class="text-sm text-text-tertiary mb-1">Started At</div>
                     <div class="text-sm">{{ execution.started_at }}</div>
@@ -67,7 +72,7 @@
                 <div>
                     <div class="text-sm text-text-tertiary mb-1">Bytes Transferred</div>
                     <div class="text-sm font-medium">
-                        {% if execution.bytes_transferred > 0 %}
+                        {% if execution.bytes_transferred and execution.bytes_transferred > 0 %}
                             {{ (execution.bytes_transferred / 1024 / 1024)|round(2) }} MB
                         {% else %}
                             -
@@ -80,12 +85,17 @@
 
     <!-- Error Message (if failed) -->
     {% if execution.status == 'failure' and execution.error_message %}
-    <div class="card mb-6 border-error-500/30">
-        <div class="card-header bg-error-900/20">
-            <h2 class="heading-2 text-error-400">Error Details</h2>
+    <div class="card mb-6">
+        <div class="px-6 py-4 border-b border-border-subtle bg-danger-900/20">
+            <h2 class="text-xl font-semibold text-danger-400 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Error Details
+            </h2>
         </div>
-        <div class="card-content">
-            <pre class="bg-bg-base rounded p-4 text-sm font-mono text-error-400 whitespace-pre-wrap overflow-x-auto">{{ execution.error_message }}</pre>
+        <div class="p-6">
+            <pre class="bg-bg-elevated-2 rounded-lg p-4 text-sm font-mono text-danger-400 whitespace-pre-wrap overflow-x-auto border border-danger-900/30">{{ execution.error_message }}</pre>
         </div>
     </div>
     {% endif %}
@@ -93,14 +103,14 @@
     <!-- Progress Updates -->
     {% if execution.progress_updates and execution.progress_updates|length > 0 %}
     <div class="card mb-6">
-        <div class="card-header">
-            <h2 class="heading-2">Progress Updates</h2>
+        <div class="px-6 py-4 border-b border-border-subtle flex items-center justify-between">
+            <h2 class="text-xl font-semibold text-text-primary">Progress Updates</h2>
             <span class="text-text-tertiary text-sm">{{ execution.progress_updates|length }} updates</span>
         </div>
-        <div class="card-content">
+        <div class="p-6">
             <div class="space-y-3">
                 {% for progress in execution.progress_updates %}
-                <div class="flex items-start space-x-4 p-3 bg-bg-elevated rounded">
+                <div class="flex items-start space-x-4 p-3 bg-bg-elevated-2 rounded-lg">
                     <div class="flex-shrink-0">
                         <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
@@ -140,12 +150,12 @@
 
     <!-- Log Output -->
     {% if execution.log_output %}
-    <div class="card">
-        <div class="card-header">
-            <h2 class="heading-2">Log Output</h2>
+    <div class="card mb-6">
+        <div class="px-6 py-4 border-b border-border-subtle">
+            <h2 class="text-xl font-semibold text-text-primary">Log Output</h2>
         </div>
-        <div class="card-content">
-            <pre class="bg-bg-base rounded p-4 text-sm font-mono text-text-secondary whitespace-pre-wrap overflow-x-auto max-h-96">{{ execution.log_output }}</pre>
+        <div class="p-6">
+            <pre class="bg-bg-elevated-2 rounded-lg p-4 text-sm font-mono text-text-secondary whitespace-pre-wrap overflow-x-auto max-h-96 border border-border-default">{{ execution.log_output }}</pre>
         </div>
     </div>
     {% endif %}
@@ -153,15 +163,15 @@
     <!-- Real-time Progress Monitoring (for running executions) -->
     {% if execution.status == 'running' %}
     <div class="card mt-6">
-        <div class="card-header">
-            <h2 class="heading-2">Real-Time Progress</h2>
+        <div class="px-6 py-4 border-b border-border-subtle flex items-center justify-between">
+            <h2 class="text-xl font-semibold text-text-primary">Real-Time Progress</h2>
             <div class="flex items-center space-x-2">
                 <div class="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
                 <span class="text-sm text-success-400">Live</span>
             </div>
         </div>
-        <div class="card-content">
-            <div id="live-progress" class="p-4 bg-bg-elevated rounded">
+        <div class="p-6">
+            <div id="live-progress" class="p-4 bg-bg-elevated-2 rounded-lg">
                 <p class="text-text-secondary">Connecting to progress stream...</p>
             </div>
         </div>
@@ -177,44 +187,31 @@
                 const data = JSON.parse(event.data);
                 
                 if (data.keepalive) {
-                    return; // Ignore keepalive messages
+                    return;
                 }
                 
                 if (data.error) {
-                    liveProgressDiv.innerHTML = `<p class="text-error-400">Error: ${data.error}</p>`;
+                    liveProgressDiv.innerHTML = '<p class="text-danger-400">Error: ' + data.error + '</p>';
                     eventSource.close();
                     return;
                 }
                 
-                // Only show updates for this execution
                 if (data.execution_id == {{ execution.id }}) {
-                    liveProgressDiv.innerHTML = `
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between">
-                                <span class="text-lg font-medium">${data.job_name}</span>
-                                <span class="text-2xl font-mono text-primary-400">${data.percentage.toFixed(1)}%</span>
-                            </div>
-                            <div class="w-full bg-bg-base rounded-full h-4 overflow-hidden">
-                                <div class="bg-primary-500 h-full rounded-full transition-all duration-500" 
-                                     style="width: ${data.percentage}%"></div>
-                            </div>
-                            <div class="grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                    <span class="text-text-tertiary">Transferred:</span>
-                                    <span class="font-mono ml-1">${(data.bytes_transferred / 1024 / 1024).toFixed(2)} MB</span>
-                                </div>
-                                <div>
-                                    <span class="text-text-tertiary">Rate:</span>
-                                    <span class="font-mono ml-1">${data.transfer_rate}</span>
-                                </div>
-                                <div>
-                                    <span class="text-text-tertiary">ETA:</span>
-                                    <span class="font-mono ml-1">${data.eta}</span>
-                                </div>
-                            </div>
-                            ${data.status ? `<p class="text-sm text-text-secondary mt-2">${data.status}</p>` : ''}
-                        </div>
-                    `;
+                    liveProgressDiv.innerHTML = 
+                        '<div class="space-y-3">' +
+                            '<div class="flex items-center justify-between">' +
+                                '<span class="text-lg font-medium">' + data.job_name + '</span>' +
+                                '<span class="text-2xl font-mono text-primary-400">' + data.percentage.toFixed(1) + '%</span>' +
+                            '</div>' +
+                            '<div class="w-full bg-bg-base rounded-full h-4 overflow-hidden">' +
+                                '<div class="bg-primary-500 h-full rounded-full transition-all duration-500" style="width: ' + data.percentage + '%"></div>' +
+                            '</div>' +
+                            '<div class="grid grid-cols-3 gap-4 text-sm">' +
+                                '<div><span class="text-text-tertiary">Transferred:</span> <span class="font-mono ml-1">' + (data.bytes_transferred / 1024 / 1024).toFixed(2) + ' MB</span></div>' +
+                                '<div><span class="text-text-tertiary">Rate:</span> <span class="font-mono ml-1">' + data.transfer_rate + '</span></div>' +
+                                '<div><span class="text-text-tertiary">ETA:</span> <span class="font-mono ml-1">' + data.eta + '</span></div>' +
+                            '</div>' +
+                        '</div>';
                 }
             } catch (e) {
                 console.error('Error parsing SSE data:', e);
@@ -223,16 +220,14 @@
         
         eventSource.onerror = function(event) {
             console.error('SSE connection error:', event);
-            liveProgressDiv.innerHTML = '<p class="text-error-400">Connection lost. Refresh page to reconnect.</p>';
+            liveProgressDiv.innerHTML = '<p class="text-danger-400">Connection lost. Refresh page to reconnect.</p>';
             eventSource.close();
         };
         
-        // Close connection when leaving page
         window.addEventListener('beforeunload', function() {
             eventSource.close();
         });
         
-        // Close connection with hx-boost navigation
         document.body.addEventListener('htmx:beforeSwap', function() {
             eventSource.close();
         });

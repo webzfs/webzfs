@@ -720,7 +720,13 @@ class ZFSReplicationService:
     def _execute_local_replication(
         self, send_cmd: List[str], receive_cmd: List[str], execution_id: int
     ) -> Dict[str, Any]:
-        """Execute local replication using pipes with platform-appropriate sudo"""
+        """Execute local replication using pipes with platform-appropriate sudo.
+        
+        Pipes zfs send stdout into zfs receive stdin. Both processes' stderr
+        streams are captured so that when the receive side reports a generic
+        'failed to read from stream' error we can surface the real cause from
+        the send side.
+        """
         # Build commands with sudo if needed (Linux)
         full_send_cmd = build_zfs_command(send_cmd)
         full_receive_cmd = build_zfs_command(receive_cmd)
@@ -738,13 +744,44 @@ class ZFSReplicationService:
             stderr=subprocess.PIPE
         )
         
+        # Allow send_process to receive SIGPIPE if receive_process exits
         send_process.stdout.close()
+        
+        # Wait for receive to finish, then wait for send to finish
         receive_output, receive_error = receive_process.communicate()
+        send_process.wait()
+        send_error = send_process.stderr.read()
+        send_process.stderr.close()
         
-        if receive_process.returncode != 0:
-            raise Exception(f"Receive failed: {receive_error.decode()}")
+        send_error_text = send_error.decode().strip() if send_error else ''
+        receive_error_text = receive_error.decode().strip() if receive_error else ''
         
-        log_output = receive_error.decode() if receive_error else ''
+        # Check for failures on either side
+        if receive_process.returncode != 0 or send_process.returncode != 0:
+            # Build an error message that includes both sides of the pipe
+            error_parts = []
+            if send_process.returncode != 0 and send_error_text:
+                error_parts.append(f"Send failed: {send_error_text}")
+            if receive_process.returncode != 0 and receive_error_text:
+                error_parts.append(f"Receive failed: {receive_error_text}")
+            
+            # If send failed but we only got the generic receive error, lead
+            # with the send error because it is the actual root cause
+            if not error_parts:
+                if send_process.returncode != 0:
+                    error_parts.append(f"Send process exited with code {send_process.returncode}")
+                if receive_process.returncode != 0:
+                    error_parts.append(f"Receive process exited with code {receive_process.returncode}")
+            
+            raise Exception(' | '.join(error_parts))
+        
+        # Combine any informational stderr output from both sides
+        log_parts = []
+        if send_error_text:
+            log_parts.append(send_error_text)
+        if receive_error_text:
+            log_parts.append(receive_error_text)
+        log_output = '\n'.join(log_parts)
         
         return {'bytes': 0, 'speed': 'N/A', 'log_output': log_output}
     
@@ -752,7 +789,13 @@ class ZFSReplicationService:
         self, send_cmd: List[str], receive_cmd: List[str],
         replication_type: ReplicationType, options: Dict, execution_id: int
     ) -> Dict[str, Any]:
-        """Execute remote replication over SSH"""
+        """Execute remote replication over SSH.
+        
+        Pipes zfs send stdout through SSH into zfs receive on the remote host.
+        Both the local send process and remote SSH process stderr streams are
+        captured so that when the remote receive reports a generic error we can
+        surface the real cause from the local send side.
+        """
         remote_host = options.get('remote_host')
         remote_port = options.get('remote_port', 22)
         ssh_key = options.get('ssh_key')
@@ -785,13 +828,41 @@ class ZFSReplicationService:
             stderr=subprocess.PIPE
         )
         
+        # Allow send_process to receive SIGPIPE if ssh_process exits
         send_process.stdout.close()
+        
+        # Wait for SSH/receive to finish, then wait for send to finish
         ssh_output, ssh_error = ssh_process.communicate()
+        send_process.wait()
+        send_error = send_process.stderr.read()
+        send_process.stderr.close()
         
-        if ssh_process.returncode != 0:
-            raise Exception(f"Remote receive failed: {ssh_error.decode()}")
+        send_error_text = send_error.decode().strip() if send_error else ''
+        ssh_error_text = ssh_error.decode().strip() if ssh_error else ''
         
-        log_output = ssh_error.decode() if ssh_error else ''
+        # Check for failures on either side
+        if ssh_process.returncode != 0 or send_process.returncode != 0:
+            error_parts = []
+            if send_process.returncode != 0 and send_error_text:
+                error_parts.append(f"Send failed: {send_error_text}")
+            if ssh_process.returncode != 0 and ssh_error_text:
+                error_parts.append(f"Remote receive failed: {ssh_error_text}")
+            
+            if not error_parts:
+                if send_process.returncode != 0:
+                    error_parts.append(f"Send process exited with code {send_process.returncode}")
+                if ssh_process.returncode != 0:
+                    error_parts.append(f"SSH/receive process exited with code {ssh_process.returncode}")
+            
+            raise Exception(' | '.join(error_parts))
+        
+        # Combine any informational stderr output from both sides
+        log_parts = []
+        if send_error_text:
+            log_parts.append(send_error_text)
+        if ssh_error_text:
+            log_parts.append(ssh_error_text)
+        log_output = '\n'.join(log_parts)
         
         return {'bytes': 0, 'speed': 'N/A', 'log_output': log_output}
     

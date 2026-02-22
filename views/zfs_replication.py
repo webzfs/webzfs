@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, Form, Depends, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import Annotated, Optional, Dict
 import platform
+import threading
 from config.templates import templates
 from services.zfs_replication import ZFSReplicationService, ReplicationType, CompressionMethod
 from services.syncoid import SyncoidService
@@ -33,6 +34,9 @@ async def replication_index(request: Request):
         # Check syncoid status
         syncoid_status = syncoid_service.check_syncoid_status()
         
+        # Get active executions so user can see in-progress replications
+        active_executions = replication_service.get_active_executions()
+        
         # Detect OS
         system = platform.system()
         
@@ -42,6 +46,7 @@ async def replication_index(request: Request):
                 "request": request,
                 "jobs": jobs,
                 "syncoid_status": syncoid_status,
+                "active_executions": active_executions,
                 "system": system,
                 "page_title": "ZFS Replication"
             }
@@ -53,6 +58,7 @@ async def replication_index(request: Request):
                 "request": request,
                 "jobs": [],
                 "syncoid_status": {'installed': False},
+                "active_executions": [],
                 "system": platform.system(),
                 "error": str(e),
                 "page_title": "ZFS Replication"
@@ -292,31 +298,43 @@ async def send_receive_execute(
     remote_host: Annotated[str, Form()] = "",
     remote_port: Annotated[int, Form()] = 22
 ):
-    """Execute a one-time ZFS send/receive operation"""
+    """Execute a one-time ZFS send/receive operation.
+    
+    Launches the replication in a background thread so the user is
+    redirected immediately to the history page where they can monitor
+    the active transfer instead of waiting for the request to complete.
+    """
     try:
         options = {}
         if remote_host:
             options['remote_host'] = remote_host
             options['remote_port'] = remote_port
         
-        result = replication_service.execute_replication(
-            source=source,
-            target=target,
-            replication_type=ReplicationType(replication_type),
-            incremental=incremental,
-            recursive=recursive,
-            compression=CompressionMethod(compression),
-            job_name=f"Manual: {source} → {target}",
-            **options
-        )
+        rep_type = ReplicationType(replication_type)
+        comp_method = CompressionMethod(compression)
+        job_name = f"Manual: {source} → {target}"
         
-        return templates.TemplateResponse(
-            "zfs/replication/send_receive_result.jinja",
-            {
-                "request": request,
-                "result": result,
-                "page_title": "Replication Result"
-            }
+        # Run replication in a background thread so user gets immediate feedback
+        thread = threading.Thread(
+            target=replication_service.execute_replication,
+            kwargs={
+                'source': source,
+                'target': target,
+                'replication_type': rep_type,
+                'incremental': incremental,
+                'recursive': recursive,
+                'compression': comp_method,
+                'job_name': job_name,
+                **options
+            },
+            daemon=True
+        )
+        thread.start()
+        
+        # Redirect to history page where the active execution will be visible
+        return RedirectResponse(
+            url=f"/zfs/replication/history?message=Replication started: {source} → {target}",
+            status_code=303
         )
     except Exception as e:
         datasets = dataset_service.list_datasets()
