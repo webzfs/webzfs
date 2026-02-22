@@ -7,18 +7,35 @@ import configparser
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
-from services.utils import run_privileged_command
+from services.utils import run_privileged_command, is_freebsd, is_bsd
 
 
 class SanoidService:
     """Service for managing Sanoid snapshot scheduling"""
     
-    SANOID_CONF = "/etc/sanoid/sanoid.conf"
-    SANOID_DEFAULTS = "/etc/sanoid/sanoid.defaults.conf"
+    # Platform-aware config paths
+    # FreeBSD/BSD: pkg installs to /usr/local/etc/sanoid/
+    # Linux: packages install to /etc/sanoid/
+    SANOID_CONF_LINUX = "/etc/sanoid/sanoid.conf"
+    SANOID_CONF_BSD = "/usr/local/etc/sanoid/sanoid.conf"
+    SANOID_DEFAULTS_LINUX = "/etc/sanoid/sanoid.defaults.conf"
+    SANOID_DEFAULTS_BSD = "/usr/local/etc/sanoid/sanoid.defaults.conf"
+    
+    # Common paths where sanoid might be installed
+    COMMON_PATHS = [
+        '/usr/local/bin/sanoid',   # FreeBSD pkg install location
+        '/usr/bin/sanoid',          # Linux package manager location
+        '/usr/sbin/sanoid',         # Alternative Linux location
+        '/usr/local/sbin/sanoid',   # Alternative FreeBSD/local location
+    ]
     
     def __init__(self):
-        self.config_path = Path(self.SANOID_CONF)
-        self.defaults_path = Path(self.SANOID_DEFAULTS)
+        if is_bsd():
+            self.config_path = Path(self.SANOID_CONF_BSD)
+            self.defaults_path = Path(self.SANOID_DEFAULTS_BSD)
+        else:
+            self.config_path = Path(self.SANOID_CONF_LINUX)
+            self.defaults_path = Path(self.SANOID_DEFAULTS_LINUX)
     
     def get_config(self) -> Dict[str, Any]:
         """
@@ -277,20 +294,35 @@ class SanoidService:
     
     def check_sanoid_status(self) -> Dict[str, Any]:
         """
-        Check if sanoid is installed and get its status
+        Check if sanoid is installed and get its status.
+        
+        Uses which first, then falls back to checking common install paths
+        directly. This handles cases where PATH may not include /usr/local/bin
+        (common on FreeBSD when running as a service).
         
         Returns:
             Dictionary with sanoid status information
         """
         try:
-            # Check if sanoid is installed
+            sanoid_path = None
+            
+            # Try to find sanoid using which first
             which_result = subprocess.run(
                 ['which', 'sanoid'],
                 capture_output=True,
                 text=True
             )
             
-            if which_result.returncode != 0:
+            if which_result.returncode == 0:
+                sanoid_path = which_result.stdout.strip()
+            else:
+                # Check common paths directly (handles restricted PATH environments)
+                for path in self.COMMON_PATHS:
+                    if Path(path).exists() and Path(path).is_file():
+                        sanoid_path = path
+                        break
+            
+            if not sanoid_path:
                 return {
                     'installed': False,
                     'path': None,
@@ -298,16 +330,17 @@ class SanoidService:
                     'config_exists': False
                 }
             
-            sanoid_path = which_result.stdout.strip()
-            
-            # Try to get version
-            version_result = subprocess.run(
-                ['sanoid', '--version'],
-                capture_output=True,
-                text=True
-            )
-            
-            version = version_result.stdout.strip() if version_result.returncode == 0 else 'unknown'
+            # Try to get version using the found path
+            try:
+                version_result = subprocess.run(
+                    [sanoid_path, '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                version = version_result.stdout.strip() if version_result.returncode == 0 else 'unknown'
+            except Exception:
+                version = 'unknown'
             
             return {
                 'installed': True,
