@@ -1,0 +1,51 @@
+{% extends "layout.jinja" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Breadcrumb Navigation -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <a href="/utils/services" class="hover:text-primary-400">System Services</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">{{ service_name }}</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-text-primary font-mono">{{ service_name }}</h1>
+        <div class="flex gap-2">
+            <a href="/utils/services/detail/{{ service_name }}"
+               class="btn-primary px-4 py-2 inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Refresh
+            </a>
+            <a href="/utils/services"
+               class="bg-bg-elevated hover:bg-bg-elevated-2 text-text-secondary px-4 py-2 rounded inline-flex items-center gap-2 border border-border-subtle">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                Back to Services
+            </a>
+        </div>
+    </div>
+
+    <!-- Service Status Output -->
+    <div class="bg-bg-elevated rounded-lg overflow-hidden shadow-lg">
+        <div class="bg-bg-elevated-2 px-6 py-3 border-b border-border-subtle">
+            <h2 class="text-lg font-semibold text-text-primary">Service Status</h2>
+        </div>
+        <div class="p-6">
+            {% if detail and detail.output %}
+            <pre class="bg-bg-base rounded-lg p-4 text-sm text-text-secondary font-mono whitespace-pre-wrap overflow-x-auto border border-border-subtle">{{ detail.output }}</pre>
+            {% else %}
+            <p class="text-text-tertiary">No status output available for this service.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

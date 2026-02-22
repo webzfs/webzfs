@@ -1,0 +1,294 @@
+{% extends "layout.jinja" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Breadcrumb Navigation -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">System Services</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-text-primary">System Services</h1>
+        <a href="/utils/services"
+           class="btn-primary px-4 py-2 inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Refresh
+        </a>
+    </div>
+
+    <!-- Success/Error Messages -->
+    {% if request.query_params.get('message') %}
+    <div class="bg-success-900/30 border-2 border-success-500/50 text-success-400 px-4 py-3 rounded mb-4">
+        {{ request.query_params.get('message') }}
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('error') or error %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
+        <strong>Error:</strong> {{ request.query_params.get('error') or error }}
+    </div>
+    {% endif %}
+
+    <!-- Summary Cards -->
+    {% if summary %}
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div class="bg-bg-elevated rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-text-primary">{{ summary.total }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Total</div>
+        </div>
+        <div class="bg-bg-elevated rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-success-400">{{ summary.running }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Running</div>
+        </div>
+        <div class="bg-bg-elevated rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-text-tertiary">{{ summary.stopped }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Stopped</div>
+        </div>
+        <div class="bg-bg-elevated rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-info-400">{{ summary.exited }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Exited</div>
+        </div>
+        <div class="bg-bg-elevated rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-danger-400">{{ summary.failed }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Failed</div>
+        </div>
+        <div class="bg-bg-elevated rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-primary-400">{{ summary.enabled }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Enabled</div>
+        </div>
+        <div class="bg-bg-elevated rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-warning-400">{{ summary.disabled }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Disabled</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Filter Controls -->
+    {% if services %}
+    <div class="bg-bg-elevated rounded-lg p-4 mb-6">
+        <div class="flex flex-wrap items-center gap-3">
+            <label class="text-sm text-text-secondary font-medium">Filter:</label>
+            <button onclick="filterServices('all')"
+                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-text-primary transition-colors"
+                    data-filter="all">
+                All
+            </button>
+            <button onclick="filterServices('running')"
+                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-success-400 transition-colors"
+                    data-filter="running">
+                Running
+            </button>
+            <button onclick="filterServices('stopped')"
+                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-text-primary transition-colors"
+                    data-filter="stopped">
+                Stopped
+            </button>
+            <button onclick="filterServices('failed')"
+                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-danger-400 transition-colors"
+                    data-filter="failed">
+                Failed
+            </button>
+            <button onclick="filterServices('enabled')"
+                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-primary-400 transition-colors"
+                    data-filter="enabled">
+                Enabled
+            </button>
+            <button onclick="filterServices('disabled')"
+                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-warning-400 transition-colors"
+                    data-filter="disabled">
+                Disabled
+            </button>
+            <div class="ml-auto">
+                <input type="text" id="service-search" placeholder="Search services..."
+                       oninput="searchServices(this.value)"
+                       class="bg-bg-elevated-2 border border-border-subtle text-text-primary text-sm rounded px-3 py-1 focus:outline-none focus:border-primary-500 w-48">
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Services Table -->
+    {% if services %}
+    <div class="bg-bg-elevated rounded-lg overflow-hidden shadow-lg">
+        <div class="overflow-x-auto">
+            <table class="min-w-full" id="services-table">
+                <thead class="bg-bg-elevated-2 text-text-secondary">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Service</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Enabled</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Description</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-bg-elevated divide-y divide-border-subtle">
+                    {% for svc in services %}
+                    <tr class="hover:bg-bg-elevated-2 transition-colors service-row"
+                        data-status="{{ svc.status }}"
+                        data-enabled="{{ svc.enabled }}"
+                        data-name="{{ svc.name|lower }}">
+                        <td class="px-6 py-3 whitespace-nowrap">
+                            <a href="/utils/services/detail/{{ svc.name }}"
+                               class="text-blue-400 hover:text-blue-300 font-mono font-semibold text-sm">
+                                {{ svc.name }}
+                            </a>
+                        </td>
+                        <td class="px-6 py-3 whitespace-nowrap">
+                            {% if svc.status == 'running' %}
+                                <span class="badge badge-success">running</span>
+                            {% elif svc.status == 'failed' %}
+                                <span class="badge badge-danger">failed</span>
+                            {% elif svc.status == 'exited' %}
+                                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-info-900/30 text-info-400 border border-info-500/30">exited</span>
+                            {% elif svc.status == 'stopped' %}
+                                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-bg-elevated-2 text-text-tertiary">stopped</span>
+                            {% elif svc.status == 'starting' %}
+                                <span class="badge badge-warning">starting</span>
+                            {% elif svc.status == 'stopping' %}
+                                <span class="badge badge-warning">stopping</span>
+                            {% else %}
+                                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-bg-elevated-2 text-text-tertiary">{{ svc.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-3 whitespace-nowrap">
+                            {% if svc.enabled == 'enabled' %}
+                                <span class="text-primary-400 text-sm font-medium">enabled</span>
+                            {% elif svc.enabled == 'disabled' %}
+                                <span class="text-warning-400 text-sm">disabled</span>
+                            {% elif svc.enabled == 'static' %}
+                                <span class="text-text-tertiary text-sm">static</span>
+                            {% elif svc.enabled == 'masked' %}
+                                <span class="text-danger-400 text-sm">masked</span>
+                            {% elif svc.enabled == 'alias' %}
+                                <span class="text-text-tertiary text-sm">alias</span>
+                            {% elif svc.enabled == 'indirect' %}
+                                <span class="text-text-tertiary text-sm">indirect</span>
+                            {% elif svc.enabled == 'generated' %}
+                                <span class="text-text-tertiary text-sm">generated</span>
+                            {% else %}
+                                <span class="text-text-tertiary text-sm">{{ svc.enabled }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-3 text-text-secondary text-sm max-w-md truncate" title="{{ svc.description }}">
+                            {{ svc.description }}
+                        </td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm">
+                            <a href="/utils/services/detail/{{ svc.name }}"
+                               class="text-info-400 hover:text-info-300"
+                               title="View Details">
+                                <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Row Count -->
+    <div class="mt-4 text-text-tertiary text-sm">
+        <p id="visible-count">Showing {{ services|length }} of {{ services|length }} services</p>
+    </div>
+    {% else %}
+    <!-- No Services Found -->
+    <div class="bg-bg-elevated rounded-lg p-8 text-center">
+        <div class="text-text-tertiary mb-4">
+            <svg class="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-medium text-text-primary mb-2">No Services Found</h3>
+        <p class="text-text-tertiary mb-2">Unable to enumerate system services.</p>
+        <p class="text-text-tertiary text-sm">Ensure systemctl (Linux) or service (FreeBSD) is available and accessible.</p>
+    </div>
+    {% endif %}
+
+    <!-- Info Box -->
+    <div class="mt-6 bg-info-900/30 border-2 border-info-500/50 text-info-400 px-4 py-3 rounded">
+        <strong>
+            <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Read-Only View:
+        </strong>
+        <span class="text-sm">
+            This page provides a read-only overview of system services. Service management (start, stop, restart, enable, disable) should be performed from the command line.
+        </span>
+    </div>
+</div>
+
+<!-- Client-side filtering (minimal JS) -->
+<script>
+    var currentFilter = 'all';
+
+    function filterServices(filter) {
+        currentFilter = filter;
+        var searchValue = document.getElementById('service-search').value.toLowerCase();
+        applyFilters(filter, searchValue);
+
+        // Update active button styling
+        document.querySelectorAll('.filter-btn').forEach(function(btn) {
+            btn.classList.remove('bg-primary-600', 'text-text-primary');
+            btn.classList.add('bg-bg-elevated-2', 'text-text-secondary');
+        });
+        var activeBtn = document.querySelector('.filter-btn[data-filter="' + filter + '"]');
+        if (activeBtn) {
+            activeBtn.classList.remove('bg-bg-elevated-2', 'text-text-secondary');
+            activeBtn.classList.add('bg-primary-600', 'text-text-primary');
+        }
+    }
+
+    function searchServices(value) {
+        applyFilters(currentFilter, value.toLowerCase());
+    }
+
+    function applyFilters(filter, search) {
+        var rows = document.querySelectorAll('.service-row');
+        var visible = 0;
+        var total = rows.length;
+
+        rows.forEach(function(row) {
+            var status = row.getAttribute('data-status');
+            var enabled = row.getAttribute('data-enabled');
+            var name = row.getAttribute('data-name');
+
+            var matchesFilter = (filter === 'all')
+                || (filter === 'running' && status === 'running')
+                || (filter === 'stopped' && (status === 'stopped' || status === 'unknown'))
+                || (filter === 'failed' && status === 'failed')
+                || (filter === 'enabled' && enabled === 'enabled')
+                || (filter === 'disabled' && enabled === 'disabled');
+
+            var matchesSearch = !search || name.indexOf(search) !== -1;
+
+            if (matchesFilter && matchesSearch) {
+                row.style.display = '';
+                visible++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        document.getElementById('visible-count').textContent = 'Showing ' + visible + ' of ' + total + ' services';
+    }
+
+    // Initialize "All" as active on load
+    document.addEventListener('DOMContentLoaded', function() {
+        filterServices('all');
+    });
+</script>
+{% endblock %}
