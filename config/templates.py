@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from fastapi.templating import Jinja2Templates
 from config.settings import BASE_DIR, settings
+from services.theme import get_active_theme, get_theme_css_path
 
 @dataclass
 class Tab:
@@ -24,3 +25,5 @@ NAV_TABS = [
 templates = Jinja2Templates(BASE_DIR / "templates")
 templates.env.globals["settings"] = settings
 templates.env.globals["NAV_TABS"] = NAV_TABS
+templates.env.globals["get_active_theme"] = get_active_theme
+templates.env.globals["get_theme_css_path"] = get_theme_css_path

@@ -1,0 +1,50 @@
+/* WebZFS Theme Override
+ * Import AFTER your main styles.css.
+ * This file overrides only CSS custom properties (:root variables).
+ * Alerts/Warnings preserve red/yellow semantics across all themes.
+ */
+
+:root {
+  --bg-base: #050a0d;
+  --bg-elevated: #0b1318;
+  --bg-elevated-2: #0f1920;
+  --bg-elevated-3: #14242d;
+  --text-primary: #eaf7fb;
+  --text-secondary: #a8bfca;
+  --text-tertiary: #6f8792;
+  --text-inverse: #050a0d;
+  --border-subtle: #1f313c;
+  --border-default: #2a4250;
+  --border-strong: #3a5869;
+  --primary-50: #ecfeff;
+  --primary-400: #22d3ee;
+  --primary-500: #06b6d4;
+  --primary-600: #0891b2;
+  --primary-700: #0e7490;
+  --primary-900: #164e63;
+  --success-400: #4ade80;
+  --success-500: #22c55e;
+  --success-600: #16a34a;
+  --success-900: #14532d;
+  --warning-400: #fbbf24;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --warning-900: #78350f;
+  --danger-400: #f87171;
+  --danger-500: #ef4444;
+  --danger-600: #dc2626;
+  --danger-900: #7f1d1d;
+  --info-400: #93c5fd;
+  --info-500: #60a5fa;
+  --info-600: #3b82f6;
+  --info-900: #1e3a8a;
+  --purple-400: #d8b4fe;
+  --purple-500: #c084fc;
+  --purple-600: #a855f7;
+  --purple-900: #581c87;
+  --space-page: 2rem;
+  --space-section: 1.5rem;
+  --space-card: 1.5rem;
+  --space-element: 1rem;
+  --space-compact: 0.5rem;
+}

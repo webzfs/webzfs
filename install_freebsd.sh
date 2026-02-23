@@ -249,6 +249,9 @@ if [ ! -d "$INSTALL_DIR" ]; then
     mkdir -p "$INSTALL_DIR"
 fi
 
+# Create config directory for WebZFS settings (theme, etc.)
+mkdir -p "$INSTALL_DIR/.config/webzfs"
+
 # Download pre-compiled wheels
 download_wheels
 

@@ -290,4 +290,8 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-static/
+# Ignore generated static assets (Tailwind CSS output) but keep theme CSS files
+static/*
+!static/css/
+static/css/*
+!static/css/themes/

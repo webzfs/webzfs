@@ -1,0 +1,132 @@
+{% extends "layout.jinja" %}
+
+{% set active_page = 'utils' %}
+
+{% block title %}WebZFS Settings{% endblock %}
+
+{% block content %}
+    <!-- Breadcrumb Navigation -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">WebZFS Settings</span>
+    </nav>
+
+    <div class="space-y-6">
+        <!-- Page Header -->
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-text-primary">WebZFS Settings</h1>
+                <p class="text-text-secondary mt-1">Configure the appearance and behavior of WebZFS</p>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        {% if message %}
+        <div class="alert alert-success flex items-center gap-3 animate-fade-in">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span>{{ message }}</span>
+        </div>
+        {% endif %}
+        {% if error %}
+        <div class="alert alert-danger flex items-center gap-3 animate-fade-in">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span>{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Theme Selection Card -->
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-2 bg-primary-500/10 border border-primary-500/20 rounded-lg">
+                        <svg class="w-6 h-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-primary">Theme</h2>
+                        <p class="text-sm text-text-secondary">
+                            Current theme: <span class="text-primary-400 font-medium">{{ active_theme_name }}</span>
+                        </p>
+                    </div>
+                </div>
+
+                <form action="/utils/settings/apply-theme" method="post" hx-boost="false">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Left: Theme Selector and Apply -->
+                        <div class="space-y-4">
+                            <div>
+                                <label for="theme-select" class="form-label">Select Theme</label>
+                                <select
+                                    id="theme-select"
+                                    name="theme"
+                                    class="form-select w-full"
+                                    hx-get="/utils/settings/theme-preview/{value}"
+                                    hx-trigger="change"
+                                    hx-target="#theme-preview"
+                                    hx-swap="innerHTML"
+                                    onchange="this.setAttribute('hx-get', '/utils/settings/theme-preview/' + this.value); htmx.process(this);"
+                                >
+                                    {% for family in theme_families %}
+                                    <optgroup label="{{ family.family }}">
+                                        {% for theme in family.themes %}
+                                        <option value="{{ theme.id }}" {% if theme.active %}selected{% endif %}>
+                                            {{ theme.name }}
+                                        </option>
+                                        {% endfor %}
+                                    </optgroup>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="flex items-center gap-3">
+                                <button type="submit" class="btn btn-primary">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    Apply Theme
+                                </button>
+                                <span class="text-sm text-text-tertiary">Theme will be applied immediately</span>
+                            </div>
+
+                            <div class="card-nested mt-4">
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="text-sm text-text-secondary">
+                                        <p class="mb-1">Themes override the CSS color variables used throughout WebZFS.</p>
+                                        <p>Your selection is saved to <code>/opt/webzfs/.config/webzfs/theme.conf</code> and persists across sessions.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Live Preview -->
+                        <div id="theme-preview">
+                            {% include "utils/settings/preview_partial.jinja" %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Handle the HTMX-based theme preview on dropdown change
+        document.addEventListener('DOMContentLoaded', function() {
+            var select = document.getElementById('theme-select');
+            if (select) {
+                select.addEventListener('change', function() {
+                    var themeId = this.value;
+                    htmx.ajax('GET', '/utils/settings/theme-preview/' + themeId, {target: '#theme-preview', swap: 'innerHTML'});
+                });
+            }
+        });
+    </script>
+{% endblock %}

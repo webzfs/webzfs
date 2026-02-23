@@ -177,6 +177,9 @@ if [ ! -d "$INSTALL_DIR" ]; then
     mkdir -p "$INSTALL_DIR"
 fi
 
+# Create config directory for WebZFS settings (theme, etc.)
+mkdir -p "$INSTALL_DIR/.config/webzfs"
+
 # Copy application files to installation directory
 echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='*.log' \
