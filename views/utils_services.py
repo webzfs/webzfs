@@ -15,11 +15,22 @@ services_service = SystemServicesService()
 
 @router.get("/", response_class=HTMLResponse)
 async def services_index(request: Request):
-    """Display all system services and their status."""
+    """Display page shell immediately; service data loads via HTMX partial."""
+    return templates.TemplateResponse(
+        "utils/services/index.jinja",
+        {
+            "request": request,
+            "page_title": "System Services",
+        },
+    )
+
+
+@router.get("/content-partial", response_class=HTMLResponse)
+async def services_content_partial(request: Request):
+    """HTMX partial that fetches service data and returns summary + table HTML."""
     try:
         all_services = services_service.list_services()
 
-        # Build summary counts
         summary = {
             "total": len(all_services),
             "running": sum(1 for s in all_services if s["status"] == "running"),
@@ -31,24 +42,17 @@ async def services_index(request: Request):
         }
 
         return templates.TemplateResponse(
-            "utils/services/index.jinja",
+            "utils/services/content_partial.jinja",
             {
                 "request": request,
                 "services": all_services,
                 "summary": summary,
-                "page_title": "System Services",
             },
         )
     except Exception as e:
-        return templates.TemplateResponse(
-            "utils/services/index.jinja",
-            {
-                "request": request,
-                "services": [],
-                "summary": {},
-                "error": str(e),
-                "page_title": "System Services",
-            },
+        return HTMLResponse(
+            content=f'<div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded">'
+            f'<strong>Error:</strong> {str(e)}</div>'
         )
 
 
