@@ -66,11 +66,7 @@
                                     id="theme-select"
                                     name="theme"
                                     class="form-select w-full"
-                                    hx-get="/utils/settings/theme-preview/{value}"
-                                    hx-trigger="change"
-                                    hx-target="#theme-preview"
-                                    hx-swap="innerHTML"
-                                    onchange="this.setAttribute('hx-get', '/utils/settings/theme-preview/' + this.value); htmx.process(this);"
+                                    onchange="htmx.ajax('GET', '/utils/settings/theme-preview/' + this.value, {target: '#theme-preview', swap: 'innerHTML'});"
                                 >
                                     {% for family in theme_families %}
                                     <optgroup label="{{ family.family }}">
@@ -117,16 +113,4 @@
         </div>
     </div>
 
-    <script>
-        // Handle the HTMX-based theme preview on dropdown change
-        document.addEventListener('DOMContentLoaded', function() {
-            var select = document.getElementById('theme-select');
-            if (select) {
-                select.addEventListener('change', function() {
-                    var themeId = this.value;
-                    htmx.ajax('GET', '/utils/settings/theme-preview/' + themeId, {target: '#theme-preview', swap: 'innerHTML'});
-                });
-            }
-        });
-    </script>
 {% endblock %}
