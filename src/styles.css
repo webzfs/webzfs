@@ -234,8 +234,12 @@
     @apply w-full bg-bg-elevated-2 border border-border-default;
     @apply text-text-primary placeholder-text-tertiary;
     @apply px-3 py-2 rounded-lg;
-    @apply focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
+    @apply focus:border-primary-500 focus:ring-2;
     @apply transition-colors duration-200;
+  }
+  
+  .form-input:focus {
+    --tw-ring-color: color-mix(in srgb, var(--primary-500) 20%, transparent);
   }
   
   .form-select {
@@ -268,23 +272,28 @@
   }
   
   .badge-success {
-    @apply bg-success-900/50 text-success-400 border border-success-900;
+    background-color: color-mix(in srgb, var(--success-900) 50%, transparent);
+    @apply text-success-400 border border-success-900;
   }
   
   .badge-warning {
-    @apply bg-warning-900/50 text-warning-400 border border-warning-900;
+    background-color: color-mix(in srgb, var(--warning-900) 50%, transparent);
+    @apply text-warning-400 border border-warning-900;
   }
   
   .badge-danger {
-    @apply bg-danger-900/50 text-danger-400 border border-danger-900;
+    background-color: color-mix(in srgb, var(--danger-900) 50%, transparent);
+    @apply text-danger-400 border border-danger-900;
   }
   
   .badge-info {
-    @apply bg-info-900/50 text-info-400 border border-info-900;
+    background-color: color-mix(in srgb, var(--info-900) 50%, transparent);
+    @apply text-info-400 border border-info-900;
   }
   
   .badge-primary {
-    @apply bg-primary-900/50 text-primary-400 border border-primary-900;
+    background-color: color-mix(in srgb, var(--primary-900) 50%, transparent);
+    @apply text-primary-400 border border-primary-900;
   }
   
   .badge-secondary {
@@ -323,19 +332,23 @@
   }
   
   .alert-success {
-    @apply bg-success-900/20 border-success-500 text-success-400;
+    background-color: color-mix(in srgb, var(--success-900) 20%, transparent);
+    @apply border-success-500 text-success-400;
   }
   
   .alert-warning {
-    @apply bg-warning-900/20 border-warning-500 text-warning-400;
+    background-color: color-mix(in srgb, var(--warning-900) 20%, transparent);
+    @apply border-warning-500 text-warning-400;
   }
   
   .alert-danger {
-    @apply bg-danger-900/20 border-danger-500 text-danger-400;
+    background-color: color-mix(in srgb, var(--danger-900) 20%, transparent);
+    @apply border-danger-500 text-danger-400;
   }
   
   .alert-info {
-    @apply bg-info-900/20 border-info-500 text-info-400;
+    background-color: color-mix(in srgb, var(--info-900) 20%, transparent);
+    @apply border-info-500 text-info-400;
   }
   
   /* Navigation Components */
@@ -411,7 +424,8 @@
   
   /* Loading Overlay */
   .loading-overlay {
-    @apply fixed inset-0 bg-bg-base/80 backdrop-blur-sm;
+    @apply fixed inset-0 backdrop-blur-sm;
+    background-color: color-mix(in srgb, var(--bg-base) 80%, transparent);
     @apply flex items-center justify-center;
     @apply z-50;
   }
@@ -526,7 +540,8 @@
   
   /* Glass Effect */
   .glass {
-    @apply bg-bg-elevated/80 backdrop-blur-sm;
+    @apply backdrop-blur-sm;
+    background-color: color-mix(in srgb, var(--bg-elevated) 80%, transparent);
   }
 }
 
