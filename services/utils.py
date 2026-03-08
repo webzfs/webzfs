@@ -273,54 +273,34 @@ def get_zfs_version() -> Optional[str]:
     return None
 
 
-def _get_zfs_major_minor() -> Optional[str]:
-    """
-    Extract the major.minor version from the installed ZFS version string.
-
-    Returns:
-        A string like "2.2" or "0.8", or None if not determinable.
-    """
-    import re
-    version_string = get_zfs_version()
-    if not version_string:
-        return None
-    match = re.search(r'(\d+\.\d+)', version_string)
-    if not match:
-        return None
-    major_minor = match.group(1)
-    if major_minor in OPENZFS_MAN_PAGE_VERSIONS:
-        return major_minor
-    return None
-
-
 def get_openzfs_man_page_url() -> Optional[str]:
     """
-    Get the OpenZFS man page index URL matching the installed ZFS version.
+    Get the OpenZFS man page URL matching the installed ZFS version.
+
+    Runs 'zfs version', extracts the major.minor version, and returns
+    the corresponding URL from the OpenZFS documentation site. Returns
+    None if the version cannot be determined or does not match any
+    known man page version.
 
     Returns:
         The OpenZFS man page URL string, or None.
     """
-    major_minor = _get_zfs_major_minor()
-    if not major_minor:
+    version_string = get_zfs_version()
+    if not version_string:
         return None
-    return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/index.html"
 
-
-def get_openzfs_man_page_section_url(section: int, page: str) -> Optional[str]:
-    """
-    Get the OpenZFS man page URL for a specific page and section.
-
-    Args:
-        section: Man page section number (e.g. 8 for system administration).
-        page: Man page name including section suffix (e.g. "zfs-send.8").
-
-    Returns:
-        Full URL string, or None if version cannot be determined.
-    """
-    major_minor = _get_zfs_major_minor()
-    if not major_minor:
+    # Extract version number from strings like "zfs-2.2.6-1" or "zfs-0.8.3"
+    import re
+    match = re.search(r'(\d+\.\d+)', version_string)
+    if not match:
         return None
-    return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/{section}/{page}.html"
+
+    major_minor = match.group(1)
+
+    if major_minor in OPENZFS_MAN_PAGE_VERSIONS:
+        return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/index.html"
+
+    return None
 
 
 def run_zfs_command_with_pipe(
