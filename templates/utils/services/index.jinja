@@ -35,80 +35,57 @@
     </div>
     {% endif %}
 
-    <!-- Summary Cards -->
-    {% if summary %}
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-        <div class="bg-bg-elevated rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-text-primary">{{ summary.total }}</div>
-            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Total</div>
-        </div>
-        <div class="bg-bg-elevated rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-success-400">{{ summary.running }}</div>
-            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Running</div>
-        </div>
-        <div class="bg-bg-elevated rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-text-tertiary">{{ summary.stopped }}</div>
-            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Stopped</div>
-        </div>
-        <div class="bg-bg-elevated rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-info-400">{{ summary.exited }}</div>
-            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Exited</div>
-        </div>
-        <div class="bg-bg-elevated rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-danger-400">{{ summary.failed }}</div>
-            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Failed</div>
-        </div>
-        <div class="bg-bg-elevated rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-primary-400">{{ summary.enabled }}</div>
-            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Enabled</div>
-        </div>
-        <div class="bg-bg-elevated rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-warning-400">{{ summary.disabled }}</div>
-            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Disabled</div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Filter Controls -->
-    {% if services %}
-    <div class="bg-bg-elevated rounded-lg p-4 mb-6">
-        <div class="flex flex-wrap items-center gap-3">
-            <label class="text-sm text-text-secondary font-medium">Filter:</label>
+    <!-- Filter Cards + Search -->
+    {% if summary and services %}
+    <div class="flex flex-wrap items-end gap-4 mb-6">
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 flex-1">
             <button onclick="filterServices('all')"
-                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-text-primary transition-colors"
+                    class="filter-btn bg-bg-elevated rounded-lg p-4 text-center cursor-pointer border-2 border-border-subtle hover:border-primary-500/50 transition-colors"
                     data-filter="all">
-                All
+                <div class="text-2xl font-bold text-text-primary">{{ summary.total }}</div>
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Total</div>
             </button>
             <button onclick="filterServices('running')"
-                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-success-400 transition-colors"
+                    class="filter-btn bg-bg-elevated rounded-lg p-4 text-center cursor-pointer border-2 border-border-subtle hover:border-success-500/50 transition-colors"
                     data-filter="running">
-                Running
+                <div class="text-2xl font-bold text-success-400">{{ summary.running }}</div>
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Running</div>
             </button>
             <button onclick="filterServices('stopped')"
-                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-text-primary transition-colors"
+                    class="filter-btn bg-bg-elevated rounded-lg p-4 text-center cursor-pointer border-2 border-border-subtle hover:border-text-tertiary/50 transition-colors"
                     data-filter="stopped">
-                Stopped
+                <div class="text-2xl font-bold text-text-tertiary">{{ summary.stopped }}</div>
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Stopped</div>
+            </button>
+            <button onclick="filterServices('exited')"
+                    class="filter-btn bg-bg-elevated rounded-lg p-4 text-center cursor-pointer border-2 border-border-subtle hover:border-info-500/50 transition-colors"
+                    data-filter="exited">
+                <div class="text-2xl font-bold text-info-400">{{ summary.exited }}</div>
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Exited</div>
             </button>
             <button onclick="filterServices('failed')"
-                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-danger-400 transition-colors"
+                    class="filter-btn bg-bg-elevated rounded-lg p-4 text-center cursor-pointer border-2 border-border-subtle hover:border-danger-500/50 transition-colors"
                     data-filter="failed">
-                Failed
+                <div class="text-2xl font-bold text-danger-400">{{ summary.failed }}</div>
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Failed</div>
             </button>
             <button onclick="filterServices('enabled')"
-                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-primary-400 transition-colors"
+                    class="filter-btn bg-bg-elevated rounded-lg p-4 text-center cursor-pointer border-2 border-border-subtle hover:border-primary-500/50 transition-colors"
                     data-filter="enabled">
-                Enabled
+                <div class="text-2xl font-bold text-primary-400">{{ summary.enabled }}</div>
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Enabled</div>
             </button>
             <button onclick="filterServices('disabled')"
-                    class="filter-btn px-3 py-1 text-sm rounded bg-bg-elevated-2 text-text-secondary hover:text-warning-400 transition-colors"
+                    class="filter-btn bg-bg-elevated rounded-lg p-4 text-center cursor-pointer border-2 border-border-subtle hover:border-warning-500/50 transition-colors"
                     data-filter="disabled">
-                Disabled
+                <div class="text-2xl font-bold text-warning-400">{{ summary.disabled }}</div>
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Disabled</div>
             </button>
-            <div class="ml-auto">
-                <input type="text" id="service-search" placeholder="Search services..."
-                       oninput="searchServices(this.value)"
-                       class="bg-bg-elevated-2 border border-border-subtle text-text-primary text-sm rounded px-3 py-1 focus:outline-none focus:border-primary-500 w-48">
-            </div>
+        </div>
+        <div class="flex-shrink-0">
+            <input type="text" id="service-search" placeholder="Search services..."
+                   oninput="searchServices(this.value)"
+                   class="bg-bg-elevated border border-border-subtle text-text-primary text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-primary-500 w-56">
         </div>
     </div>
     {% endif %}
@@ -235,20 +212,35 @@
 <script>
     var currentFilter = 'all';
 
+    // Map each filter to its active border color class
+    var filterBorderColors = {
+        'all': 'border-primary-500',
+        'running': 'border-success-500',
+        'stopped': 'border-text-tertiary',
+        'exited': 'border-info-500',
+        'failed': 'border-danger-500',
+        'enabled': 'border-primary-500',
+        'disabled': 'border-warning-500'
+    };
+
     function filterServices(filter) {
         currentFilter = filter;
         var searchValue = document.getElementById('service-search').value.toLowerCase();
         applyFilters(filter, searchValue);
 
-        // Update active button styling
+        // Update active card styling - highlight border on selected card
         document.querySelectorAll('.filter-btn').forEach(function(btn) {
-            btn.classList.remove('bg-primary-600', 'text-text-primary');
-            btn.classList.add('bg-bg-elevated-2', 'text-text-secondary');
+            // Remove all possible active border colors
+            Object.values(filterBorderColors).forEach(function(cls) {
+                btn.classList.remove(cls);
+            });
+            btn.classList.remove('shadow-lg');
+            btn.classList.add('border-border-subtle');
         });
         var activeBtn = document.querySelector('.filter-btn[data-filter="' + filter + '"]');
         if (activeBtn) {
-            activeBtn.classList.remove('bg-bg-elevated-2', 'text-text-secondary');
-            activeBtn.classList.add('bg-primary-600', 'text-text-primary');
+            activeBtn.classList.remove('border-border-subtle');
+            activeBtn.classList.add(filterBorderColors[filter], 'shadow-lg');
         }
     }
 
@@ -269,6 +261,7 @@
             var matchesFilter = (filter === 'all')
                 || (filter === 'running' && status === 'running')
                 || (filter === 'stopped' && (status === 'stopped' || status === 'unknown'))
+                || (filter === 'exited' && status === 'exited')
                 || (filter === 'failed' && status === 'failed')
                 || (filter === 'enabled' && enabled === 'enabled')
                 || (filter === 'disabled' && enabled === 'disabled');
