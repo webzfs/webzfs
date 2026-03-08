@@ -1,6 +1,7 @@
 """
 WebZFS Settings Views
-Provides the settings page for theme selection and other WebZFS configuration.
+Provides the settings page for theme selection, session timeout configuration,
+and other WebZFS configuration.
 """
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,6 +14,15 @@ from services.theme import (
     is_valid_theme,
     THEME_REGISTRY,
 )
+from services.timeout_settings import (
+    get_effective_session_timeout,
+    save_session_timeout,
+    reset_session_timeout,
+    format_timeout_display,
+    DEFAULT_SESSION_TIMEOUT,
+    SESSION_TIMEOUT_PRESETS,
+    VALID_TIMEOUT_VALUES,
+)
 from auth.dependencies import get_current_user
 
 
@@ -21,10 +31,12 @@ router = APIRouter(tags=["settings"], dependencies=[Depends(get_current_user)])
 
 @router.get("/", response_class=HTMLResponse)
 async def settings_index(request: Request, message: str = "", error: str = ""):
-    """Display the WebZFS settings page with theme selector."""
+    """Display the WebZFS settings page with theme selector and session timeout."""
     active_theme = get_active_theme()
     theme_families = get_all_themes_for_template()
     theme_variables = get_theme_variables(active_theme)
+
+    current_session_timeout = get_effective_session_timeout()
 
     return templates.TemplateResponse(
         "utils/settings/index.jinja",
@@ -34,6 +46,11 @@ async def settings_index(request: Request, message: str = "", error: str = ""):
             "active_theme_name": THEME_REGISTRY.get(active_theme, active_theme),
             "theme_families": theme_families,
             "theme_variables": theme_variables,
+            "current_session_timeout": current_session_timeout,
+            "current_session_timeout_display": format_timeout_display(current_session_timeout),
+            "default_session_timeout": DEFAULT_SESSION_TIMEOUT,
+            "default_session_timeout_display": format_timeout_display(DEFAULT_SESSION_TIMEOUT),
+            "session_timeout_presets": SESSION_TIMEOUT_PRESETS,
             "message": message,
             "error": error,
             "page_title": "WebZFS Settings",
@@ -81,4 +98,45 @@ async def theme_preview(request: Request, theme_id: str):
             "preview_theme_name": theme_name,
             "theme_variables": theme_variables,
         },
+    )
+
+
+@router.post("/save-session-timeout", response_class=HTMLResponse)
+async def save_session_timeout_view(request: Request, session_timeout: int = Form(...)):
+    """Save user-configured session timeout value."""
+    if session_timeout not in VALID_TIMEOUT_VALUES:
+        return RedirectResponse(
+            url="/utils/settings?error=Invalid session timeout selection",
+            status_code=303,
+        )
+
+    try:
+        save_session_timeout(session_timeout)
+    except (ValueError, OSError) as exc:
+        return RedirectResponse(
+            url=f"/utils/settings?error=Failed to save session timeout: {exc}",
+            status_code=303,
+        )
+
+    display = format_timeout_display(session_timeout)
+    return RedirectResponse(
+        url=f"/utils/settings?message=Session timeout set to {display}. New sessions will use this value.",
+        status_code=303,
+    )
+
+
+@router.post("/reset-session-timeout", response_class=HTMLResponse)
+async def reset_session_timeout_view(request: Request):
+    """Reset session timeout to the default value."""
+    try:
+        reset_session_timeout()
+    except OSError as exc:
+        return RedirectResponse(
+            url=f"/utils/settings?error=Failed to reset session timeout: {exc}",
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        url=f"/utils/settings?message=Session timeout reset to default ({format_timeout_display(DEFAULT_SESSION_TIMEOUT)})",
+        status_code=303,
     )
