@@ -18,6 +18,11 @@
       rel="stylesheet"
       href="{{ url_for('static', path='css/styles.css') }}"
     />
+    {# Theme override CSS - loaded after main styles to override CSS custom properties #}
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', path=get_theme_css_path(get_active_theme())) }}"
+    />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💾</text></svg>">
     <title>{% block title %}WebZFS{% endblock %}</title>
   </head>

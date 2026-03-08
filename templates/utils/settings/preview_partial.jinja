@@ -1,0 +1,155 @@
+{# Theme Preview Partial
+   Renders a small dashboard-style demo using inline CSS variables from the selected theme.
+   This is loaded via HTMX when the user changes the dropdown selection.
+#}
+{% set vars = theme_variables %}
+{% set bg_base = vars.get('--bg-base', '#0a0e14') %}
+{% set bg_elevated = vars.get('--bg-elevated', '#151a21') %}
+{% set bg_elevated_2 = vars.get('--bg-elevated-2', '#1e252e') %}
+{% set bg_elevated_3 = vars.get('--bg-elevated-3', '#2b3440') %}
+{% set text_primary = vars.get('--text-primary', '#e6e9ef') %}
+{% set text_secondary = vars.get('--text-secondary', '#b3b9c5') %}
+{% set text_tertiary = vars.get('--text-tertiary', '#6c7a89') %}
+{% set border_subtle = vars.get('--border-subtle', '#2b3440') %}
+{% set border_default = vars.get('--border-default', '#3d4856') %}
+{% set primary_400 = vars.get('--primary-400', '#4a9eff') %}
+{% set primary_500 = vars.get('--primary-500', '#2563eb') %}
+{% set primary_900 = vars.get('--primary-900', '#1e3a8a') %}
+{% set success_400 = vars.get('--success-400', '#4ade80') %}
+{% set success_900 = vars.get('--success-900', '#14532d') %}
+{% set warning_400 = vars.get('--warning-400', '#fbbf24') %}
+{% set warning_900 = vars.get('--warning-900', '#78350f') %}
+{% set danger_400 = vars.get('--danger-400', '#f87171') %}
+{% set danger_900 = vars.get('--danger-900', '#7f1d1d') %}
+{% set info_400 = vars.get('--info-400', '#22d3ee') %}
+{% set info_900 = vars.get('--info-900', '#164e63') %}
+{% set purple_400 = vars.get('--purple-400', '#c084fc') %}
+
+<div class="space-y-3">
+    <h3 class="text-lg font-semibold text-text-primary mb-2">Theme Preview</h3>
+
+    <!-- Preview Container -->
+    <div style="background: {{ bg_base }}; border: 1px solid {{ border_subtle }}; border-radius: 0.75rem; padding: 1rem; font-family: 'Inter', sans-serif;">
+
+        <!-- Mini Navbar -->
+        <div style="background: {{ bg_elevated }}; border: 1px solid {{ border_subtle }}; border-radius: 0.5rem; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <div style="width: 1.5rem; height: 1.5rem; background: {{ primary_900 }}; border: 1px solid {{ primary_500 }}40; border-radius: 0.25rem; display: flex; align-items: center; justify-content: center;">
+                    <svg width="12" height="12" fill="{{ primary_400 }}" viewBox="0 0 1920 1920" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1556.611 1920c-54.084 0-108.168-20.692-149.333-61.857L740.095 1190.96c-198.162 41.712-406.725-19.269-550.475-163.019C14.449 852.771-35.256 582.788 65.796 356.27l32.406-72.696 390.194 390.193c24.414 24.305 64.266 24.305 88.68 0l110.687-110.686c11.824-11.934 18.283-27.59 18.283-44.34 0-16.751-6.46-32.516-18.283-44.34L297.569 84.207 370.265 51.8C596.893-49.252 866.875.453 1041.937 175.515c155.026 155.136 212.833 385.157 151.851 594.815l650.651 650.651c39.961 39.852 61.967 92.95 61.967 149.443 0 56.383-22.006 109.482-61.967 149.334l-138.275 138.385c-41.275 41.165-95.36 61.857-149.553 61.857Z" fill-rule="evenodd"/>
+                    </svg>
+                </div>
+                <span style="color: {{ text_primary }}; font-size: 0.75rem; font-weight: 600;">WebZFS</span>
+            </div>
+            <div style="display: flex; gap: 0.25rem;">
+                <span style="color: {{ primary_400 }}; font-size: 0.6rem; padding: 0.15rem 0.4rem; border: 1px solid {{ primary_500 }}; border-radius: 0.25rem;">Dashboard</span>
+                <span style="color: {{ text_secondary }}; font-size: 0.6rem; padding: 0.15rem 0.4rem; border: 1px solid {{ border_subtle }}; border-radius: 0.25rem;">Pools</span>
+                <span style="color: {{ text_secondary }}; font-size: 0.6rem; padding: 0.15rem 0.4rem; border: 1px solid {{ border_subtle }}; border-radius: 0.25rem;">Datasets</span>
+            </div>
+        </div>
+
+        <!-- Dashboard Cards Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+
+            <!-- System Info Card -->
+            <div style="background: {{ bg_elevated }}; border: 1px solid {{ border_subtle }}; border-radius: 0.5rem; padding: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.375rem; margin-bottom: 0.5rem;">
+                    <div style="width: 1.25rem; height: 1.25rem; background: {{ primary_500 }}1a; border: 1px solid {{ primary_500 }}33; border-radius: 0.25rem; display: flex; align-items: center; justify-content: center;">
+                        <svg width="10" height="10" fill="none" stroke="{{ primary_400 }}" viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <span style="color: {{ text_primary }}; font-size: 0.65rem; font-weight: 600;">System Information</span>
+                </div>
+                <table style="width: 100%; font-size: 0.55rem;">
+                    <tr><td style="color: {{ text_secondary }}; padding: 0.125rem 0.25rem;">Hostname</td><td style="color: {{ text_primary }}; padding: 0.125rem 0.25rem;">webzfs-server</td></tr>
+                    <tr style="background: {{ bg_elevated_2 }};"><td style="color: {{ text_secondary }}; padding: 0.125rem 0.25rem;">OS</td><td style="color: {{ text_primary }}; padding: 0.125rem 0.25rem;">Linux 6.12</td></tr>
+                    <tr><td style="color: {{ text_secondary }}; padding: 0.125rem 0.25rem;">ZFS Version</td><td style="color: {{ text_primary }}; padding: 0.125rem 0.25rem;">2.3.0</td></tr>
+                </table>
+            </div>
+
+            <!-- Pool Status Card -->
+            <div style="background: {{ bg_elevated }}; border: 1px solid {{ border_subtle }}; border-radius: 0.5rem; padding: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.375rem; margin-bottom: 0.5rem;">
+                    <div style="width: 1.25rem; height: 1.25rem; background: {{ purple_400 }}1a; border: 1px solid {{ purple_400 }}33; border-radius: 0.25rem; display: flex; align-items: center; justify-content: center;">
+                        <svg width="10" height="10" fill="none" stroke="{{ purple_400 }}" viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+                        </svg>
+                    </div>
+                    <span style="color: {{ text_primary }}; font-size: 0.65rem; font-weight: 600;">ZFS Pools</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: {{ text_primary }}; font-size: 0.55rem;">tank</span>
+                        <span style="color: {{ success_400 }}; font-size: 0.5rem; background: {{ success_900 }}80; padding: 0.05rem 0.3rem; border-radius: 9999px; border: 1px solid {{ success_900 }};">ONLINE</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: {{ text_primary }}; font-size: 0.55rem;">backup</span>
+                        <span style="color: {{ success_400 }}; font-size: 0.5rem; background: {{ success_900 }}80; padding: 0.05rem 0.3rem; border-radius: 9999px; border: 1px solid {{ success_900 }};">ONLINE</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: {{ text_primary }}; font-size: 0.55rem;">scratch</span>
+                        <span style="color: {{ warning_400 }}; font-size: 0.5rem; background: {{ warning_900 }}80; padding: 0.05rem 0.3rem; border-radius: 9999px; border: 1px solid {{ warning_900 }};">DEGRADED</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Badges & Buttons Preview -->
+            <div style="background: {{ bg_elevated }}; border: 1px solid {{ border_subtle }}; border-radius: 0.5rem; padding: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.375rem; margin-bottom: 0.5rem;">
+                    <span style="color: {{ text_primary }}; font-size: 0.65rem; font-weight: 600;">Badges & Buttons</span>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.375rem;">
+                    <span style="color: {{ success_400 }}; font-size: 0.5rem; background: {{ success_900 }}80; padding: 0.1rem 0.35rem; border-radius: 9999px; border: 1px solid {{ success_900 }};">Success</span>
+                    <span style="color: {{ warning_400 }}; font-size: 0.5rem; background: {{ warning_900 }}80; padding: 0.1rem 0.35rem; border-radius: 9999px; border: 1px solid {{ warning_900 }};">Warning</span>
+                    <span style="color: {{ danger_400 }}; font-size: 0.5rem; background: {{ danger_900 }}80; padding: 0.1rem 0.35rem; border-radius: 9999px; border: 1px solid {{ danger_900 }};">Danger</span>
+                    <span style="color: {{ info_400 }}; font-size: 0.5rem; background: {{ info_900 }}80; padding: 0.1rem 0.35rem; border-radius: 9999px; border: 1px solid {{ info_900 }};">Info</span>
+                </div>
+                <div style="display: flex; gap: 0.25rem;">
+                    <span style="background: {{ primary_500 }}; color: white; font-size: 0.5rem; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-weight: 500;">Primary</span>
+                    <span style="background: {{ bg_elevated_2 }}; color: {{ text_primary }}; font-size: 0.5rem; padding: 0.15rem 0.4rem; border-radius: 0.25rem; border: 1px solid {{ border_default }}; font-weight: 500;">Secondary</span>
+                </div>
+            </div>
+
+            <!-- Table Preview -->
+            <div style="background: {{ bg_elevated }}; border: 1px solid {{ border_subtle }}; border-radius: 0.5rem; padding: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.375rem; margin-bottom: 0.5rem;">
+                    <span style="color: {{ text_primary }}; font-size: 0.65rem; font-weight: 600;">Data Table</span>
+                </div>
+                <div style="border: 1px solid {{ border_subtle }}; border-radius: 0.25rem; overflow: hidden;">
+                    <div style="background: {{ bg_elevated_2 }}; display: flex; font-size: 0.5rem; color: {{ text_secondary }}; text-transform: uppercase; letter-spacing: 0.05em;">
+                        <span style="flex: 1; padding: 0.2rem 0.35rem;">Name</span>
+                        <span style="flex: 1; padding: 0.2rem 0.35rem;">Size</span>
+                        <span style="flex: 1; padding: 0.2rem 0.35rem;">Status</span>
+                    </div>
+                    <div style="display: flex; font-size: 0.5rem; border-top: 1px solid {{ border_subtle }};">
+                        <span style="flex: 1; padding: 0.2rem 0.35rem; color: {{ text_primary }};">tank/data</span>
+                        <span style="flex: 1; padding: 0.2rem 0.35rem; color: {{ text_primary }};">1.2T</span>
+                        <span style="flex: 1; padding: 0.2rem 0.35rem; color: {{ success_400 }};">Mounted</span>
+                    </div>
+                    <div style="display: flex; font-size: 0.5rem; border-top: 1px solid {{ border_subtle }}; background: {{ bg_elevated_2 }};">
+                        <span style="flex: 1; padding: 0.2rem 0.35rem; color: {{ text_primary }};">tank/logs</span>
+                        <span style="flex: 1; padding: 0.2rem 0.35rem; color: {{ text_primary }};">256G</span>
+                        <span style="flex: 1; padding: 0.2rem 0.35rem; color: {{ success_400 }};">Mounted</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Color Swatches -->
+        <div style="margin-top: 0.5rem; display: flex; gap: 0.25rem; flex-wrap: wrap;">
+            <div style="width: 1.5rem; height: 1rem; background: {{ bg_base }}; border: 1px solid {{ border_subtle }}; border-radius: 0.15rem;" title="bg-base"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ bg_elevated }}; border: 1px solid {{ border_subtle }}; border-radius: 0.15rem;" title="bg-elevated"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ bg_elevated_2 }}; border: 1px solid {{ border_subtle }}; border-radius: 0.15rem;" title="bg-elevated-2"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ primary_400 }}; border-radius: 0.15rem;" title="primary-400"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ primary_500 }}; border-radius: 0.15rem;" title="primary-500"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ success_400 }}; border-radius: 0.15rem;" title="success-400"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ warning_400 }}; border-radius: 0.15rem;" title="warning-400"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ danger_400 }}; border-radius: 0.15rem;" title="danger-400"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ info_400 }}; border-radius: 0.15rem;" title="info-400"></div>
+            <div style="width: 1.5rem; height: 1rem; background: {{ purple_400 }}; border-radius: 0.15rem;" title="purple-400"></div>
+        </div>
+
+    </div>
+</div>

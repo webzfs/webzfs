@@ -3,7 +3,7 @@ ZFS Replication Management Views
 Provides web interface for ZFS replication operations using native send/receive and syncoid
 """
 from fastapi import APIRouter, Request, Form, Depends, Body
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from typing import Annotated, Optional, Dict
 import platform
 import threading
@@ -13,6 +13,7 @@ from services.syncoid import SyncoidService
 from services.zfs_dataset import ZFSDatasetService
 from services.zfs_snapshot import ZFSSnapshotService
 from services.ssh_connection import SSHConnectionService
+from services.utils import get_openzfs_man_page_section_url, get_os_type, get_zfs_version
 from auth.dependencies import get_current_user
 
 
@@ -33,7 +34,7 @@ async def replication_index(request: Request):
         
         # Check syncoid status
         syncoid_status = syncoid_service.check_syncoid_status()
-        
+
         # Get active executions so user can see in-progress replications
         active_executions = replication_service.get_active_executions()
         
@@ -261,6 +262,10 @@ async def send_receive_form(request: Request):
         snapshots = snapshot_service.list_snapshots()
         ssh_connections = ssh_service.list_connections()
         
+        # Build version-aware man page URLs for zfs-send and zfs-receive
+        zfs_send_man_url = get_openzfs_man_page_section_url(8, "zfs-send.8")
+        zfs_receive_man_url = get_openzfs_man_page_section_url(8, "zfs-receive.8")
+        
         return templates.TemplateResponse(
             "zfs/replication/send_receive.jinja",
             {
@@ -269,6 +274,8 @@ async def send_receive_form(request: Request):
                 "snapshots": snapshots,
                 "ssh_connections": ssh_connections,
                 "compression_methods": [c.value for c in CompressionMethod],
+                "zfs_send_man_url": zfs_send_man_url,
+                "zfs_receive_man_url": zfs_receive_man_url,
                 "page_title": "ZFS Send/Receive"
             }
         )
@@ -280,6 +287,8 @@ async def send_receive_form(request: Request):
                 "datasets": [],
                 "snapshots": [],
                 "ssh_connections": [],
+                "zfs_send_man_url": None,
+                "zfs_receive_man_url": None,
                 "error": str(e),
                 "page_title": "ZFS Send/Receive"
             }
@@ -294,9 +303,11 @@ async def send_receive_execute(
     replication_type: Annotated[str, Form()],
     incremental: Annotated[bool, Form()] = True,
     recursive: Annotated[bool, Form()] = False,
+    raw: Annotated[bool, Form()] = False,
     compression: Annotated[str, Form()] = "lz4",
     remote_host: Annotated[str, Form()] = "",
-    remote_port: Annotated[int, Form()] = 22
+    remote_port: Annotated[int, Form()] = 22,
+    ssh_connection_id: Annotated[str, Form()] = ""
 ):
     """Execute a one-time ZFS send/receive operation.
     
@@ -309,6 +320,19 @@ async def send_receive_execute(
         if remote_host:
             options['remote_host'] = remote_host
             options['remote_port'] = remote_port
+
+        # Look up the SSH connection to get the private key path.
+        # Without this, the SSH command would not include -i <key>
+        # and would fail with "Permission denied".
+        if ssh_connection_id:
+            connection = ssh_service.get_connection(ssh_connection_id)
+            if connection:
+                options['ssh_key'] = connection['private_key_path']
+                # If remote_host was not set from the hidden field,
+                # build it from the connection record
+                if not remote_host:
+                    options['remote_host'] = f"{connection['username']}@{connection['host']}"
+                    options['remote_port'] = connection['port']
         
         rep_type = ReplicationType(replication_type)
         comp_method = CompressionMethod(compression)
@@ -323,6 +347,7 @@ async def send_receive_execute(
                 'replication_type': rep_type,
                 'incremental': incremental,
                 'recursive': recursive,
+                'raw': raw,
                 'compression': comp_method,
                 'job_name': job_name,
                 **options
@@ -790,6 +815,162 @@ async def execution_detail(request: Request, execution_id: int):
                 "back_url": "/zfs/replication/history"
             }
         )
+
+
+@router.post("/history/{execution_id}/mark-failed", response_class=HTMLResponse)
+async def mark_execution_failed(request: Request, execution_id: int):
+    """Mark a running execution as failed.
+
+    Used to clean up stale executions where the background thread
+    crashed or the application was restarted mid-replication.
+    """
+    try:
+        success = replication_service.storage.mark_execution_failed(
+            execution_id=execution_id,
+            error_message=(
+                "Manually marked as failed by user. The background "
+                "replication process was likely no longer running."
+            )
+        )
+
+        if success:
+            return RedirectResponse(
+                url=f"/zfs/replication/history/{execution_id}?message=Execution marked as failed",
+                status_code=303
+            )
+        else:
+            return RedirectResponse(
+                url=f"/zfs/replication/history/{execution_id}?error=Could not mark execution as failed (not in running state)",
+                status_code=303
+            )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/replication/history/{execution_id}?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.get("/history/{execution_id}/bug-report")
+async def execution_bug_report(request: Request, execution_id: int):
+    """Generate a downloadable markdown bug report for a failed execution.
+
+    Includes system information (OS, kernel, ZFS version), execution
+    details, the full replication command, error messages, and log
+    output to assist with diagnosing replication failures.
+    """
+    from datetime import datetime as dt
+
+    execution = replication_service.get_execution_detail(execution_id)
+    if not execution:
+        return Response(
+            content="Execution not found",
+            status_code=404,
+            media_type="text/plain"
+        )
+
+    os_type = get_os_type()
+    kernel_version = platform.release()
+    os_version = platform.version()
+    machine_arch = platform.machine()
+    zfs_version = get_zfs_version() or "Unknown"
+    python_version = platform.python_version()
+    generated_at = dt.now().isoformat()
+
+    lines = [
+        "# ZFS Replication Failure Report",
+        "",
+        f"**Generated**: {generated_at}",
+        f"**Execution ID**: {execution.get('id', 'N/A')}",
+        "",
+        "---",
+        "",
+        "## System Information",
+        "",
+        f"| Field | Value |",
+        f"|-------|-------|",
+        f"| OS | {os_type} |",
+        f"| Kernel | {kernel_version} |",
+        f"| OS Version | {os_version} |",
+        f"| Architecture | {machine_arch} |",
+        f"| ZFS Version | {zfs_version} |",
+        f"| Python Version | {python_version} |",
+        "",
+        "---",
+        "",
+        "## Execution Details",
+        "",
+        f"| Field | Value |",
+        f"|-------|-------|",
+        f"| Job Name | {execution.get('job_name', 'N/A')} |",
+        f"| Source Dataset | `{execution.get('source_dataset', 'N/A')}` |",
+        f"| Target Dataset | `{execution.get('target_dataset', 'N/A')}` |",
+        f"| Replication Type | {execution.get('replication_type', 'N/A')} |",
+        f"| Snapshot | `{execution.get('snapshot_name', 'N/A')}` |",
+        f"| Status | {execution.get('status', 'N/A')} |",
+        f"| Started At | {execution.get('started_at', 'N/A')} |",
+        f"| Completed At | {execution.get('completed_at', 'N/A')} |",
+        f"| Duration (seconds) | {execution.get('duration_seconds', 'N/A')} |",
+    ]
+
+    command = execution.get('command')
+    if command:
+        lines.extend([
+            "",
+            "---",
+            "",
+            "## Replication Command",
+            "",
+            "```",
+            command,
+            "```",
+        ])
+
+    error_message = execution.get('error_message')
+    if error_message:
+        lines.extend([
+            "",
+            "---",
+            "",
+            "## Error Message",
+            "",
+            "```",
+            error_message,
+            "```",
+        ])
+
+    log_output = execution.get('log_output')
+    if log_output:
+        lines.extend([
+            "",
+            "---",
+            "",
+            "## Log Output",
+            "",
+            "```",
+            log_output,
+            "```",
+        ])
+
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## Additional Notes",
+        "",
+        "*Add any additional context or steps to reproduce the issue here.*",
+        "",
+    ])
+
+    content = "\n".join(lines)
+    filename = f"replication-failure-{execution_id}.md"
+
+    return Response(
+        content=content,
+        media_type="text/markdown",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 
 @router.get("/api/progress-stream")
