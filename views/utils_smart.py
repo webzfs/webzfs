@@ -19,26 +19,32 @@ smart_service = SMARTMonitoringService()
 
 @router.get("/", response_class=HTMLResponse)
 async def smart_index(request: Request):
-    """Display all disks with SMART capability"""
+    """Display page shell immediately; disk list loads via HTMX partial."""
+    return templates.TemplateResponse(
+        "utils/smart/index.jinja",
+        {
+            "request": request,
+            "page_title": "SMART Disk Monitoring",
+        },
+    )
+
+
+@router.get("/content-partial", response_class=HTMLResponse)
+async def smart_content_partial(request: Request):
+    """HTMX partial that fetches disk list and returns bulk actions + table HTML."""
     try:
         disks = smart_service.list_disks()
         return templates.TemplateResponse(
-            "utils/smart/index.jinja",
+            "utils/smart/content_partial.jinja",
             {
                 "request": request,
                 "disks": disks,
-                "page_title": "SMART Disk Monitoring"
-            }
+            },
         )
     except Exception as e:
-        return templates.TemplateResponse(
-            "utils/smart/index.jinja",
-            {
-                "request": request,
-                "disks": [],
-                "error": str(e),
-                "page_title": "SMART Disk Monitoring"
-            }
+        return HTMLResponse(
+            content=f'<div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded">'
+            f'<strong>Error:</strong> {str(e)}</div>'
         )
 
 
