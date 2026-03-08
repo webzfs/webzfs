@@ -7,7 +7,7 @@ import re
 import os
 from typing import List, Dict, Any, Optional, Tuple
 
-from services.utils import is_freebsd, run_zfs_command, run_privileged_command
+from services.utils import is_freebsd, is_netbsd, run_zfs_command, run_privileged_command
 from config.settings import Settings
 
 
