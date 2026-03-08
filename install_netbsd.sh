@@ -3,6 +3,9 @@
 # WebZFS Installation Script for NetBSD
 # This script installs WebZFS to /opt/webzfs
 # On NetBSD, the application runs as root due to PAM authentication requirements
+#
+# Uses pre-compiled wheels from https://github.com/webzfs/webzfs-wheels
+# to avoid needing Rust/C compilation during installation.
 
 set -e
 
@@ -10,6 +13,17 @@ INSTALL_DIR="/opt/webzfs"
 VENV_DIR="${INSTALL_DIR}/.venv"
 ENV_FILE="${INSTALL_DIR}/.env"
 LOG_FILE="${INSTALL_DIR}/install_log.txt"
+WHEELS_DIR="${INSTALL_DIR}/.wheels"
+
+# GitHub raw URL base for pre-compiled wheels
+WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
+
+# NetBSD 10.x wheel configuration
+WHEEL_SUBDIR="netbsd10-0"
+WHEEL_PLATFORM="netbsd_10_1_amd64"
+
+# Wheel packages to download (these require compilation without pre-built wheels)
+WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -275,7 +289,7 @@ if ! command_exists npm; then
 fi
 printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 
-# Check for Rust (needed to compile pydantic-core on NetBSD)
+# Check for Rust (optional - only needed if pre-compiled wheels are unavailable)
 # Try to source cargo env if rustup is installed
 if [ -f "/root/.cargo/env" ]; then
     . "/root/.cargo/env"
@@ -283,66 +297,21 @@ elif [ -f "$HOME/.cargo/env" ]; then
     . "$HOME/.cargo/env"
 fi
 
-if ! command_exists rustc; then
-    printf "${RED}Error: Rust is not installed${NC}\n"
-    echo "Rust is required to compile pydantic-core on NetBSD."
-    echo "Please run: $0 --deps-only"
-    exit 1
+if command_exists rustc && rustc --version >/dev/null 2>&1; then
+    printf "${GREEN}✓${NC} Rust $(rustc --version | cut -d' ' -f2) found (fallback compiler)\n"
+else
+    printf "${YELLOW}Note:${NC} Rust not found. Pre-compiled wheels will be used instead.\n"
+    echo "  If wheel download fails, Rust will be needed. Install with: $0 --deps-only"
 fi
 
-# Verify rustc actually works (not just exists)
-if ! rustc --version >/dev/null 2>&1; then
-    printf "${RED}Error: Rust compiler is installed but not working${NC}\n"
-    echo "The rustc binary may be corrupted or incompatible."
-    echo "Try installing Rust via rustup:"
-    echo "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-    exit 1
+# Check for gmake (optional - only needed for source compilation fallback)
+if command_exists gmake; then
+    GMAKE_PATH=$(command -v gmake)
+    printf "${GREEN}✓${NC} gmake found (fallback compiler)\n"
+else
+    GMAKE_PATH=""
+    printf "${YELLOW}Note:${NC} gmake not found. Pre-compiled wheels will be used instead.\n"
 fi
-
-printf "${GREEN}✓${NC} Rust $(rustc --version | cut -d' ' -f2) found\n"
-
-# Check for libsodium (needed to compile pynacl on NetBSD)
-if [ ! -f "/usr/pkg/include/sodium.h" ]; then
-    printf "${RED}Error: libsodium is not installed${NC}\n"
-    echo "libsodium is required to compile pynacl on NetBSD."
-    echo "Please install it with: pkgin -y install libsodium"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} libsodium found\n"
-
-# Check for gmake (GNU make - required for compiling some Python packages)
-if ! command_exists gmake; then
-    printf "${RED}Error: GNU make (gmake) is not installed${NC}\n"
-    echo "gmake is required to compile some Python packages on NetBSD."
-    echo "Please install it with: pkgin -y install gmake"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} gmake found\n"
-
-# Get the full path to gmake for use in the install script
-GMAKE_PATH=$(command -v gmake)
-
-# Check for pkg-config (required for cryptography package)
-if ! command_exists pkg-config; then
-    printf "${RED}Error: pkg-config is not installed${NC}\n"
-    echo "pkg-config is required to compile cryptography on NetBSD."
-    echo "Please install it with: pkgin -y install pkg-config"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} pkg-config found\n"
-
-# Check for OpenSSL (required for cryptography package)
-if [ ! -f "/usr/pkg/include/openssl/ssl.h" ]; then
-    printf "${RED}Error: OpenSSL development headers not found${NC}\n"
-    echo "OpenSSL is required to compile cryptography on NetBSD."
-    echo "Please install it with: pkgin -y install openssl"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} OpenSSL found\n"
 
 echo
 
@@ -407,23 +376,81 @@ if [ ! -d "$ROOT_DATA_DIR" ]; then
 fi
 echo
 
+# Download pre-compiled wheels
+echo "Downloading pre-compiled wheels..."
+mkdir -p "$WHEELS_DIR"
+
+WHEELS_URL="${WHEELS_REPO_BASE}/${WHEEL_SUBDIR}"
+DOWNLOAD_FAILED=0
+
+for pkg_version in $WHEEL_PACKAGES; do
+    # Extract package name and version
+    pkg_name=$(echo "$pkg_version" | sed 's/-[0-9].*//')
+    version=$(echo "$pkg_version" | sed 's/.*-//')
+    wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
+
+    # Determine ABI tag - cryptography uses cp37-abi3, others use cp311-cp311
+    if [ "$pkg_name" = "cryptography" ]; then
+        ABI_TAG="cp37-abi3"
+    else
+        ABI_TAG="cp311-cp311"
+    fi
+
+    wheel_filename="${wheel_pkg_name}-${version}-${ABI_TAG}-${WHEEL_PLATFORM}.whl"
+    wheel_url="${WHEELS_URL}/${wheel_filename}"
+    wheel_path="${WHEELS_DIR}/${wheel_filename}"
+
+    if [ -f "$wheel_path" ]; then
+        printf "  ${GREEN}✓${NC} ${pkg_name} wheel already exists\n"
+    else
+        printf "  Downloading ${pkg_name}..."
+        if curl -sL -o "$wheel_path" "$wheel_url" 2>/dev/null; then
+            printf " ${GREEN}✓${NC}\n"
+        else
+            printf " ${RED}FAILED${NC}\n"
+            printf "${YELLOW}Warning: Could not download wheel for ${pkg_name}${NC}\n"
+            printf "  URL: ${wheel_url}\n"
+            DOWNLOAD_FAILED=1
+        fi
+    fi
+done
+
+if [ "$DOWNLOAD_FAILED" -eq 1 ]; then
+    echo
+    printf "${YELLOW}Some wheels failed to download.${NC}\n"
+    printf "The installer will attempt to compile these packages from source.\n"
+    printf "This may require additional build dependencies (rust, gmake, etc.)\n"
+    echo
+    printf "Do you want to continue anyway? (y/n): "
+    read -r REPLY
+    if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
+        echo "Installation aborted."
+        exit 1
+    fi
+else
+    printf "${GREEN}✓${NC} All wheels downloaded successfully\n"
+fi
+
+echo
+
 # Install dependencies
 echo "Installing Python and Node.js dependencies..."
-echo "(This may take a few minutes...)"
+echo "(This should be quick with pre-compiled wheels...)"
 echo
 
 cd "$INSTALL_DIR"
 
-# Set environment for building
+# Set environment for building (in case any packages need source compilation)
 export HOME="$INSTALL_DIR"
-export MAKE="$GMAKE_PATH"
+if [ -n "$GMAKE_PATH" ]; then
+    export MAKE="$GMAKE_PATH"
+fi
 
 # Set OpenSSL location for cryptography package on NetBSD
 export OPENSSL_DIR="/usr/pkg"
 export PKG_CONFIG_PATH="/usr/pkg/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
-# Ensure Rust toolchain is in PATH for building Python packages
-# Check common locations for cargo/rustc
+# Ensure Rust toolchain is in PATH for building Python packages (fallback)
 if [ -f "/root/.cargo/env" ]; then
     . "/root/.cargo/env"
 elif [ -d "/root/.cargo/bin" ]; then
@@ -446,9 +473,8 @@ fi
 echo "Installing/upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > install_log.txt 2>&1
 
-echo "Installing Python dependencies in virtual environment..."
-echo "This may take 10-15 minutes as Rust packages need to be compiled..."
-.venv/bin/pip install -r requirements.txt >> install_log.txt 2>&1
+echo "Installing Python dependencies (using pre-compiled wheels)..."
+.venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1
 
 echo "Installing Node.js dependencies..."
 npm install >> install_log.txt 2>&1
@@ -665,6 +691,9 @@ echo "========================================"
 echo
 echo "WebZFS has been installed to: $INSTALL_DIR"
 echo "Note: On NetBSD, the service runs as root for PAM authentication"
+echo
+echo "Pre-compiled wheels used for: cryptography, markupsafe, psutil, pydantic-core"
+echo "Wheels cached in: $WHEELS_DIR"
 echo
 echo "To start the application manually:"
 echo "  $INSTALL_DIR/run.sh"
