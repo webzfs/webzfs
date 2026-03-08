@@ -10,6 +10,7 @@ import io
 import zipfile
 from config.templates import templates
 from services.zfs_observability import ZFSObservabilityService
+from services.utils import get_openzfs_man_page_url
 from auth.dependencies import get_current_user
 
 
@@ -481,12 +482,14 @@ async def module_parameters(request: Request):
     """Display ZFS kernel module parameters"""
     try:
         parameters = observability_service.get_zfs_module_parameters()
+        openzfs_man_url = get_openzfs_man_page_url()
         
         return templates.TemplateResponse(
             "zfs/observability/module_parameters.jinja",
             {
                 "request": request,
                 "parameters": parameters,
+                "openzfs_man_url": openzfs_man_url,
                 "page_title": "ZFS Module Parameters"
             }
         )
@@ -496,6 +499,7 @@ async def module_parameters(request: Request):
             {
                 "request": request,
                 "parameters": {},
+                "openzfs_man_url": None,
                 "error": str(e),
                 "page_title": "ZFS Module Parameters"
             }
