@@ -8,7 +8,7 @@ from typing import Annotated, Optional
 from config.templates import templates
 from services.zfs_dataset import ZFSDatasetService
 from services.audit_logger import audit_logger
-from services.utils import is_netbsd get_openzfs_man_page_url
+from services.utils import is_netbsd, get_openzfs_man_page_url
 from auth.dependencies import get_current_user
 
 

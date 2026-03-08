@@ -301,6 +301,37 @@ def get_openzfs_man_page_url() -> Optional[str]:
     return None
 
 
+def get_openzfs_man_page_section_url(section: int, page: str) -> Optional[str]:
+    """
+    Get the OpenZFS man page URL for a specific section and page.
+
+    Builds a versioned URL like:
+        https://openzfs.github.io/openzfs-docs/man/v2.2/8/zfs-send.8.html
+
+    Args:
+        section: Man page section number (e.g. 8)
+        page: Man page name including section suffix (e.g. "zfs-send.8")
+
+    Returns:
+        The full URL string, or None if the ZFS version cannot be determined.
+    """
+    version_string = get_zfs_version()
+    if not version_string:
+        return None
+
+    import re
+    match = re.search(r'(\d+\.\d+)', version_string)
+    if not match:
+        return None
+
+    major_minor = match.group(1)
+
+    if major_minor in OPENZFS_MAN_PAGE_VERSIONS:
+        return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/{section}/{page}.html"
+
+    return None
+
+
 def run_zfs_command_with_pipe(
     send_cmd: List[str],
     receive_cmd: List[str],
