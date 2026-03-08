@@ -46,7 +46,6 @@
 
     - name: Run installer script
       shell: "yes | /var/tmp/webzfs/install_{{ ansible_system|lower }}.sh"
-
     - name: Start/restart webzfs service
       service:
         name: webzfs

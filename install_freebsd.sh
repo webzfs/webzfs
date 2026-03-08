@@ -161,19 +161,20 @@ download_wheels() {
 detect_freebsd_version
 
 # Install required dependencies
-echo
 echo "Installing required dependencies..."
 echo "(This may take a few minutes on first run...)"
 echo
 
-# Install packages via pkg
+
+# Install all required packages via pkg
 # python311 - Python runtime
 # py311-pip - pip for installing Python packages
 # node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
-# Note: rust, libsodium, gmake are NOT needed when using pre-compiled wheels
+
 pkg install -y python311 py311-pip node npm smartmontools sanoid
+
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -239,15 +240,17 @@ if ! command_exists sanoid; then
     printf "${YELLOW}Warning: sanoid not installed correctly${NC}\n"
 else
     printf "${GREEN}✓${NC} sanoid found\n"
-fi
 
-echo
+fi
 
 # Create installation directory if it doesn't exist
 if [ ! -d "$INSTALL_DIR" ]; then
     echo "Creating installation directory: $INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
 fi
+
+# Create config directory for WebZFS settings (theme, etc.)
+mkdir -p "$INSTALL_DIR/.config/webzfs"
 
 # Download pre-compiled wheels
 download_wheels
@@ -260,6 +263,7 @@ echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 (cd "$SOURCE_DIR" && tar cf - --exclude='.venv' --exclude='node_modules' --exclude='.git' \
     --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
     (cd "$INSTALL_DIR" && tar xpf -)
+
 
 printf "${GREEN}✓${NC} Application files copied\n"
 

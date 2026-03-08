@@ -29,9 +29,9 @@
     </div>
     {% endif %}
 
-    {% if request.query_params.get('error') or error %}
+    {% if request.query_params.get('error') %}
     <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
-        <strong>Error:</strong> {{ request.query_params.get('error') or error }}
+        <strong>Error:</strong> {{ request.query_params.get('error') }}
     </div>
     {% endif %}
 
@@ -186,12 +186,10 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
             </svg>
+            <span class="text-text-secondary text-lg font-medium">Loading services...</span>
+            <span class="text-text-tertiary text-sm mt-1">Querying system service status</span>
         </div>
-        <h3 class="text-lg font-medium text-text-primary mb-2">No Services Found</h3>
-        <p class="text-text-tertiary mb-2">Unable to enumerate system services.</p>
-        <p class="text-text-tertiary text-sm">Ensure systemctl (Linux) or service (FreeBSD) is available and accessible.</p>
     </div>
-    {% endif %}
 
     <!-- Info Box -->
     <div class="mt-6 bg-info-900/30 border-2 border-info-500/50 text-info-400 px-4 py-3 rounded">
