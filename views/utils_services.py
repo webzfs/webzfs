@@ -1,6 +1,7 @@
 """
 System Services Views
 Read-only web interface for viewing system service status.
+Uses deferred HTMX loading so the page shell renders instantly.
 """
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
@@ -15,11 +16,22 @@ services_service = SystemServicesService()
 
 @router.get("/", response_class=HTMLResponse)
 async def services_index(request: Request):
-    """Display all system services and their status."""
+    """Render the page shell immediately. Service data is loaded via HTMX."""
+    return templates.TemplateResponse(
+        "utils/services/index.jinja",
+        {
+            "request": request,
+            "page_title": "System Services",
+        },
+    )
+
+
+@router.get("/content-partial", response_class=HTMLResponse)
+async def services_content_partial(request: Request):
+    """HTMX partial endpoint that fetches service data and returns the content fragment."""
     try:
         all_services = services_service.list_services()
 
-        # Build summary counts
         summary = {
             "total": len(all_services),
             "running": sum(1 for s in all_services if s["status"] == "running"),
@@ -31,24 +43,21 @@ async def services_index(request: Request):
         }
 
         return templates.TemplateResponse(
-            "utils/services/index.jinja",
+            "utils/services/content_partial.jinja",
             {
                 "request": request,
                 "services": all_services,
                 "summary": summary,
-                "page_title": "System Services",
             },
         )
     except Exception as e:
-        return templates.TemplateResponse(
-            "utils/services/index.jinja",
-            {
-                "request": request,
-                "services": [],
-                "summary": {},
-                "error": str(e),
-                "page_title": "System Services",
-            },
+        return HTMLResponse(
+            content=f"""
+            <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded" role="alert">
+                <strong>Error:</strong> {e}
+            </div>
+            """,
+            status_code=200,
         )
 
 
