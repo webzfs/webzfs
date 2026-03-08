@@ -246,14 +246,82 @@ def run_zfs_command(
 
 
 
-def is_freebsd() -> bool:
-    """Check if running on FreeBSD"""
-    return get_os_type() == 'FreeBSD'
+# Valid OpenZFS man page versions (major.minor)
+OPENZFS_MAN_PAGE_VERSIONS = [
+    "2.4", "2.3", "2.2", "2.1", "2.0", "0.8", "0.7", "0.6"
+]
 
 
-def is_netbsd() -> bool:
-    """Check if running on NetBSD"""
-    return get_os_type() == 'NetBSD'
+def get_zfs_version() -> Optional[str]:
+    """
+    Get the installed ZFS version string by running 'zfs version'.
+
+    Returns:
+        The raw first line of 'zfs version' output, or None on failure.
+    """
+    try:
+        result = run_zfs_command(
+            ['zfs', 'version'],
+            check=False,
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # First line is typically something like "zfs-2.2.6-1"
+            return result.stdout.strip().split('\n')[0]
+    except Exception:
+        pass
+    return None
+
+
+def _get_zfs_major_minor() -> Optional[str]:
+    """
+    Extract the major.minor version from the installed ZFS version string.
+
+    Returns:
+        A string like "2.2" or "0.8", or None if not determinable.
+    """
+    import re
+    version_string = get_zfs_version()
+    if not version_string:
+        return None
+    match = re.search(r'(\d+\.\d+)', version_string)
+    if not match:
+        return None
+    major_minor = match.group(1)
+    if major_minor in OPENZFS_MAN_PAGE_VERSIONS:
+        return major_minor
+    return None
+
+
+def get_openzfs_man_page_url() -> Optional[str]:
+    """
+    Get the OpenZFS man page index URL matching the installed ZFS version.
+
+    Returns:
+        The OpenZFS man page URL string, or None.
+    """
+    major_minor = _get_zfs_major_minor()
+    if not major_minor:
+        return None
+    return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/index.html"
+
+
+def get_openzfs_man_page_section_url(section: int, page: str) -> Optional[str]:
+    """
+    Get the OpenZFS man page URL for a specific page and section.
+
+    Args:
+        section: Man page section number (e.g. 8 for system administration).
+        page: Man page name including section suffix (e.g. "zfs-send.8").
+
+    Returns:
+        Full URL string, or None if version cannot be determined.
+    """
+    major_minor = _get_zfs_major_minor()
+    if not major_minor:
+        return None
+    return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/{section}/{page}.html"
+
 
 def run_zfs_command_with_pipe(
     send_cmd: List[str],

@@ -77,6 +77,24 @@
     </div>
     {% endif %}
 
+    <!-- Recommendation -->
+    <div class="card-nested bg-info-900/20 border-info-700 mb-8">
+        <div class="flex items-start">
+            <svg class="w-5 h-5 mr-3 mt-0.5 text-info-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div class="text-sm text-text-secondary">
+                <p class="font-semibold text-text-primary mb-1">Recommended: Use Sanoid/Syncoid for Replication</p>
+                <p>
+                    For production replication workflows, <a href="https://github.com/jimsalterjrs/sanoid" target="_blank" rel="noopener noreferrer" class="text-primary-400 hover:text-primary-300">Sanoid/Syncoid</a>
+                    is the recommended approach. Syncoid handles incremental sends, common snapshot tracking, and error
+                    recovery automatically, making it significantly more robust than manual <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">zfs send/receive</code> operations.
+                    The native ZFS Send/Receive option is provided for one-off transfers or environments where Syncoid is not available.
+                </p>
+            </div>
+        </div>
+    </div>
+
     <!-- Quick Actions -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <a href="/zfs/replication/send-receive/form" class="card group hover:scale-[1.02] transition-all duration-200">
