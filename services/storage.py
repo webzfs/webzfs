@@ -84,10 +84,19 @@ class FileStorageService:
         job_name: str,
         source_dataset: str,
         target_dataset: str,
-        replication_type: str
+        replication_type: str,
+        command: Optional[str] = None
     ) -> int:
         """
         Create a new execution record
+        
+        Args:
+            job_id: Optional job identifier
+            job_name: Human-readable job name
+            source_dataset: Source dataset path
+            target_dataset: Target dataset path
+            replication_type: Type of replication (local, push, pull)
+            command: Full shell command string that was executed
         
         Returns:
             execution_id: ID of created execution record
@@ -110,6 +119,7 @@ class FileStorageService:
                 'duration_seconds': None,
                 'bytes_transferred': 0,
                 'snapshot_name': None,
+                'command': command,
                 'error_message': None,
                 'log_output': None
             }
@@ -133,6 +143,7 @@ class FileStorageService:
         duration_seconds: Optional[float] = None,
         bytes_transferred: int = 0,
         snapshot_name: Optional[str] = None,
+        command: Optional[str] = None,
         error_message: Optional[str] = None,
         log_output: Optional[str] = None
     ) -> None:
@@ -147,6 +158,8 @@ class FileStorageService:
                     execution['duration_seconds'] = duration_seconds
                     execution['bytes_transferred'] = bytes_transferred
                     execution['snapshot_name'] = snapshot_name
+                    if command is not None:
+                        execution['command'] = command
                     execution['error_message'] = error_message
                     execution['log_output'] = log_output
                     break
@@ -229,7 +242,13 @@ class FileStorageService:
         return execution
     
     def get_active_executions(self) -> List[Dict[str, Any]]:
-        """Get all active (running) executions"""
+        """Get all active (running) executions.
+
+        Note: No automatic stale detection is performed here because
+        large replications can legitimately run for days or weeks.
+        Users can manually mark stale executions as failed from the
+        execution detail page.
+        """
         data = self._read_json(self.history_file)
         executions = data.get('executions', [])
         
@@ -240,6 +259,55 @@ class FileStorageService:
         active.sort(key=lambda x: x.get('started_at', ''), reverse=True)
         
         return active
+
+    def mark_execution_failed(
+        self,
+        execution_id: int,
+        error_message: str = "Manually marked as failed by user"
+    ) -> bool:
+        """Mark a specific running execution as failed.
+
+        This allows users to manually cancel/mark stale executions
+        from the UI without waiting for automatic cleanup.
+
+        Args:
+            execution_id: The execution record ID.
+            error_message: Reason for marking as failed.
+
+        Returns:
+            True if the execution was found and updated.
+        """
+        now = datetime.now()
+
+        with self._lock:
+            data = self._read_json(self.history_file)
+
+            for execution in data.get('executions', []):
+                if execution['id'] != execution_id:
+                    continue
+                if execution.get('status') != 'running':
+                    return False
+
+                started_at_str = execution.get('started_at', '')
+                try:
+                    started_at = datetime.fromisoformat(started_at_str)
+                    duration = (now - started_at).total_seconds()
+                except (ValueError, TypeError):
+                    duration = None
+
+                execution['status'] = 'failure'
+                execution['completed_at'] = now.isoformat()
+                execution['duration_seconds'] = duration
+                execution['error_message'] = error_message
+
+                self._write_json(self.history_file, data)
+                self._write_log(
+                    f"Execution #{execution_id} manually marked as "
+                    f"failed: {error_message}"
+                )
+                return True
+
+        return False
     
     # Notification Methods
     

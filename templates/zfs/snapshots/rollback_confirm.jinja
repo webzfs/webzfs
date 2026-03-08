@@ -233,9 +233,8 @@
                 <!-- Action Buttons -->
                 <div class="flex flex-col sm:flex-row gap-3">
                     <button 
-                        type="button"
+                        type="submit"
                         class="btn-warning inline-flex items-center justify-center gap-2 font-bold"
-                        onclick="showConfirm('confirm-rollback-snapshot')"
                     >
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
@@ -296,15 +295,4 @@
         </ul>
     </div>
 </div>
-
-<!-- Confirmation Modal -->
-{% set modal_id = 'confirm-rollback-snapshot' %}
-{% set modal_title = 'Final Rollback Confirmation' %}
-{% set modal_message = 'Are you ABSOLUTELY CERTAIN you want to rollback to ' ~ snapshot_name ~ '? This will DESTROY ALL DATA created after this snapshot! This operation is IRREVERSIBLE and cannot be undone!' %}
-{% set confirm_text = 'Yes, Rollback Now' %}
-{% set confirm_class = 'warning' %}
-{% set action_url = '/zfs/snapshots/' ~ snapshot_name ~ '/rollback' %}
-{% set method = 'post' %}
-{% include 'partials/confirm.jinja' %}
-
 {% endblock %}

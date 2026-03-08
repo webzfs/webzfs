@@ -301,11 +301,8 @@ async def rollback_snapshot(
         snapshot_service.rollback_snapshot(snapshot_path, force=force)
         audit_logger.log_snapshot_rollback(user=current_user, snapshot_name=snapshot_path, force=force)
         
-        # Extract dataset name
-        dataset_name = snapshot_path.rsplit('@', 1)[0]
-        
         return RedirectResponse(
-            url=f"/zfs/datasets/{dataset_name}?message=Rollback successful",
+            url=f"/zfs/snapshots?message=Rollback to {snapshot_path} successful",
             status_code=303
         )
     except Exception as e:

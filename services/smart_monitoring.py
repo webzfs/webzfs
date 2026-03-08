@@ -3,17 +3,26 @@ SMART Disk Monitoring Service
 Handles SMART data retrieval, test scheduling, and smartd integration
 """
 import subprocess
+import shutil
 import re
 import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from services.utils import is_freebsd, run_privileged_command
+from services.utils import is_freebsd, is_netbsd, run_privileged_command
 
 
 class SMARTMonitoringService:
     """Service for SMART disk monitoring and management"""
+    
+    # Common paths where smartctl may be installed across platforms
+    COMMON_PATHS = [
+        '/usr/sbin/smartctl',
+        '/usr/bin/smartctl',
+        '/usr/local/sbin/smartctl',
+        '/usr/local/bin/smartctl',
+    ]
     
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize SMART monitoring service"""
@@ -28,6 +37,46 @@ class SMARTMonitoringService:
         
         self._ensure_data_directory()
         self._initialize_files()
+        
+        self.smartctl_path = self._find_smartctl_path()
+    
+    def _find_smartctl_path(self) -> Optional[str]:
+        """
+        Find the smartctl binary path.
+        
+        Tries shutil.which() first (respects PATH), then falls back to
+        checking common installation paths. This ensures smartctl is found
+        even in restricted PATH environments like FreeBSD rc.d services.
+        
+        Returns:
+            Full path to the smartctl binary, or None if not found.
+        """
+        # Try which first (works if smartctl is in PATH)
+        path = shutil.which('smartctl')
+        if path:
+            return path
+        
+        # Fall back to checking common paths
+        for common_path in self.COMMON_PATHS:
+            if Path(common_path).exists():
+                return common_path
+        
+        return None
+    
+    def _get_smartctl_cmd(self) -> str:
+        """
+        Get the smartctl binary path, re-discovering if needed.
+        
+        Raises Exception if smartctl cannot be found anywhere.
+        
+        Returns:
+            Full path to the smartctl binary.
+        """
+        if not self.smartctl_path:
+            self.smartctl_path = self._find_smartctl_path()
+        if not self.smartctl_path:
+            raise Exception("smartctl not found. Install smartmontools package.")
+        return self.smartctl_path
     
     def _ensure_data_directory(self) -> None:
         """Ensure the data directory exists"""
@@ -66,7 +115,8 @@ class SMARTMonitoringService:
         """
         try:
             # Try to get list from smartctl --scan
-            result = run_privileged_command(['smartctl', '--scan'])
+            smartctl = self._get_smartctl_cmd()
+            result = run_privileged_command([smartctl, '--scan'])
             
             disks = []
             for line in result.stdout.strip().split('\n'):
@@ -91,8 +141,6 @@ class SMARTMonitoringService:
             
             return disks
             
-        except FileNotFoundError:
-            raise Exception("smartctl not found. Install smartmontools package.")
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to list disks: {e.stderr}")
     
@@ -107,8 +155,9 @@ class SMARTMonitoringService:
             Dictionary with complete SMART data
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-a', disk],
+                [smartctl, '-a', disk],
                 check=False  # Some info available even on error
             )
             
@@ -138,8 +187,9 @@ class SMARTMonitoringService:
             Health status dictionary
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-H', disk],
+                [smartctl, '-H', disk],
                 check=False
             )
             
@@ -171,8 +221,9 @@ class SMARTMonitoringService:
             List of SMART attributes
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-A', disk],
+                [smartctl, '-A', disk],
                 check=False
             )
             
@@ -192,8 +243,9 @@ class SMARTMonitoringService:
             Disk information dictionary
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-i', disk],
+                [smartctl, '-i', disk],
                 check=False
             )
             
@@ -213,8 +265,9 @@ class SMARTMonitoringService:
             Test start confirmation
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-t', 'short', disk]
+                [smartctl, '-t', 'short', disk]
             )
             
             return {
@@ -239,8 +292,9 @@ class SMARTMonitoringService:
             Test start confirmation
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-t', 'long', disk]
+                [smartctl, '-t', 'long', disk]
             )
             
             return {
@@ -265,8 +319,9 @@ class SMARTMonitoringService:
             Test status and history
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-a', disk],
+                [smartctl, '-a', disk],
                 check=False
             )
             
@@ -303,7 +358,8 @@ class SMARTMonitoringService:
             disk: Disk path
         """
         try:
-            run_privileged_command(['smartctl', '-X', disk])
+            smartctl = self._get_smartctl_cmd()
+            run_privileged_command([smartctl, '-X', disk])
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to abort test: {e.stderr}")
     
@@ -318,8 +374,9 @@ class SMARTMonitoringService:
             List of error log entries
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-l', 'error', disk],
+                [smartctl, '-l', 'error', disk],
                 check=False
             )
             
@@ -339,8 +396,9 @@ class SMARTMonitoringService:
             Temperature information
         """
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-A', disk],
+                [smartctl, '-A', disk],
                 check=False
             )
             
@@ -365,14 +423,16 @@ class SMARTMonitoringService:
     def enable_smart(self, disk: str) -> None:
         """Enable SMART on a disk"""
         try:
-            run_privileged_command(['smartctl', '-s', 'on', disk])
+            smartctl = self._get_smartctl_cmd()
+            run_privileged_command([smartctl, '-s', 'on', disk])
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to enable SMART: {e.stderr}")
     
     def disable_smart(self, disk: str) -> None:
         """Disable SMART on a disk"""
         try:
-            run_privileged_command(['smartctl', '-s', 'off', disk])
+            smartctl = self._get_smartctl_cmd()
+            run_privileged_command([smartctl, '-s', 'off', disk])
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to disable SMART: {e.stderr}")
     
@@ -573,8 +633,9 @@ class SMARTMonitoringService:
     def _get_basic_disk_info(self, disk: str) -> Dict[str, Any]:
         """Get basic disk information"""
         try:
+            smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                ['smartctl', '-i', disk],
+                [smartctl, '-i', disk],
                 check=False
             )
             return self._parse_device_info(result.stdout)
