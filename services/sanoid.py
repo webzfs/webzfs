@@ -36,6 +36,38 @@ class SanoidService:
         else:
             self.config_path = Path(self.SANOID_CONF_LINUX)
             self.defaults_path = Path(self.SANOID_DEFAULTS_LINUX)
+        
+        self.sanoid_path = self._find_sanoid_path()
+    
+    def _find_sanoid_path(self) -> Optional[str]:
+        """
+        Discover the sanoid binary path.
+        
+        Tries 'which' first, then falls back to checking common install paths
+        directly. This handles restricted PATH environments such as FreeBSD
+        rc.d services where /usr/local/bin may not be in PATH.
+        
+        Returns:
+            Full path to sanoid binary, or None if not found.
+        """
+        # Try to find sanoid using which first
+        try:
+            which_result = subprocess.run(
+                ['which', 'sanoid'],
+                capture_output=True,
+                text=True
+            )
+            if which_result.returncode == 0:
+                return which_result.stdout.strip()
+        except Exception:
+            pass
+        
+        # Check common paths directly (handles restricted PATH environments)
+        for path in self.COMMON_PATHS:
+            if Path(path).exists() and Path(path).is_file():
+                return path
+        
+        return None
     
     def get_config(self) -> Dict[str, Any]:
         """
@@ -253,7 +285,10 @@ class SanoidService:
     def run_sanoid(self, take_snapshots: bool = True, prune_snapshots: bool = False,
                    verbose: bool = False, debug: bool = False) -> Dict[str, Any]:
         """
-        Run sanoid manually
+        Run sanoid manually.
+        
+        Uses the discovered full binary path to avoid 'not found' errors
+        in restricted PATH environments (e.g. FreeBSD rc.d services).
         
         Args:
             take_snapshots: Take snapshots according to policy
@@ -265,7 +300,15 @@ class SanoidService:
             Dictionary with execution results
         """
         try:
-            cmd = ['sanoid']
+            # Re-discover path if not cached (in case installed after startup)
+            if not self.sanoid_path:
+                self.sanoid_path = self._find_sanoid_path()
+            
+            if not self.sanoid_path:
+                raise Exception("sanoid binary not found. Install sanoid and restart WebZFS.")
+            
+            # Use the discovered full path instead of bare 'sanoid'
+            cmd = [self.sanoid_path]
             
             if take_snapshots:
                 cmd.append('--take-snapshots')
@@ -296,31 +339,19 @@ class SanoidService:
         """
         Check if sanoid is installed and get its status.
         
-        Uses which first, then falls back to checking common install paths
-        directly. This handles cases where PATH may not include /usr/local/bin
-        (common on FreeBSD when running as a service).
+        Uses the path discovered at init time. If not found at init,
+        re-checks in case sanoid was installed after service start.
         
         Returns:
             Dictionary with sanoid status information
         """
         try:
-            sanoid_path = None
-            
-            # Try to find sanoid using which first
-            which_result = subprocess.run(
-                ['which', 'sanoid'],
-                capture_output=True,
-                text=True
-            )
-            
-            if which_result.returncode == 0:
-                sanoid_path = which_result.stdout.strip()
-            else:
-                # Check common paths directly (handles restricted PATH environments)
-                for path in self.COMMON_PATHS:
-                    if Path(path).exists() and Path(path).is_file():
-                        sanoid_path = path
-                        break
+            # Re-discover if not found at init (in case installed after startup)
+            sanoid_path = self.sanoid_path
+            if not sanoid_path:
+                sanoid_path = self._find_sanoid_path()
+                if sanoid_path:
+                    self.sanoid_path = sanoid_path
             
             if not sanoid_path:
                 return {

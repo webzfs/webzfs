@@ -8,7 +8,7 @@ from typing import Annotated, Optional
 from config.templates import templates
 from services.zfs_dataset import ZFSDatasetService
 from services.audit_logger import audit_logger
-from services.utils import is_netbsd
+from services.utils import is_netbsd get_openzfs_man_page_url
 from auth.dependencies import get_current_user
 
 
@@ -109,16 +109,9 @@ async def create_dataset_form(
         except Exception:
             # If we can't get datasets, proceed with empty list
             pool_datasets = []
-<<<<<<< HEAD
-<<<<<<< HEAD
+            
     # NetBSD ZFS does not support encryption
     supports_encryption = not is_netbsd()
-=======
->>>>>>> 5d1a569 (move add dataset button and update dataset creation form)
-=======
-    # NetBSD ZFS does not support encryption
-    supports_encryption = not is_netbsd()
->>>>>>> e70c497 (rebase netbsd work)
     
     return templates.TemplateResponse(
         "zfs/datasets/create.jinja",
@@ -127,14 +120,7 @@ async def create_dataset_form(
             "pool": pool,
             "parent": parent,
             "pool_datasets": pool_datasets,
-<<<<<<< HEAD
-<<<<<<< HEAD
             "supports_encryption": supports_encryption,
-=======
->>>>>>> 5d1a569 (move add dataset button and update dataset creation form)
-=======
-            "supports_encryption": supports_encryption,
->>>>>>> e70c497 (rebase netbsd work)
             "page_title": "Create Dataset"
         }
     )
@@ -244,6 +230,7 @@ async def dataset_properties(
     """Display dataset properties"""
     try:
         properties = dataset_service.get_properties(dataset_path)
+        openzfs_man_url = get_openzfs_man_page_url()
         
         return templates.TemplateResponse(
             "zfs/datasets/properties.jinja",
@@ -251,6 +238,7 @@ async def dataset_properties(
                 "request": request,
                 "dataset_name": dataset_path,
                 "properties": properties,
+                "openzfs_man_url": openzfs_man_url,
                 "page_title": f"Dataset Properties: {dataset_path}"
             }
         )
@@ -262,6 +250,7 @@ async def dataset_properties(
                 "request": request,
                 "dataset_name": dataset_path,
                 "properties": None,
+                "openzfs_man_url": None,
                 "error": str(e),
                 "page_title": f"Dataset Properties: {dataset_path}"
             }
