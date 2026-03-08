@@ -1,14 +1,27 @@
 #!/bin/sh
 
-# WebZFS Update Script for FreeBSD
+# WebZFS Update Script for NetBSD
 # This script updates an existing WebZFS installation at /opt/webzfs
-# For initial installation, use install_freebsd.sh instead
+# For initial installation, use install_netbsd.sh instead
+#
+# Uses pre-compiled wheels from https://github.com/webzfs/webzfs-wheels
 
 set -e
 
 INSTALL_DIR="/opt/webzfs"
 VENV_DIR="${INSTALL_DIR}/.venv"
 LOG_FILE="${INSTALL_DIR}/update_log.txt"
+WHEELS_DIR="${INSTALL_DIR}/.wheels"
+
+# GitHub raw URL base for pre-compiled wheels
+WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
+
+# NetBSD 10.x wheel configuration
+WHEEL_SUBDIR="netbsd10-0"
+WHEEL_PLATFORM="netbsd_10_1_amd64"
+
+# Wheel packages to download (these require compilation without pre-built wheels)
+WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -19,8 +32,13 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
 echo "========================================"
-echo "WebZFS Update Script for FreeBSD"
+echo "WebZFS Update Script for NetBSD"
 echo "========================================"
 echo
 
@@ -34,14 +52,14 @@ fi
 # Verify installation exists
 if [ ! -d "$INSTALL_DIR" ]; then
     printf "${RED}Error: WebZFS installation not found at $INSTALL_DIR${NC}\n"
-    echo "Please run install_freebsd.sh for initial installation"
+    echo "Please run install_netbsd.sh for initial installation"
     exit 1
 fi
 
 # Verify virtual environment exists
 if [ ! -d "$VENV_DIR" ]; then
     printf "${RED}Error: Virtual environment not found at $VENV_DIR${NC}\n"
-    echo "Please run install_freebsd.sh for initial installation"
+    echo "Please run install_netbsd.sh for initial installation"
     exit 1
 fi
 
@@ -56,18 +74,18 @@ for file in $ESSENTIAL_FILES; do
 done
 
 # Verify rc.d script exists
-if [ ! -f "/usr/local/etc/rc.d/webzfs" ]; then
+if [ ! -f "/etc/rc.d/webzfs" ]; then
     printf "${RED}Error: rc.d service script not found${NC}\n"
-    echo "Please run install_freebsd.sh for initial installation"
+    echo "Please run install_netbsd.sh for initial installation"
     exit 1
 fi
 
 # Check if service is running
 SERVICE_WAS_RUNNING=false
-if service webzfs status >/dev/null 2>&1; then
+if /etc/rc.d/webzfs status >/dev/null 2>&1; then
     SERVICE_WAS_RUNNING=true
     echo "Stopping WebZFS service..."
-    service webzfs stop
+    /etc/rc.d/webzfs stop
     printf "${GREEN}✓${NC} Service stopped\n"
 fi
 
@@ -76,33 +94,22 @@ echo
 # Copy application files to installation directory (preserving config)
 echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
 
-# Use tar instead of rsync (more portable on FreeBSD)
-# Create a temporary exclude file for patterns
-EXCLUDE_FILE=$(mktemp)
-cat > "$EXCLUDE_FILE" << 'EOF'
-.venv
-node_modules
-.git
-*.log
-__pycache__
-*.pyc
-.env
-.config
-EOF
-
-# Create a backup tar of the source, excluding unwanted files
-(cd "$SOURCE_DIR" && tar cf - --exclude-from="$EXCLUDE_FILE" .) | \
-    (cd "$INSTALL_DIR" && tar xf -)
-
-rm -f "$EXCLUDE_FILE"
+# Use tar to copy files, excluding runtime/config data
+(cd "$SOURCE_DIR" && tar cf - \
+    --exclude='.venv' \
+    --exclude='node_modules' \
+    --exclude='.git' \
+    --exclude='*.log' \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    --exclude='.env' \
+    --exclude='.config' \
+    --exclude='.wheels' \
+    .) | (cd "$INSTALL_DIR" && tar xf -)
 
 printf "${GREEN}✓${NC} Application files updated\n"
 echo
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> e7a89f8 (make sure we update the version string)
 # Update CAPTION in .env from .env.example
 ENV_FILE="${INSTALL_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -111,8 +118,8 @@ if [ -f "$ENV_FILE" ]; then
     if [ -n "$NEW_CAPTION" ]; then
         # Update CAPTION in existing .env file
         if grep -q '^CAPTION=' "$ENV_FILE"; then
-            # FreeBSD sed requires -i '' for in-place editing
-            sed -i '' "s|^CAPTION=.*|${NEW_CAPTION}|" "$ENV_FILE"
+            # NetBSD sed does not support -i, use a temp file
+            sed "s|^CAPTION=.*|${NEW_CAPTION}|" "$ENV_FILE" > "${ENV_FILE}.tmp" && mv "${ENV_FILE}.tmp" "$ENV_FILE"
             printf "${GREEN}✓${NC} Updated CAPTION to: ${NEW_CAPTION}\n"
         else
             # CAPTION not found in .env, add it at the top
@@ -124,11 +131,52 @@ fi
 
 echo
 
-<<<<<<< HEAD
-=======
->>>>>>> 5cd958d (add update scripts)
-=======
->>>>>>> e7a89f8 (make sure we update the version string)
+# Download/update pre-compiled wheels
+echo "Downloading pre-compiled wheels..."
+mkdir -p "$WHEELS_DIR"
+
+WHEELS_URL="${WHEELS_REPO_BASE}/${WHEEL_SUBDIR}"
+DOWNLOAD_FAILED=0
+
+for pkg_version in $WHEEL_PACKAGES; do
+    # Extract package name and version
+    pkg_name=$(echo "$pkg_version" | sed 's/-[0-9].*//')
+    version=$(echo "$pkg_version" | sed 's/.*-//')
+    wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
+
+    # Determine ABI tag - cryptography uses cp37-abi3, others use cp311-cp311
+    if [ "$pkg_name" = "cryptography" ]; then
+        ABI_TAG="cp37-abi3"
+    else
+        ABI_TAG="cp311-cp311"
+    fi
+
+    wheel_filename="${wheel_pkg_name}-${version}-${ABI_TAG}-${WHEEL_PLATFORM}.whl"
+    wheel_url="${WHEELS_URL}/${wheel_filename}"
+    wheel_path="${WHEELS_DIR}/${wheel_filename}"
+
+    if [ -f "$wheel_path" ]; then
+        printf "  ${GREEN}✓${NC} ${pkg_name} wheel already cached\n"
+    else
+        printf "  Downloading ${pkg_name}..."
+        if curl -sL -o "$wheel_path" "$wheel_url" 2>/dev/null; then
+            printf " ${GREEN}✓${NC}\n"
+        else
+            printf " ${RED}FAILED${NC}\n"
+            printf "${YELLOW}Warning: Could not download wheel for ${pkg_name}${NC}\n"
+            DOWNLOAD_FAILED=1
+        fi
+    fi
+done
+
+if [ "$DOWNLOAD_FAILED" -eq 1 ]; then
+    printf "${YELLOW}Some wheels failed to download. Will attempt source compilation.${NC}\n"
+else
+    printf "${GREEN}✓${NC} All wheels available\n"
+fi
+
+echo
+
 # Update dependencies
 echo "Updating Python and Node.js dependencies..."
 echo "(This may take a few minutes...)"
@@ -136,19 +184,30 @@ echo
 
 cd "$INSTALL_DIR"
 
-# Set environment for building
+# Set environment for building (in case any packages need source compilation)
 export HOME="$INSTALL_DIR"
 
 # Check for gmake
-if command -v gmake >/dev/null 2>&1; then
+if command_exists gmake; then
     export MAKE=$(command -v gmake)
+fi
+
+# Set OpenSSL location for cryptography package on NetBSD
+export OPENSSL_DIR="/usr/pkg"
+export PKG_CONFIG_PATH="/usr/pkg/lib/pkgconfig:${PKG_CONFIG_PATH}"
+
+# Ensure Rust toolchain is in PATH (fallback for source compilation)
+if [ -f "/root/.cargo/env" ]; then
+    . "/root/.cargo/env"
+elif [ -d "/root/.cargo/bin" ]; then
+    export PATH="/root/.cargo/bin:$PATH"
 fi
 
 echo "Upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > update_log.txt 2>&1
 
-echo "Updating Python dependencies..."
-.venv/bin/pip install -r requirements.txt >> update_log.txt 2>&1
+echo "Updating Python dependencies (using pre-compiled wheels)..."
+.venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> update_log.txt 2>&1
 
 echo "Updating Node.js dependencies..."
 npm install >> update_log.txt 2>&1
@@ -165,7 +224,7 @@ echo
 # Restart service if it was running
 if [ "$SERVICE_WAS_RUNNING" = true ]; then
     echo "Restarting WebZFS service..."
-    service webzfs start
+    /etc/rc.d/webzfs start
     printf "${GREEN}✓${NC} Service restarted\n"
     echo
 else
@@ -173,7 +232,7 @@ else
     printf "Do you want to start WebZFS now? (y/n): "
     read -r REPLY
     if [ "$REPLY" = "y" ] || [ "$REPLY" = "Y" ]; then
-        service webzfs start
+        /etc/rc.d/webzfs start
         printf "${GREEN}✓${NC} WebZFS service started\n"
     fi
 fi
@@ -186,7 +245,7 @@ echo
 echo "WebZFS has been updated at: $INSTALL_DIR"
 echo
 echo "To check the service status:"
-echo "  sudo service webzfs status"
+echo "  /etc/rc.d/webzfs status"
 echo
 echo "To view logs:"
 echo "  tail -f $INSTALL_DIR/gunicorn.log"

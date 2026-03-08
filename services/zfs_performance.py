@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from config.settings import Settings
+from services.utils import is_freebsd, is_netbsd
 
 
 class ZFSPerformanceService:
@@ -636,15 +637,31 @@ class ZFSPerformanceService:
     
     def _read_arc_stats(self) -> Dict[str, Any]:
         """Read current ARC statistics"""
+<<<<<<< HEAD
+<<<<<<< HEAD
 
         # FreeBSD/NetBSD use sysctl for ARC stats
         if self.system in ('FreeBSD', 'NetBSD'):
             return self._read_arc_stats_sysctl()
+=======
+        if self.system == 'FreeBSD':
+            return self._read_arc_stats_freebsd()
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
         else:
             return self._read_arc_stats_linux()
     
     def _read_arc_stats_linux(self) -> Dict[str, Any]:
         """Read ARC stats from Linux /proc filesystem"""
+<<<<<<< HEAD
+=======
+        # FreeBSD/NetBSD use sysctl for ARC stats
+        if self.system in ('FreeBSD', 'NetBSD'):
+            return self._read_arc_stats_sysctl()
+        
+        # Linux uses /proc/spl/kstat/zfs/arcstats
+>>>>>>> 59b61a8 (improve arc stats page under observability)
+=======
+>>>>>>> 3168e6f (fix arc display issues on FreeBSD)
         try:
             arcstats_path = Path('/proc/spl/kstat/zfs/arcstats')
             
@@ -677,7 +694,6 @@ class ZFSPerformanceService:
             
         except Exception as e:
             return {'error': f'Failed to read ARC stats: {str(e)}'}
-    
 
     def _read_arc_stats_sysctl(self) -> Dict[str, Any]:
         """Read ARC statistics using sysctl (for BSD systems)"""
@@ -685,6 +701,7 @@ class ZFSPerformanceService:
         try:
             result = subprocess.run(
                 ['sysctl', 'kstat.zfs.misc.arcstats'],
+
                 capture_output=True,
                 text=True,
                 check=False
@@ -735,12 +752,108 @@ class ZFSPerformanceService:
         except Exception as e:
             return {'error': f'Failed to read ARC stats: {str(e)}'}
     
+    def _read_arc_stats_sysctl(self) -> Dict[str, Any]:
+        """Read ARC statistics using sysctl (for BSD systems)"""
+        try:
+            result = subprocess.run(
+                ['sysctl', 'kstat.zfs.misc.arcstats'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                return {'error': 'Failed to read sysctl for ARC stats'}
+            
+            stats = {}
+            
+            for line in result.stdout.split('\n'):
+                if not line.strip():
+                    continue
+                
+                # Parse sysctl output: name: value (FreeBSD) or name=value (NetBSD)
+                if ': ' in line:
+                    name, value = line.split(': ', 1)
+                elif '=' in line:
+                    name, value = line.split('=', 1)
+                else:
+                    continue
+                
+                name = name.strip()
+                value = value.strip()
+                
+                # Extract just the stat name (last part after dots)
+                # kstat.zfs.misc.arcstats.hits -> hits
+                stat_name = name.split('.')[-1]
+                
+                try:
+                    stats[stat_name] = int(value)
+                except ValueError:
+                    stats[stat_name] = value
+            
+            if not stats:
+                return {'error': 'ARC stats not available via sysctl'}
+            
+            # Calculate derived metrics
+            if 'hits' in stats and 'misses' in stats:
+                total = stats['hits'] + stats['misses']
+                if total > 0:
+                    stats['hit_rate'] = (stats['hits'] / total) * 100
+                    stats['miss_rate'] = (stats['misses'] / total) * 100
+            
+            return stats
+            
+        except Exception as e:
+            return {'error': f'Failed to read ARC stats: {str(e)}'}
+    
+    def _read_arc_stats_freebsd(self) -> Dict[str, Any]:
+        """Read ARC stats from FreeBSD sysctl"""
+        try:
+            result = subprocess.run(
+                ['sysctl', 'kstat.zfs.misc.arcstats'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                return {'error': f'Failed to get ARC stats: {result.stderr}'}
+            
+            stats = {}
+            for line in result.stdout.strip().split('\n'):
+                if not line or ':' not in line:
+                    continue
+                
+                # Format: kstat.zfs.misc.arcstats.hits: 12345678
+                key, value = line.split(':', 1)
+                # Extract just the stat name (last part after arcstats.)
+                stat_name = key.strip().split('.')[-1]
+                value = value.strip()
+                
+                try:
+                    stats[stat_name] = int(value)
+                except ValueError:
+                    stats[stat_name] = value
+            
+            # Calculate derived metrics
+            if 'hits' in stats and 'misses' in stats:
+                total = stats['hits'] + stats['misses']
+                if total > 0:
+                    stats['hit_rate'] = (stats['hits'] / total) * 100
+                    stats['miss_rate'] = (stats['misses'] / total) * 100
+            
+            return stats
+            
+        except Exception as e:
+            return {'error': f'Failed to read ARC stats: {str(e)}'}
+    
     def get_raw_arcstats(self) -> Dict[str, Any]:
         """
         Get raw ARC statistics output
         
         On Linux: cat /proc/spl/kstat/zfs/arcstats
         On FreeBSD: zfs-stats -A
+        On NetBSD: sysctl -a | grep arcstats
         
         Returns:
             Dictionary with raw output and system info
@@ -797,6 +910,31 @@ class ZFSPerformanceService:
                 except subprocess.TimeoutExpired:
                     return {
                         'error': 'zfs-stats command timed out',
+                        'system': self.system
+                    }
+            
+            elif self.system == 'NetBSD':
+                # NetBSD uses sysctl for ARC stats
+                try:
+                    result = subprocess.run(
+                        ['sh', '-c', 'sysctl -a | grep -i arcstats'],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    output = result.stdout if result.stdout else 'No ARC stats found via sysctl'
+                    
+                    return {
+                        'output': output,
+                        'system': self.system,
+                        'command': 'sysctl -a | grep -i arcstats',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                except subprocess.TimeoutExpired:
+                    return {
+                        'error': 'sysctl command timed out',
                         'system': self.system
                     }
             else:

@@ -295,3 +295,6 @@ static/*
 !static/css/
 static/css/*
 !static/css/themes/
+
+# WebZFS runtime data
+.ssh/
