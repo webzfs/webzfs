@@ -246,14 +246,62 @@ def run_zfs_command(
 
 
 
-def is_freebsd() -> bool:
-    """Check if running on FreeBSD"""
-    return get_os_type() == 'FreeBSD'
+# Valid OpenZFS man page versions (major.minor)
+OPENZFS_MAN_PAGE_VERSIONS = [
+    "2.4", "2.3", "2.2", "2.1", "2.0", "0.8", "0.7", "0.6"
+]
 
 
-def is_netbsd() -> bool:
-    """Check if running on NetBSD"""
-    return get_os_type() == 'NetBSD'
+def get_zfs_version() -> Optional[str]:
+    """
+    Get the installed ZFS version string by running 'zfs version'.
+
+    Returns:
+        The raw first line of 'zfs version' output, or None on failure.
+    """
+    try:
+        result = run_zfs_command(
+            ['zfs', 'version'],
+            check=False,
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # First line is typically something like "zfs-2.2.6-1"
+            return result.stdout.strip().split('\n')[0]
+    except Exception:
+        pass
+    return None
+
+
+def get_openzfs_man_page_url() -> Optional[str]:
+    """
+    Get the OpenZFS man page URL matching the installed ZFS version.
+
+    Runs 'zfs version', extracts the major.minor version, and returns
+    the corresponding URL from the OpenZFS documentation site. Returns
+    None if the version cannot be determined or does not match any
+    known man page version.
+
+    Returns:
+        The OpenZFS man page URL string, or None.
+    """
+    version_string = get_zfs_version()
+    if not version_string:
+        return None
+
+    # Extract version number from strings like "zfs-2.2.6-1" or "zfs-0.8.3"
+    import re
+    match = re.search(r'(\d+\.\d+)', version_string)
+    if not match:
+        return None
+
+    major_minor = match.group(1)
+
+    if major_minor in OPENZFS_MAN_PAGE_VERSIONS:
+        return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/index.html"
+
+    return None
+
 
 def run_zfs_command_with_pipe(
     send_cmd: List[str],
