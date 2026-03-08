@@ -3,6 +3,7 @@
   hosts: '{{ host | default ("zfshw") }}'
   become: true
   vars:
+    installtype: upgrade
     os_packages:
       FreeBSD:
         - python311
@@ -38,14 +39,26 @@
       loop:
         - install_freebsd.sh
         - install_linux.sh
+        - update_freebsd.sh
+        - update_linux.sh
 
     - name: Stop the webzfs service
       service:
         name: webzfs
         state: stopped
 
-    - name: Run installer script
-      shell: "yes | /var/tmp/webzfs/install_{{ ansible_system|lower }}.sh"
+    - name: Determine whether new install or upgrade
+      stat:
+        path: /opt/webzfs
+      register: installdir
+
+    - name: set variable to upgrade or install
+      set_fact:
+        installtype: update
+      when: installdir.stat.exists == true
+
+    - name: "Run {{ installtype }} script"
+      shell: "yes | /var/tmp/webzfs/{{installtype }}_{{ ansible_system|lower }}.sh"
 
     - name: Start/restart webzfs service
       service:
