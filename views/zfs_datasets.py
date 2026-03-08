@@ -8,6 +8,7 @@ from typing import Annotated, Optional
 from config.templates import templates
 from services.zfs_dataset import ZFSDatasetService
 from services.audit_logger import audit_logger
+from services.utils import get_openzfs_man_page_url
 from auth.dependencies import get_current_user
 
 
@@ -222,6 +223,7 @@ async def dataset_properties(
     """Display dataset properties"""
     try:
         properties = dataset_service.get_properties(dataset_path)
+        openzfs_man_url = get_openzfs_man_page_url()
         
         return templates.TemplateResponse(
             "zfs/datasets/properties.jinja",
@@ -229,6 +231,7 @@ async def dataset_properties(
                 "request": request,
                 "dataset_name": dataset_path,
                 "properties": properties,
+                "openzfs_man_url": openzfs_man_url,
                 "page_title": f"Dataset Properties: {dataset_path}"
             }
         )
@@ -240,6 +243,7 @@ async def dataset_properties(
                 "request": request,
                 "dataset_name": dataset_path,
                 "properties": None,
+                "openzfs_man_url": None,
                 "error": str(e),
                 "page_title": f"Dataset Properties: {dataset_path}"
             }
