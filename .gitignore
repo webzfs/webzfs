@@ -291,3 +291,6 @@ cython_debug/
 #.idea/
 
 static/
+
+# WebZFS runtime data
+.ssh/

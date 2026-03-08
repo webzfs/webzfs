@@ -244,8 +244,6 @@ def run_zfs_command(
         input=input_data
     )
 
-
-
 # Valid OpenZFS man page versions (major.minor)
 OPENZFS_MAN_PAGE_VERSIONS = [
     "2.4", "2.3", "2.2", "2.1", "2.0", "0.8", "0.7", "0.6"
@@ -337,6 +335,3 @@ def run_zfs_command_with_pipe(
     
     # Allow send_process to receive SIGPIPE if receive_process exits
     send_process.stdout.close()
-    
-    return send_process, receive_process
-

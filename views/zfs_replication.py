@@ -6,7 +6,14 @@ from fastapi import APIRouter, Request, Form, Depends, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from typing import Annotated, Optional, Dict
 import platform
+<<<<<<< HEAD
+<<<<<<< HEAD
 import threading
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
+=======
+import threading
+>>>>>>> 65749e8 (fix a few minor replication bugs)
 from config.templates import templates
 from services.zfs_replication import ZFSReplicationService, ReplicationType, CompressionMethod
 from services.syncoid import SyncoidService
@@ -35,9 +42,18 @@ async def replication_index(request: Request):
         # Check syncoid status
         syncoid_status = syncoid_service.check_syncoid_status()
         
+<<<<<<< HEAD
+<<<<<<< HEAD
         # Get active executions so user can see in-progress replications
         active_executions = replication_service.get_active_executions()
         
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
+=======
+        # Get active executions so user can see in-progress replications
+        active_executions = replication_service.get_active_executions()
+        
+>>>>>>> 65749e8 (fix a few minor replication bugs)
         # Detect OS
         system = platform.system()
         
@@ -47,7 +63,14 @@ async def replication_index(request: Request):
                 "request": request,
                 "jobs": jobs,
                 "syncoid_status": syncoid_status,
+<<<<<<< HEAD
+<<<<<<< HEAD
                 "active_executions": active_executions,
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
+=======
+                "active_executions": active_executions,
+>>>>>>> 65749e8 (fix a few minor replication bugs)
                 "system": system,
                 "page_title": "ZFS Replication"
             }
@@ -59,7 +82,14 @@ async def replication_index(request: Request):
                 "request": request,
                 "jobs": [],
                 "syncoid_status": {'installed': False},
+<<<<<<< HEAD
+<<<<<<< HEAD
                 "active_executions": [],
+=======
+>>>>>>> 7706ffc (fix sanoid/syncoid detection and error messages)
+=======
+                "active_executions": [],
+>>>>>>> 65749e8 (fix a few minor replication bugs)
                 "system": platform.system(),
                 "error": str(e),
                 "page_title": "ZFS Replication"
