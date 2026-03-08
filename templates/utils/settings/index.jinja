@@ -1,0 +1,193 @@
+{% extends "layout.jinja" %}
+
+{% set active_page = 'utils' %}
+
+{% block title %}WebZFS Settings{% endblock %}
+
+{% block content %}
+    <!-- Breadcrumb Navigation -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">WebZFS Settings</span>
+    </nav>
+
+    <div class="space-y-6">
+        <!-- Page Header -->
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-text-primary">WebZFS Settings</h1>
+                <p class="text-text-secondary mt-1">Configure the appearance and behavior of WebZFS</p>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        {% if message %}
+        <div class="alert alert-success flex items-center gap-3 animate-fade-in">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span>{{ message }}</span>
+        </div>
+        {% endif %}
+        {% if error %}
+        <div class="alert alert-danger flex items-center gap-3 animate-fade-in">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span>{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Theme Selection Card -->
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-2 bg-primary-500/10 border border-primary-500/20 rounded-lg">
+                        <svg class="w-6 h-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-primary">Theme</h2>
+                        <p class="text-sm text-text-secondary">
+                            Current theme: <span class="text-primary-400 font-medium">{{ active_theme_name }}</span>
+                        </p>
+                    </div>
+                </div>
+
+                <form action="/utils/settings/apply-theme" method="post" hx-boost="false">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Left: Theme Selector and Apply -->
+                        <div class="space-y-4">
+                            <div>
+                                <label for="theme-select" class="form-label">Select Theme</label>
+                                <select
+                                    id="theme-select"
+                                    name="theme"
+                                    class="form-select w-full"
+                                    onchange="htmx.ajax('GET', '/utils/settings/theme-preview/' + this.value, {target: '#theme-preview', swap: 'innerHTML'});"
+                                >
+                                    {% for family in theme_families %}
+                                    <optgroup label="{{ family.family }}">
+                                        {% for theme in family.themes %}
+                                        <option value="{{ theme.id }}" {% if theme.active %}selected{% endif %}>
+                                            {{ theme.name }}
+                                        </option>
+                                        {% endfor %}
+                                    </optgroup>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="flex items-center gap-3">
+                                <button type="submit" class="btn btn-primary">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    Apply Theme
+                                </button>
+                                <span class="text-sm text-text-tertiary">Theme will be applied immediately</span>
+                            </div>
+
+                            <div class="card-nested mt-4">
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="text-sm text-text-secondary">
+                                        <p class="mb-1">Themes override the CSS color variables used throughout WebZFS.</p>
+                                        <p>Your selection is saved to <code>/opt/webzfs/.config/webzfs/theme.conf</code> and persists across sessions.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Live Preview -->
+                        <div id="theme-preview">
+                            {% include "utils/settings/preview_partial.jinja" %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Session Timeout Card -->
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-2 bg-warning-500/10 border border-warning-500/20 rounded-lg">
+                        <svg class="w-6 h-6 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-primary">Session Timeout</h2>
+                        <p class="text-sm text-text-secondary">
+                            Current auto-logout timeout: <span class="text-warning-400 font-medium">{{ current_session_timeout_display }}</span>
+                        </p>
+                    </div>
+                </div>
+
+                <form action="/utils/settings/save-session-timeout" method="post" hx-boost="false">
+                    <div class="space-y-4 max-w-md">
+                        <div>
+                            <label for="session-timeout-select" class="form-label">Auto-Logout After</label>
+                            <select
+                                id="session-timeout-select"
+                                name="session_timeout"
+                                class="form-select w-full"
+                            >
+                                {% for value, label in session_timeout_presets %}
+                                <option value="{{ value }}" {% if value == current_session_timeout %}selected{% endif %}>
+                                    {{ label }}{% if value == default_session_timeout %} (default){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <button type="submit" class="btn btn-primary">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Save Timeout
+                            </button>
+                            <span class="text-sm text-text-tertiary">Applies to new login sessions</span>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="border-t border-border-subtle mt-6 pt-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-text-primary">Reset to Default</h3>
+                            <p class="text-xs text-text-tertiary mt-0.5">Restore session timeout to {{ default_session_timeout_display }}</p>
+                        </div>
+                        <form action="/utils/settings/reset-session-timeout" method="post" hx-boost="false">
+                            <button type="submit" class="btn btn-sm bg-bg-elevated-2 text-text-secondary border border-border-default hover:bg-bg-elevated-3 hover:text-text-primary">
+                                <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Reset to Default
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card-nested mt-4">
+                    <div class="flex items-start gap-2">
+                        <svg class="w-4 h-4 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="text-sm text-text-secondary">
+                            <p class="mb-1">This controls how long you stay logged in before WebZFS automatically logs you out due to inactivity. Shorter timeouts are more secure; longer timeouts are more convenient.</p>
+                            <p>Changes apply to new login sessions only -- your current session will keep its existing expiration. Override is saved to <code>~/.config/webzfs/session_timeout.json</code> and persists across restarts.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+{% endblock %}

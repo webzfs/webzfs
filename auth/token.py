@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 
 from config.settings import settings
+from services.timeout_settings import get_effective_session_timeout
 
 
 class InvalidToken(BaseException):
@@ -10,7 +11,8 @@ class InvalidToken(BaseException):
 
 
 def create_token(username: str) -> str:
-    exp = datetime.utcnow() + timedelta(seconds=settings.AUTH_SESSION_EXPIRES_SECONDS)
+    session_timeout = get_effective_session_timeout()
+    exp = datetime.utcnow() + timedelta(seconds=session_timeout)
     token = jwt.encode(
         {"username": username, "exp": exp},
         key=settings.SECRET_KEY,
