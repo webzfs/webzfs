@@ -855,16 +855,23 @@ class HealthAnalysisService:
         for line in raw_output.split("\n"):
             if "Power_On_Hours" in line:
                 parts = line.split()
-                # Attribute table: ID ATTR FLAG VALUE WORST THRESH TYPE UPDATED WHEN_FAILED RAW
-                if len(parts) >= 10:
-                    try:
-                        raw_val = parts[9].split()[0]
-                        # Some drives report "12345h+00m" or similar
-                        numeric = re.sub(r"[^0-9]", "", raw_val.split("+")[0])
-                        if numeric:
-                            return int(numeric)
-                    except (ValueError, IndexError):
-                        pass
+                # Attribute table format varies by drive:
+                # 10-col: ID ATTR FLAG VALUE WORST THRESH TYPE UPDATED WHEN_FAILED RAW
+                # 8-col:  ID ATTR FLAG VALUE WORST THRESH FAIL RAW
+                # Find the raw value: last token that looks numeric
+                if len(parts) >= 8:
+                    # The raw value is the last column (may contain sub-values)
+                    # Try from the end to find a numeric value
+                    for raw_idx in (9, 7, -1):
+                        if raw_idx >= len(parts):
+                            continue
+                        try:
+                            raw_val = parts[raw_idx]
+                            numeric = re.sub(r"[^0-9]", "", raw_val.split("+")[0])
+                            if numeric:
+                                return int(numeric)
+                        except (ValueError, IndexError):
+                            pass
 
         # SAS / NVMe style
         for line in raw_output.split("\n"):
@@ -886,42 +893,103 @@ class HealthAnalysisService:
     def _extract_latest_test_hours(self, raw_output: str) -> Optional[int]:
         """
         Extract the latest self-test lifetime hours from SMART self-test log.
+        Handles both ATA and NVMe log formats.
         Also checks for wrap-around: if latest hours < any previous, add 65535.
         Returns the corrected hours value, or None if no tests found.
+
+        ATA format (lines start with '#'):
+          # 1  Short offline       Completed without error  00%  58258  -
+        NVMe format (lines start with number, header has Power_on_Hours):
+          0   Short             Completed without error               15004  -  -  -  -  -
         """
         test_hours_list = []
 
-        for line in raw_output.split("\n"):
+        # Detect which format we are dealing with
+        in_selftest_section = False
+        is_nvme_format = False
+        power_on_col_index = None
+
+        lines = raw_output.split("\n")
+
+        for line in lines:
             stripped = line.strip()
-            if stripped.startswith("#"):
-                # Parse test entry lines like:
-                # # 1  Short offline       Completed without error  00%  58258  -
-                match = re.search(r"(\d+)\s+[-]?\s*$", stripped)
-                if not match:
-                    # Try alternate: lifetime hours is typically in column ~5-6
-                    parts = stripped.split()
-                    for i, p in enumerate(parts):
-                        if p == "%" or p.endswith("%"):
-                            # Next value after percentage is lifetime hours
-                            if i + 1 < len(parts):
-                                try:
-                                    hours = int(parts[i + 1])
-                                    test_hours_list.append(hours)
-                                except ValueError:
-                                    pass
-                            break
+
+            # Detect start of self-test log section
+            if "self-test log" in stripped.lower() or "Self-test Log" in stripped:
+                in_selftest_section = True
+                continue
+
+            # Detect NVMe header: "Num  Test_Description  Status  Power_on_Hours ..."
+            if in_selftest_section and "Power_on_Hours" in stripped:
+                is_nvme_format = True
+                # Find the column index of Power_on_Hours by header position
+                header_parts = stripped.split()
+                for idx, col in enumerate(header_parts):
+                    if col == "Power_on_Hours":
+                        power_on_col_index = idx
+                        break
+                continue
+
+            # Detect ATA header: "Num  Test_Description  Status  Remaining  LifeTime(hours) ..."
+            if in_selftest_section and "LifeTime" in stripped:
+                continue
+
+            # End of self-test section (blank line or new section header)
+            if in_selftest_section and stripped and not stripped[0].isdigit() and not stripped.startswith("#"):
+                # Allow lines like "Self-test status: No self-test in progress"
+                if "self-test" in stripped.lower() or "No self-test" in stripped:
+                    continue
+                # Non-data line after header, could be end of section
+                if test_hours_list:
+                    break
+                continue
+
+            if not in_selftest_section:
+                # Also try to catch ATA entries outside detected section
+                if stripped.startswith("#"):
+                    in_selftest_section = True
                 else:
-                    # Check various patterns for LifeTime(hours)
-                    parts = stripped.split()
-                    for i, p in enumerate(parts):
-                        if p.endswith("%"):
-                            if i + 1 < len(parts):
-                                try:
-                                    hours = int(parts[i + 1])
-                                    test_hours_list.append(hours)
-                                except ValueError:
-                                    pass
-                            break
+                    continue
+
+            # ---- Parse ATA format: lines starting with '#' ----
+            if stripped.startswith("#"):
+                parts = stripped.split()
+                for i, p in enumerate(parts):
+                    if p.endswith("%"):
+                        # Next value after percentage is lifetime hours
+                        if i + 1 < len(parts):
+                            try:
+                                hours = int(parts[i + 1])
+                                test_hours_list.append(hours)
+                            except ValueError:
+                                pass
+                        break
+                continue
+
+            # ---- Parse NVMe format: lines starting with a digit ----
+            if is_nvme_format and stripped and stripped[0].isdigit():
+                parts = stripped.split()
+                # The NVMe header columns:
+                # Num  Test_Description  Status(multi-word)  Power_on_Hours  Failing_LBA  NSID  Seg  SCT  Code
+                # Since Status can be multi-word (e.g. "Completed without error"),
+                # we cannot simply index by position. Instead, scan for the first
+                # integer value that is plausible as hours (>0 and not the Num field).
+                # Strategy: skip the first element (Num), skip test description words,
+                # then find the first standalone integer that looks like hours.
+                found_hours = False
+                for i in range(1, len(parts)):
+                    p = parts[i]
+                    # Skip non-numeric tokens (test description and status words)
+                    if not p.isdigit():
+                        continue
+                    # First numeric value after Num that is reasonably large is Power_on_Hours
+                    # (Num is index 0, hours should be > single digit test num)
+                    val = int(p)
+                    # Hours is typically much larger than the test number
+                    # The Num field (index 0) is already skipped by starting at 1
+                    test_hours_list.append(val)
+                    found_hours = True
+                    break
 
         if not test_hours_list:
             return None
@@ -1056,15 +1124,46 @@ class HealthAnalysisService:
         return None
 
     def _check_failed_smart_test(self, raw_output: str) -> bool:
-        """Check if any SMART self-test has failed."""
+        """Check if any SMART self-test has failed.
+        Handles ATA (lines start with '#'), NVMe (lines start with digit),
+        and SAS (lines with 'Background long/short') formats."""
+        in_selftest_section = False
+        found_selftest_header = False
         for line in raw_output.split("\n"):
             stripped = line.strip()
+
+            # Detect self-test log section
+            if "self-test log" in stripped.lower() or "Self-test Log" in stripped:
+                in_selftest_section = True
+                found_selftest_header = False
+                continue
+
+            # Reset section flag on blank lines (section boundary)
+            if in_selftest_section and not stripped:
+                # Only reset after we've seen actual test data or header
+                if found_selftest_header:
+                    in_selftest_section = False
+                continue
+
+            # Detect NVMe/ATA data header within section
+            if in_selftest_section and ("Power_on_Hours" in stripped or "LifeTime" in stripped or "Test_Description" in stripped):
+                found_selftest_header = True
+                continue
+
+            # ATA format: lines start with '#'
             if stripped.startswith("#"):
                 lower = stripped.lower()
                 if "failed" in lower and "segment" not in lower:
                     return True
                 if "failed in segment" in lower:
                     return True
+
+            # NVMe format: lines start with a digit in self-test section
+            if in_selftest_section and found_selftest_header and stripped and stripped[0].isdigit():
+                lower = stripped.lower()
+                if "failed" in lower:
+                    return True
+
             # SAS-style
             if "Background long" in line and "Failed" in line:
                 return True
