@@ -176,6 +176,17 @@ mkdir -p static/css
 npm run build:css > /dev/null 2>&1
 printf "${GREEN}✓${NC} Static assets built\n"
 
+# Copy theme CSS files if available
+if [ -d "${SCRIPT_DIR}/webzfs-themes-all-css-final" ]; then
+    printf "Installing theme CSS files...\n"
+    mkdir -p static/css/themes
+    cp "${SCRIPT_DIR}"/webzfs-themes-all-css-final/webzfs-theme-*.css static/css/themes/
+    THEME_COUNT=$(ls -1 static/css/themes/webzfs-theme-*.css 2>/dev/null | wc -l)
+    printf "${GREEN}✓${NC} ${THEME_COUNT} theme(s) installed\n"
+else
+    printf "${YELLOW}Warning: webzfs-themes-all-css-final/ not found, themes will not be available${NC}\n"
+fi
+
 # Create .env file if it doesn't exist
 if [ ! -f "$ENV_FILE" ]; then
     echo "Creating .env configuration file..."

@@ -17,6 +17,7 @@ import views.utils_smart
 import views.utils_ssh
 import views.utils_services
 import views.utils_settings
+import views.utils_health
 import views.fleet
 
 
@@ -43,6 +44,7 @@ router.include_router(views.utils_ssh.router, prefix="/utils/ssh")
 router.include_router(views.utils_logs.router, prefix="/utils/logs")
 router.include_router(views.utils_services.router, prefix="/utils/services")
 router.include_router(views.utils_settings.router, prefix="/utils/settings")
+router.include_router(views.utils_health.router, prefix="/utils/health")
 
 # Authentication and Dashboard
 router.include_router(views.auth.router, prefix="/login")

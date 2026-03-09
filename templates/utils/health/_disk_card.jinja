@@ -1,0 +1,95 @@
+{# Individual disk health card - used in report_content_partial.jinja #}
+{# Expects 'disk' variable from the for loop context #}
+<div class="card">
+    <div class="card-body p-4">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+                <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-bg-base flex items-center justify-center">
+                    <svg class="w-6 h-6 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                    </svg>
+                </div>
+                <div>
+                    <span class="text-sm font-mono font-semibold text-text-primary">{{ disk.path }}</span>
+                    <div class="text-xs text-text-tertiary">{{ disk.model }} | S/N: {{ disk.serial }}</div>
+                </div>
+            </div>
+            {% if disk.overall_status == 'healthy' %}
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-success-900/50 text-success-400 border border-success-500/30">Healthy</span>
+            {% elif disk.overall_status == 'warning' %}
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-warning-900/50 text-warning-400 border border-warning-500/30">Warning</span>
+            {% else %}
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-danger-900/50 text-danger-400 border border-danger-500/30">Critical</span>
+            {% endif %}
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <!-- Power-On Hours -->
+            <div class="bg-bg-base rounded-lg p-3">
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mb-1">Power-On Hours</div>
+                {% if disk.power_on_hours is not none %}
+                    <div class="text-text-primary font-mono font-semibold">{{ "{:,}".format(disk.power_on_hours) }} hrs</div>
+                    <div class="text-xs text-text-tertiary">~{{ "%.1f" | format(disk.power_on_hours / 8760) }} years</div>
+                    {% if disk.power_on_hours_source and disk.power_on_hours_source != 'attribute' %}
+                    <div class="text-xs text-info-400 mt-0.5">({{ disk.power_on_hours_source }})</div>
+                    {% endif %}
+                {% else %}
+                    <div class="text-warning-400 font-mono font-semibold">????? Hours</div>
+                {% endif %}
+            </div>
+
+            <!-- SMART Test Hours -->
+            <div class="bg-bg-base rounded-lg p-3">
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mb-1">Last SMART Test</div>
+                {% if disk.smart_test_hours is not none %}
+                    <div class="text-text-primary font-mono font-semibold">&gt;{{ "{:,}".format(disk.smart_test_hours) }} hrs</div>
+                    <div class="text-xs text-text-tertiary">@ last SMART test</div>
+                {% else %}
+                    <div class="text-warning-400 font-mono font-semibold">????? Hours</div>
+                    <div class="text-xs text-text-tertiary">No self-tests found</div>
+                {% endif %}
+            </div>
+
+            <!-- Temperature -->
+            <div class="bg-bg-base rounded-lg p-3">
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mb-1">Temperature</div>
+                {% if disk.temperature_info and disk.temperature_info.current is not none %}
+                    <div class="text-text-primary font-mono font-semibold">{{ disk.temperature_info.current }} C</div>
+                    {% if disk.over_temperature %}
+                    <div class="text-xs text-danger-400">Over-temp detected</div>
+                    {% endif %}
+                {% else %}
+                    <div class="text-text-tertiary">N/A</div>
+                {% endif %}
+            </div>
+
+            <!-- Reallocated Sectors -->
+            <div class="bg-bg-base rounded-lg p-3">
+                <div class="text-xs text-text-tertiary uppercase tracking-wider mb-1">Reallocated Sectors</div>
+                {% if disk.reallocated_sectors is not none %}
+                    {% if disk.reallocated_sectors > 0 %}
+                    <div class="text-warning-400 font-mono font-semibold">{{ disk.reallocated_sectors }}</div>
+                    {% else %}
+                    <div class="text-success-400 font-mono font-semibold">0</div>
+                    {% endif %}
+                {% else %}
+                    <div class="text-text-tertiary">N/A</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Flags -->
+        {% if disk.flags and disk.flags | length > 0 %}
+        <div class="mt-3 space-y-1">
+            {% for flag in disk.flags %}
+            <div class="flex items-center gap-2 text-sm">
+                <svg class="w-4 h-4 text-warning-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <span class="text-text-secondary">{{ flag }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>

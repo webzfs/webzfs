@@ -1,0 +1,114 @@
+<!-- Previous Health Analysis Reports -->
+{% if reports and reports|length > 0 %}
+<div class="bg-bg-elevated rounded-lg overflow-hidden shadow-lg">
+    <div class="overflow-x-auto">
+        <table class="min-w-full">
+            <thead class="bg-bg-elevated-2 text-text-secondary">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Date</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Pools</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Disks</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Healthy</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Warning</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Critical</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Checks</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="bg-bg-elevated divide-y divide-border-subtle">
+                {% for report in reports %}
+                <tr class="hover:bg-bg-elevated-2 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <a href="/utils/health/report/{{ report.id }}" class="text-blue-400 hover:text-blue-300 font-mono font-semibold text-sm">
+                            {{ report.started_at[:19] | replace('T', ' ') if report.started_at else 'Unknown' }}
+                        </a>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-text-primary font-mono">
+                        {{ report.summary.total_pools | default(0) }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-text-primary font-mono">
+                        {{ report.summary.total_disks | default(0) }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if report.summary.healthy_disks | default(0) > 0 %}
+                        <span class="text-success-400 font-semibold">{{ report.summary.healthy_disks }}</span>
+                        {% else %}
+                        <span class="text-text-tertiary">0</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if report.summary.warning_disks | default(0) > 0 %}
+                        <span class="text-warning-400 font-semibold">{{ report.summary.warning_disks }}</span>
+                        {% else %}
+                        <span class="text-text-tertiary">0</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if report.summary.critical_disks | default(0) > 0 %}
+                        <span class="text-danger-400 font-semibold">{{ report.summary.critical_disks }}</span>
+                        {% else %}
+                        <span class="text-text-tertiary">0</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-xs text-text-tertiary">
+                        {% if report.options %}
+                            {% if report.options.check_disk_health %}
+                            <span class="px-1.5 py-0.5 bg-bg-base rounded mr-1">Disk</span>
+                            {% endif %}
+                            {% if report.options.check_smart_tests %}
+                            <span class="px-1.5 py-0.5 bg-bg-base rounded mr-1">SMART</span>
+                            {% endif %}
+                            {% if report.options.check_scrubs %}
+                            <span class="px-1.5 py-0.5 bg-bg-base rounded">Scrub</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <div class="flex space-x-2">
+                            <a href="/utils/health/report/{{ report.id }}"
+                               class="text-info-400 hover:text-info-300"
+                               title="View Report">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                            </a>
+                            <form method="post" action="/utils/health/report/{{ report.id }}/delete" class="inline">
+                                <button type="submit"
+                                        class="text-danger-400 hover:text-danger-300"
+                                        title="Delete Report"
+                                        onclick="return confirm('Delete this report?')">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="mt-4 text-text-tertiary text-sm">
+    <p>Showing {{ reports|length }} report(s)</p>
+</div>
+{% else %}
+<!-- No Reports Found -->
+<div class="bg-bg-elevated rounded-lg p-8 text-center">
+    <div class="text-text-tertiary mb-4">
+        <svg class="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+    </div>
+    <h3 class="text-lg font-medium text-text-primary mb-2">No Health Reports</h3>
+    <p class="text-text-tertiary mb-2">No health analysis reports have been generated yet.</p>
+    <p class="text-text-tertiary text-sm">Click "Run New Health Check" to start your first analysis.</p>
+</div>
+{% endif %}
