@@ -1,0 +1,392 @@
+{# Report content partial - returned by HTMX polling during analysis #}
+{# When still running, includes hx-get to keep polling. When done, static. #}
+
+{% if report.status == 'running' %}
+<!-- Running: progress indicator with polling -->
+<div hx-get="/utils/health/report/{{ report.id }}/content-partial"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML">
+
+    <!-- Progress Banner -->
+    <div class="bg-info-900/30 border-2 border-info-500/50 rounded-lg p-6 mb-6 animate-pulse">
+        <div class="flex items-center gap-4">
+            <svg class="animate-spin h-8 w-8 text-info-400 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <div>
+                <h3 class="text-lg font-semibold text-info-400">Analysis Running</h3>
+                <p class="text-text-secondary text-sm mt-1">{{ report.progress | default('Working...') }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards (live updating) -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="card p-4 text-center">
+            <div class="text-2xl font-bold text-text-primary">{{ report.summary.total_pools | default(0) }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Pools</div>
+        </div>
+        <div class="card p-4 text-center">
+            <div class="text-2xl font-bold text-success-400">{{ report.summary.healthy_disks | default(0) }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Healthy Disks</div>
+        </div>
+        <div class="card p-4 text-center">
+            <div class="text-2xl font-bold text-warning-400">{{ report.summary.warning_disks | default(0) }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Warning Disks</div>
+        </div>
+        <div class="card p-4 text-center">
+            <div class="text-2xl font-bold text-danger-400">{{ report.summary.critical_disks | default(0) }}</div>
+            <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Critical Disks</div>
+        </div>
+    </div>
+
+    <!-- Show disks analyzed so far -->
+    {% if report.disks and report.disks | length > 0 %}
+    <div class="mb-8">
+        <h2 class="text-xl font-bold text-text-primary mb-4">Disks Analyzed So Far ({{ report.disks | length }})</h2>
+        <div class="space-y-4">
+            {% for disk in report.disks %}
+            {% include "utils/health/_disk_card.jinja" %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% elif report.status == 'error' %}
+<!-- Error state -->
+<div class="bg-danger-900/30 border-2 border-danger-500/50 rounded-lg p-6 mb-6">
+    <div class="flex items-center gap-4">
+        <svg class="w-8 h-8 text-danger-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div>
+            <h3 class="text-lg font-semibold text-danger-400">Analysis Error</h3>
+            <p class="text-text-secondary text-sm mt-1">{{ report.progress | default('An error occurred during analysis.') }}</p>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- Completed: full report content (no polling) -->
+
+<!-- Summary Cards -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="card p-4 text-center">
+        <div class="text-2xl font-bold text-text-primary">{{ report.summary.total_pools | default(0) }}</div>
+        <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Pools</div>
+    </div>
+    <div class="card p-4 text-center">
+        <div class="text-2xl font-bold text-success-400">{{ report.summary.healthy_disks | default(0) }}</div>
+        <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Healthy Disks</div>
+    </div>
+    <div class="card p-4 text-center">
+        <div class="text-2xl font-bold text-warning-400">{{ report.summary.warning_disks | default(0) }}</div>
+        <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Warning Disks</div>
+    </div>
+    <div class="card p-4 text-center">
+        <div class="text-2xl font-bold text-danger-400">{{ report.summary.critical_disks | default(0) }}</div>
+        <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Critical Disks</div>
+    </div>
+</div>
+
+<!-- Pool Topology Section -->
+{% if report.pools and report.pools | length > 0 %}
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-text-primary mb-4">Pool Topology</h2>
+    <p class="text-text-tertiary text-xs mb-4">Note: Pool creation date does not equate 1:1 with the age of individual disks.</p>
+
+    {% for pool in report.pools %}
+    <div class="card mb-4">
+        <div class="card-body p-4">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <h3 class="text-lg font-semibold text-text-primary">{{ pool.name }}</h3>
+                    {% if pool.health == 'ONLINE' %}
+                    <span class="px-2 py-0.5 rounded text-xs font-semibold bg-success-900/50 text-success-400 border border-success-500/30">ONLINE</span>
+                    {% elif pool.health == 'DEGRADED' %}
+                    <span class="px-2 py-0.5 rounded text-xs font-semibold bg-warning-900/50 text-warning-400 border border-warning-500/30">DEGRADED</span>
+                    {% else %}
+                    <span class="px-2 py-0.5 rounded text-xs font-semibold bg-danger-900/50 text-danger-400 border border-danger-500/30">{{ pool.health }}</span>
+                    {% endif %}
+                </div>
+                <div class="text-right text-sm text-text-tertiary">
+                    {% if pool.creation_date %}
+                    <div>Created: {{ pool.creation_date }}</div>
+                    {% endif %}
+                    <div>{{ pool.size }} total / {{ pool.free }} free</div>
+                </div>
+            </div>
+
+            <!-- Pool Errors Summary -->
+            {% if pool.errors and (pool.errors.read > 0 or pool.errors.write > 0 or pool.errors.checksum > 0) %}
+            <div class="bg-danger-900/20 border border-danger-500/30 rounded-lg p-3 mb-4">
+                <span class="text-danger-400 text-sm font-semibold">Pool Errors Detected:</span>
+                <span class="text-danger-300 text-sm ml-2">
+                    Read: {{ pool.errors.read }} | Write: {{ pool.errors.write }} | Checksum: {{ pool.errors.checksum }}
+                </span>
+            </div>
+            {% endif %}
+
+            <!-- VDEV Topology Display -->
+            {% if pool.vdevs and pool.vdevs | length > 0 %}
+            <div class="space-y-3">
+                {% for vdev in pool.vdevs %}
+                <div class="bg-bg-base border border-border-subtle rounded-lg p-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="w-1 h-5 bg-primary-400 rounded-full"></div>
+                        <span class="text-sm font-semibold text-text-primary uppercase">{{ vdev.type }}</span>
+                        <span class="text-xs text-text-tertiary">({{ vdev.state }})</span>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                        {% for disk in vdev.disks %}
+                        {# Use namespace so set works inside nested for loop #}
+                        {% set ns = namespace(disk_hours=None, disk_color='border-border-default', disk_bg='bg-bg-elevated') %}
+
+                        {# Find matching disk report by resolved device_path or name #}
+                        {% for dreport in report.disks %}
+                            {% if disk.device_path and dreport.path == disk.device_path %}
+                                {# Use power_on_hours first, fall back to smart_test_hours #}
+                                {% if dreport.power_on_hours is not none %}
+                                    {% set ns.disk_hours = dreport.power_on_hours %}
+                                {% elif dreport.smart_test_hours is not none %}
+                                    {% set ns.disk_hours = dreport.smart_test_hours %}
+                                {% endif %}
+                            {% elif dreport.name == disk.name or dreport.path == disk.name %}
+                                {% if dreport.power_on_hours is not none %}
+                                    {% set ns.disk_hours = dreport.power_on_hours %}
+                                {% elif dreport.smart_test_hours is not none %}
+                                    {% set ns.disk_hours = dreport.smart_test_hours %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+
+                        {# Color by status first, then age #}
+                        {% if disk.state == 'FAULTED' %}
+                            {% set ns.disk_color = 'border-gray-600' %}
+                            {% set ns.disk_bg = 'bg-gray-900/50' %}
+                        {% elif disk.read_errors > 0 or disk.write_errors > 0 or disk.checksum_errors > 0 %}
+                            {% set ns.disk_color = 'border-purple-500' %}
+                            {% set ns.disk_bg = 'bg-purple-900/30' %}
+                        {% else %}
+                            {# Check for failed SMART test via matched disk report #}
+                            {% set ns2 = namespace(has_failed_smart=false) %}
+                            {% for dreport in report.disks %}
+                                {% if (disk.device_path and dreport.path == disk.device_path) or dreport.name == disk.name or dreport.path == disk.name %}
+                                    {% if dreport.failed_smart_test %}
+                                        {% set ns2.has_failed_smart = true %}
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+                            {% if ns2.has_failed_smart %}
+                                {% set ns.disk_color = 'border-danger-500' %}
+                                {% set ns.disk_bg = 'bg-danger-900/30' %}
+                            {% elif ns.disk_hours is not none %}
+                                {% set years = (ns.disk_hours / 8760) %}
+                                {% if years < 3 %}
+                                    {% set ns.disk_color = 'border-success-500' %}
+                                    {% set ns.disk_bg = 'bg-success-900/20' %}
+                                {% elif years < 5 %}
+                                    {% set ns.disk_color = 'border-warning-500' %}
+                                    {% set ns.disk_bg = 'bg-warning-900/20' %}
+                                {% else %}
+                                    {% set ns.disk_color = 'border-orange-500' %}
+                                    {% set ns.disk_bg = 'bg-orange-900/20' %}
+                                {% endif %}
+                            {% endif %}
+                        {% endif %}
+
+                        <div class="border-2 {{ ns.disk_color }} {{ ns.disk_bg }} rounded-lg p-2 text-center transition-all">
+                            <div class="flex justify-center mb-1">
+                                <svg class="w-6 h-6 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                                </svg>
+                            </div>
+                            <div class="text-xs font-mono font-semibold text-text-primary truncate" title="{{ disk.name }}">{{ disk.name }}</div>
+                            <div class="text-xs text-text-tertiary">{{ disk.state }}</div>
+                            {% if disk.read_errors > 0 or disk.write_errors > 0 or disk.checksum_errors > 0 %}
+                            <div class="text-xs text-purple-400 mt-0.5">R:{{ disk.read_errors }} W:{{ disk.write_errors }} C:{{ disk.checksum_errors }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Age Legend -->
+    <div class="bg-bg-elevated rounded-lg p-4 border border-border-subtle">
+        <h4 class="text-sm font-semibold text-text-secondary mb-2 uppercase tracking-wider">Disk Color Legend</h4>
+        <div class="flex flex-wrap gap-4 text-xs">
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded border-2 border-success-500 bg-success-900/20"></div>
+                <span class="text-text-secondary">&lt; 3 years</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded border-2 border-warning-500 bg-warning-900/20"></div>
+                <span class="text-text-secondary">3-5 years</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded border-2 border-orange-500 bg-orange-900/20"></div>
+                <span class="text-text-secondary">&gt; 5 years</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded border-2 border-purple-500 bg-purple-900/30"></div>
+                <span class="text-text-secondary">R/W/Checksum Errors</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded border-2 border-danger-500 bg-danger-900/30"></div>
+                <span class="text-text-secondary">Failed SMART Test</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded border-2 border-gray-600 bg-gray-900/50"></div>
+                <span class="text-text-secondary">Faulted</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Disk Health Section -->
+{% if report.disks and report.disks | length > 0 %}
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-text-primary mb-4">Disk Health Details</h2>
+    <div class="space-y-4">
+        {% for disk in report.disks %}
+        {% include "utils/health/_disk_card.jinja" %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- SMART Test Status Section -->
+{% if report.smart_test_status %}
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-text-primary mb-4">SMART Test Status</h2>
+    <div class="card">
+        <div class="card-body p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div class="flex items-center gap-3">
+                    {% if report.smart_test_status.smartd_running %}
+                    <span class="w-3 h-3 rounded-full bg-success-400"></span>
+                    <span class="text-sm text-text-primary">smartd is running</span>
+                    {% else %}
+                    <span class="w-3 h-3 rounded-full bg-danger-400"></span>
+                    <span class="text-sm text-danger-400">smartd is NOT running</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-3">
+                    {% if report.smart_test_status.smartd_config_exists %}
+                    <span class="w-3 h-3 rounded-full bg-success-400"></span>
+                    <span class="text-sm text-text-primary">smartd.conf exists</span>
+                    {% else %}
+                    <span class="w-3 h-3 rounded-full bg-warning-400"></span>
+                    <span class="text-sm text-warning-400">smartd.conf not found</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if report.smart_test_status.disks and report.smart_test_status.disks | length > 0 %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-bg-base text-text-secondary">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium uppercase">Disk</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium uppercase">Tests Configured</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium uppercase">Last Test (30 days)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-border-subtle">
+                        {% for disk_st in report.smart_test_status.disks %}
+                        <tr>
+                            <td class="px-4 py-2 font-mono text-text-primary">{{ disk_st.path }}</td>
+                            <td class="px-4 py-2">
+                                {% if disk_st.tests_configured %}
+                                <span class="text-success-400">Yes</span>
+                                {% else %}
+                                <span class="text-warning-400">No</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2">
+                                {% if disk_st.last_test_within_30_days %}
+                                <span class="text-success-400">Yes</span>
+                                {% else %}
+                                <span class="text-danger-400">No</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Scrub Status Section -->
+{% if report.scrub_status %}
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-text-primary mb-4">Scrub Status</h2>
+    <div class="card">
+        <div class="card-body p-4">
+            <div class="flex items-center gap-3 mb-4">
+                {% if report.scrub_status.scrub_cron_configured %}
+                <span class="w-3 h-3 rounded-full bg-success-400"></span>
+                <span class="text-sm text-text-primary">Scrub scheduling detected</span>
+                {% else %}
+                <span class="w-3 h-3 rounded-full bg-warning-400"></span>
+                <span class="text-sm text-warning-400">No scrub scheduling detected</span>
+                {% endif %}
+            </div>
+
+            {% if report.scrub_status.pools and report.scrub_status.pools | length > 0 %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-bg-base text-text-secondary">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium uppercase">Pool</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium uppercase">Last Scrub</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium uppercase">Within 30 Days</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium uppercase">In Progress</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-border-subtle">
+                        {% for pool_scrub in report.scrub_status.pools %}
+                        <tr>
+                            <td class="px-4 py-2 font-mono text-text-primary">{{ pool_scrub.name }}</td>
+                            <td class="px-4 py-2 text-text-secondary">
+                                {{ pool_scrub.last_scrub[:19] | replace('T', ' ') if pool_scrub.last_scrub else 'Never / Unknown' }}
+                            </td>
+                            <td class="px-4 py-2">
+                                {% if pool_scrub.scrub_within_30_days %}
+                                <span class="text-success-400">Yes</span>
+                                {% else %}
+                                <span class="text-danger-400">No</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2">
+                                {% if pool_scrub.scrub_in_progress %}
+                                <span class="text-info-400">Running</span>
+                                {% else %}
+                                <span class="text-text-tertiary">No</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
