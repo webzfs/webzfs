@@ -4,6 +4,31 @@
 
 {% block title %}WebZFS Settings{% endblock %}
 
+{% block after_body %}
+{# Fix for HTMX hx-boost intercepting theme form submission.
+   When HTMX boosts the form POST, it only swaps <body> and the <head>
+   keeps the old theme CSS link. This script detects that the theme CSS
+   link in <head> does not match the active theme and swaps it directly. #}
+{% if message and "Theme changed" in message %}
+<script>
+(function() {
+    var expectedTheme = "{{ active_theme }}";
+    var expectedPath = "/static/css/themes/webzfs-theme-" + expectedTheme + ".css";
+    var links = document.querySelectorAll('link[rel="stylesheet"]');
+    for (var i = 0; i < links.length; i++) {
+        var href = links[i].getAttribute("href");
+        if (href && href.indexOf("/static/css/themes/") !== -1) {
+            if (href.indexOf(expectedTheme) === -1) {
+                links[i].setAttribute("href", expectedPath);
+            }
+            break;
+        }
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}
+
 {% block content %}
     <!-- Breadcrumb Navigation -->
     <nav class="text-sm mb-6 text-text-tertiary">
