@@ -70,10 +70,15 @@ async def apply_theme(request: Request, theme: str = Form(...)):
     success = save_theme(theme)
     if success:
         theme_name = THEME_REGISTRY.get(theme, theme)
-        return RedirectResponse(
+        response = RedirectResponse(
             url=f"/utils/settings?message=Theme changed to {theme_name}",
             status_code=303,
         )
+        # Force full page refresh so the <head> reloads with the new theme CSS.
+        # HTMX hx-boost only swaps <body>, which leaves the old theme stylesheet
+        # in <head> unchanged. HX-Refresh tells HTMX to do a full page reload.
+        response.headers["HX-Refresh"] = "true"
+        return response
     else:
         return RedirectResponse(
             url="/utils/settings?error=Failed to save theme. Check file permissions on /opt/webzfs/.config/webzfs/",
