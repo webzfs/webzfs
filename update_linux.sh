@@ -74,36 +74,17 @@ fi
 
 echo
 
-# Preserve user's gunicorn bind configuration before overwriting files
-GUNICORN_CONF="${INSTALL_DIR}/config/gunicorn.conf.py"
-SAVED_BIND_LINE=""
-if [ -f "$GUNICORN_CONF" ]; then
-    SAVED_BIND_LINE=$(grep -E '^\s*bind\s*=\s*f"' "$GUNICORN_CONF" 2>/dev/null || true)
-fi
-
 # Copy application files to installation directory (preserving config)
 echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
 rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='*.log' \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='.config' \
+    --exclude='config/gunicorn.conf.py' \
     "${SOURCE_DIR}/" "$INSTALL_DIR/"
 
 # Set ownership
 chown -R "$WEBZFS_USER:$WEBZFS_USER" "$INSTALL_DIR"
 
 echo -e "${GREEN}✓${NC} Application files updated"
-
-# Restore user's gunicorn bind configuration if it was customized
-if [ -n "$SAVED_BIND_LINE" ]; then
-    NEW_BIND_LINE=$(grep -E '^\s*bind\s*=\s*f"' "$GUNICORN_CONF" 2>/dev/null || true)
-    if [ "$SAVED_BIND_LINE" != "$NEW_BIND_LINE" ]; then
-        # User had a customized bind line, restore it
-        # Escape special characters for sed replacement
-        ESCAPED_OLD=$(printf '%s\n' "$NEW_BIND_LINE" | sed 's/[[\.*^$()+?{|]/\\&/g')
-        ESCAPED_NEW=$(printf '%s\n' "$SAVED_BIND_LINE" | sed 's/[&/\]/\\&/g')
-        sed -i "s|${ESCAPED_OLD}|${ESCAPED_NEW}|" "$GUNICORN_CONF"
-        echo -e "${YELLOW}!${NC} Preserved custom bind configuration: ${SAVED_BIND_LINE}"
-    fi
-fi
 echo
 
 # Update CAPTION in .env from .env.example
