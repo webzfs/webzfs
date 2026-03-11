@@ -38,7 +38,7 @@ async def settings_index(request: Request, message: str = "", error: str = ""):
 
     current_session_timeout = get_effective_session_timeout()
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "utils/settings/index.jinja",
         {
             "request": request,
@@ -57,6 +57,16 @@ async def settings_index(request: Request, message: str = "", error: str = ""):
         },
     )
 
+    # When a theme was just changed, force HTMX to do a full page refresh.
+    # HTMX hx-boost only swaps <body>, leaving the old theme CSS in <head>.
+    # HX-Refresh on this 200 response (not the 303 redirect, which browsers
+    # follow transparently before HTMX can see the header) tells HTMX to
+    # reload the entire page including <head> with the new theme stylesheet.
+    if message and "Theme changed" in message:
+        response.headers["HX-Refresh"] = "true"
+
+    return response
+
 
 @router.post("/apply-theme", response_class=HTMLResponse)
 async def apply_theme(request: Request, theme: str = Form(...)):
@@ -70,15 +80,10 @@ async def apply_theme(request: Request, theme: str = Form(...)):
     success = save_theme(theme)
     if success:
         theme_name = THEME_REGISTRY.get(theme, theme)
-        response = RedirectResponse(
+        return RedirectResponse(
             url=f"/utils/settings?message=Theme changed to {theme_name}",
             status_code=303,
         )
-        # Force full page refresh so the <head> reloads with the new theme CSS.
-        # HTMX hx-boost only swaps <body>, which leaves the old theme stylesheet
-        # in <head> unchanged. HX-Refresh tells HTMX to do a full page reload.
-        response.headers["HX-Refresh"] = "true"
-        return response
     else:
         return RedirectResponse(
             url="/utils/settings?error=Failed to save theme. Check file permissions on /opt/webzfs/.config/webzfs/",
