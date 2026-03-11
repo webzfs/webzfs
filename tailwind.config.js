@@ -5,35 +5,35 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Background layers
-        'bg-base': '#0a0e14',
-        'bg-elevated': '#151a21',
-        'bg-elevated-2': '#1e252e',
-        'bg-elevated-3': '#2b3440',
+        // Background layers - reference CSS custom properties for theme support
+        'bg-base': 'var(--bg-base)',
+        'bg-elevated': 'var(--bg-elevated)',
+        'bg-elevated-2': 'var(--bg-elevated-2)',
+        'bg-elevated-3': 'var(--bg-elevated-3)',
         
         // Text colors
-        'text-primary': '#e6e9ef',
-        'text-secondary': '#b3b9c5',
-        'text-tertiary': '#6c7a89',
-        'text-inverse': '#0a0e14',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-tertiary': 'var(--text-tertiary)',
+        'text-inverse': 'var(--text-inverse)',
         
         // Border colors
-        'border-subtle': '#2b3440',
-        'border-default': '#3d4856',
-        'border-strong': '#525f6f',
+        'border-subtle': 'var(--border-subtle)',
+        'border-default': 'var(--border-default)',
+        'border-strong': 'var(--border-strong)',
         
         // Primary (Blue)
         primary: {
-          50: '#e6f1ff',
+          50: 'var(--primary-50)',
           100: '#cce3ff',
           200: '#99c7ff',
           300: '#66abff',
-          400: '#4a9eff',
-          500: '#2563eb',
-          600: '#1d4ed8',
-          700: '#1e40af',
+          400: 'var(--primary-400)',
+          500: 'var(--primary-500)',
+          600: 'var(--primary-600)',
+          700: 'var(--primary-700)',
           800: '#1e3a8a',
-          900: '#1a2f6b',
+          900: 'var(--primary-900)',
         },
         
         // Success (Green)
@@ -42,12 +42,12 @@ module.exports = {
           100: '#dcfce7',
           200: '#bbf7d0',
           300: '#86efac',
-          400: '#4ade80',
-          500: '#22c55e',
-          600: '#16a34a',
+          400: 'var(--success-400)',
+          500: 'var(--success-500)',
+          600: 'var(--success-600)',
           700: '#15803d',
           800: '#166534',
-          900: '#14532d',
+          900: 'var(--success-900)',
         },
         
         // Warning (Yellow/Orange)
@@ -56,12 +56,12 @@ module.exports = {
           100: '#fef3c7',
           200: '#fde68a',
           300: '#fcd34d',
-          400: '#fbbf24',
-          500: '#f59e0b',
-          600: '#d97706',
+          400: 'var(--warning-400)',
+          500: 'var(--warning-500)',
+          600: 'var(--warning-600)',
           700: '#b45309',
           800: '#92400e',
-          900: '#78350f',
+          900: 'var(--warning-900)',
         },
         
         // Danger (Red)
@@ -70,12 +70,12 @@ module.exports = {
           100: '#fee2e2',
           200: '#fecaca',
           300: '#fca5a5',
-          400: '#f87171',
-          500: '#ef4444',
-          600: '#dc2626',
+          400: 'var(--danger-400)',
+          500: 'var(--danger-500)',
+          600: 'var(--danger-600)',
           700: '#b91c1c',
           800: '#991b1b',
-          900: '#7f1d1d',
+          900: 'var(--danger-900)',
         },
         
         // Info (Cyan)
@@ -84,12 +84,12 @@ module.exports = {
           100: '#cffafe',
           200: '#a5f3fc',
           300: '#67e8f9',
-          400: '#22d3ee',
-          500: '#06b6d4',
-          600: '#0891b2',
+          400: 'var(--info-400)',
+          500: 'var(--info-500)',
+          600: 'var(--info-600)',
           700: '#0e7490',
           800: '#155e75',
-          900: '#164e63',
+          900: 'var(--info-900)',
         },
         
         // Purple
@@ -98,12 +98,12 @@ module.exports = {
           100: '#f3e8ff',
           200: '#e9d5ff',
           300: '#d8b4fe',
-          400: '#c084fc',
-          500: '#a855f7',
-          600: '#9333ea',
+          400: 'var(--purple-400)',
+          500: 'var(--purple-500)',
+          600: 'var(--purple-600)',
           700: '#7e22ce',
           800: '#6b21a8',
-          900: '#581c87',
+          900: 'var(--purple-900)',
         },
       },
       fontFamily: {
@@ -111,11 +111,11 @@ module.exports = {
         mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'monospace'],
       },
       spacing: {
-        'page': '2rem',      // 32px
-        'section': '1.5rem', // 24px
-        'card': '1.5rem',    // 24px
-        'element': '1rem',   // 16px
-        'compact': '0.5rem', // 8px
+        'page': 'var(--space-page)',
+        'section': 'var(--space-section)',
+        'card': 'var(--space-card)',
+        'element': 'var(--space-element)',
+        'compact': 'var(--space-compact)',
       },
       borderRadius: {
         'xl': '0.75rem',  // 12px
