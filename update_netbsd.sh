@@ -91,13 +91,11 @@ fi
 
 echo
 
-# Preserve user's gunicorn.conf.py before overwriting files
-# The bind configuration may be customized by the user
+# Preserve user's gunicorn bind configuration before overwriting files
 GUNICORN_CONF="${INSTALL_DIR}/config/gunicorn.conf.py"
-GUNICORN_BACKUP=""
+SAVED_BIND_LINE=""
 if [ -f "$GUNICORN_CONF" ]; then
-    GUNICORN_BACKUP=$(mktemp)
-    cp "$GUNICORN_CONF" "$GUNICORN_BACKUP"
+    SAVED_BIND_LINE=$(grep -E '^\s*bind\s*=\s*f"' "$GUNICORN_CONF" 2>/dev/null || true)
 fi
 
 # Copy application files to installation directory (preserving config)
@@ -119,15 +117,16 @@ echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
 printf "${GREEN}✓${NC} Application files updated\n"
 
 # Restore user's gunicorn bind configuration if it was customized
-if [ -n "$GUNICORN_BACKUP" ] && [ -f "$GUNICORN_BACKUP" ]; then
-    OLD_BIND=$(grep -E '^\s*bind\s*=\s*' "$GUNICORN_BACKUP" 2>/dev/null | head -1 || true)
-    NEW_BIND=$(grep -E '^\s*bind\s*=\s*' "$GUNICORN_CONF" 2>/dev/null | head -1 || true)
-    if [ -n "$OLD_BIND" ] && [ "$OLD_BIND" != "$NEW_BIND" ]; then
-        # User had a customized bind config, restore the entire gunicorn.conf.py
-        cp "$GUNICORN_BACKUP" "$GUNICORN_CONF"
-        printf "${YELLOW}!${NC} Preserved custom gunicorn configuration\n"
+if [ -n "$SAVED_BIND_LINE" ]; then
+    NEW_BIND_LINE=$(grep -E '^\s*bind\s*=\s*f"' "$GUNICORN_CONF" 2>/dev/null || true)
+    if [ "$SAVED_BIND_LINE" != "$NEW_BIND_LINE" ]; then
+        # User had a customized bind line, restore it
+        # NetBSD sed does not support -i, use a temp file
+        ESCAPED_OLD=$(printf '%s\n' "$NEW_BIND_LINE" | sed 's/[[\.*^$()+?{|]/\\&/g')
+        ESCAPED_NEW=$(printf '%s\n' "$SAVED_BIND_LINE" | sed 's/[&/\]/\\&/g')
+        sed "s|${ESCAPED_OLD}|${ESCAPED_NEW}|" "$GUNICORN_CONF" > "${GUNICORN_CONF}.tmp" && mv "${GUNICORN_CONF}.tmp" "$GUNICORN_CONF"
+        printf "${YELLOW}!${NC} Preserved custom bind configuration: ${SAVED_BIND_LINE}\n"
     fi
-    rm -f "$GUNICORN_BACKUP"
 fi
 echo
 
