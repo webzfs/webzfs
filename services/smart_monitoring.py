@@ -699,10 +699,12 @@ class SMARTMonitoringService:
                     info['capacity'] = value
                 elif 'firmware' in key:
                     info['firmware'] = value
-                elif 'smart support' in key:
-                    info['smart_available'] = 'Available' in value
-                    info['smart_enabled'] = 'Enabled' in value
-        
+                elif 'smart_support' in key:
+                    if 'Available' in value:
+                        info['smart_available'] = True
+                    elif 'Enabled' in value:
+                        info['smart_enabled'] = True
+
         return info
     
     def _parse_test_log(self, output: str) -> List[Dict[str, Any]]:
