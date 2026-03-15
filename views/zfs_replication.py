@@ -301,7 +301,7 @@ async def send_receive_execute(
     source: Annotated[str, Form()],
     target: Annotated[str, Form()],
     replication_type: Annotated[str, Form()],
-    incremental: Annotated[bool, Form()] = True,
+    incremental: Annotated[bool, Form()] = False,
     recursive: Annotated[bool, Form()] = False,
     raw: Annotated[bool, Form()] = False,
     compression: Annotated[str, Form()] = "lz4",

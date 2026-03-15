@@ -165,7 +165,7 @@
                 <!-- Options -->
                 <div class="space-y-3 mb-6">
                     <label class="flex items-center">
-                        <input type="checkbox" name="incremental" value="true" checked class="form-checkbox">
+                        <input type="checkbox" name="incremental" value="true" class="form-checkbox">
                         <span class="ml-3 text-text-secondary">Incremental (use most recent common snapshot)</span>
                     </label>
 
@@ -534,9 +534,21 @@ function updateCommandPreview() {
 
     sendParts.push(source);
 
-    // Build receive command
+    // Build receive command.
+    // Full send: creates a child dataset under the target using the
+    // source dataset basename (e.g. target/source_basename).
+    // Incremental send: writes directly into the selected target.
     var receiveParts = ['zfs', 'receive'];
-    receiveParts.push(target);
+    var isIncremental = incrementalCheckbox && incrementalCheckbox.checked;
+
+    if (isIncremental) {
+        receiveParts.push(target);
+    } else {
+        // Extract source dataset basename for the child target path
+        var sourceDataset = source.split('@')[0];
+        var sourceBasename = sourceDataset.split('/').pop();
+        receiveParts.push(target + '/' + sourceBasename);
+    }
 
     // Build full pipeline
     var fullCommand = '';

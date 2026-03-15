@@ -242,9 +242,32 @@ class ZFSReplicationService:
                 
                 latest_snapshot = snapshots[-1]
             
-            # Auto-detect if we need -F flag when target exists
-            if force is None:
-                force = self._check_target_exists(target)
+            # Determine the actual receive target and -F flag based on
+            # whether this is a full or incremental send.
+            #
+            # Full (non-incremental) send:
+            #   - Creates a NEW child dataset under the selected target.
+            #     e.g. source "olympus/test1@first" + target "phobos"
+            #     -> receive into "phobos/test1"
+            #
+            # Incremental send:
+            #   - Writes directly into the selected target dataset,
+            #     which must already exist from a prior full send.
+            #   - The -i flag with the common and new snapshots is
+            #     sufficient; no -F flag is needed.
+            if not incremental:
+                # Extract the source dataset basename to build the
+                # child target path.  e.g. "olympus/test1" -> "test1"
+                source_dataset = source.split('@')[0] if '@' in source else source
+                source_basename = source_dataset.split('/')[-1]
+                actual_target = f"{target}/{source_basename}"
+            else:
+                actual_target = target
+            
+            # Never use -F. Full sends create a new child dataset
+            # (no overwrite needed). Incremental sends apply cleanly
+            # when the common snapshot and new snapshot are specified.
+            force = False
             
             # Merge force into options
             options_with_force = dict(options)
@@ -278,9 +301,10 @@ class ZFSReplicationService:
                 compression, base_snapshot=base_snapshot
             )
             
-            # Build the receive command
+            # Build the receive command using the actual target
+            # (child path for full sends, direct path for incremental)
             receive_cmd = self._build_receive_command(
-                target, replication_type, options_with_force
+                actual_target, replication_type, options_with_force
             )
             
             # Build the full command string for history/audit purposes
