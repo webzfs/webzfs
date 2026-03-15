@@ -309,6 +309,43 @@ class FileStorageService:
 
         return False
     
+    def delete_execution_record(self, execution_id: int) -> bool:
+        """Delete an execution record and its associated progress file.
+
+        Only non-running executions can be deleted to prevent removing
+        an active transfer's record.
+
+        Args:
+            execution_id: The execution record ID to delete.
+
+        Returns:
+            True if the record was found and deleted, False otherwise.
+        """
+        with self._lock:
+            data = self._read_json(self.history_file)
+            executions = data.get('executions', [])
+            original_length = len(executions)
+
+            # Prevent deleting running executions
+            for e in executions:
+                if e['id'] == execution_id and e.get('status') == 'running':
+                    return False
+
+            data['executions'] = [e for e in executions if e['id'] != execution_id]
+
+            if len(data['executions']) < original_length:
+                self._write_json(self.history_file, data)
+                self._write_log(f"Deleted execution record #{execution_id}")
+
+                # Remove associated progress file if it exists
+                progress_file = self.progress_dir / f"execution_{execution_id}.json"
+                if progress_file.exists():
+                    progress_file.unlink()
+
+                return True
+
+        return False
+
     # Notification Methods
     
     def log_notification(

@@ -273,11 +273,35 @@ class ZFSReplicationService:
             options_with_force = dict(options)
             options_with_force['force'] = force
             
+            # Build the send and receive commands early so the
+            # command string is stored even if validation fails
+            # (e.g. no common snapshot for incremental).  The send
+            # command is built without -i for now; if a base snapshot
+            # is found below, we rebuild with -i included.
+            send_cmd = self._build_send_command(
+                source, latest_snapshot, incremental, recursive, raw,
+                compression, base_snapshot=None
+            )
+            receive_cmd = self._build_receive_command(
+                actual_target, replication_type, options_with_force
+            )
+            
+            # Build and store the planned command string immediately
+            # so it appears in error logs even if validation fails.
+            command_string = self._build_command_string(
+                send_cmd, receive_cmd, replication_type, options_with_force
+            )
+            self.storage.update_execution_record(
+                execution_id=execution_id,
+                status='running',
+                command=command_string
+            )
+            
             # For incremental send, find the common/base snapshot.
             # Both the source and target must share at least one snapshot
             # for incremental replication to work. If no common snapshot
             # is found, we raise an error rather than silently falling back
-            # to a full send, because a full send with -F would overwrite
+            # to a full send, because a full send would overwrite
             # the target dataset and destroy any existing data.
             base_snapshot = None
             if incremental:
@@ -294,39 +318,21 @@ class ZFSReplicationService:
                         "verify that the target dataset has a snapshot "
                         "matching one on the source."
                     )
-            
-            # Build the send command
-            send_cmd = self._build_send_command(
-                source, latest_snapshot, incremental, recursive, raw,
-                compression, base_snapshot=base_snapshot
-            )
-            
-            # Build the receive command using the actual target
-            # (child path for full sends, direct path for incremental)
-            receive_cmd = self._build_receive_command(
-                actual_target, replication_type, options_with_force
-            )
-            
-            # Build the full command string for history/audit purposes
-            if replication_type == ReplicationType.LOCAL:
-                command_string = ' '.join(send_cmd) + ' | ' + ' '.join(receive_cmd)
-            else:
-                remote_host = options_with_force.get('remote_host', '')
-                remote_port = options_with_force.get('remote_port', 22)
-                ssh_key = options_with_force.get('ssh_key')
-                ssh_parts = ['ssh', '-p', str(remote_port)]
-                if ssh_key:
-                    ssh_parts.extend(['-i', ssh_key])
-                ssh_parts.append(remote_host)
-                ssh_parts.extend(receive_cmd)
-                command_string = ' '.join(send_cmd) + ' | ' + ' '.join(ssh_parts)
-            
-            # Update execution record with the command
-            self.storage.update_execution_record(
-                execution_id=execution_id,
-                status='running',
-                command=command_string
-            )
+                
+                # Rebuild the send command now that we have the base snapshot
+                send_cmd = self._build_send_command(
+                    source, latest_snapshot, incremental, recursive, raw,
+                    compression, base_snapshot=base_snapshot
+                )
+                
+                # Update the stored command string with the actual -i flag
+                command_string = self._build_command_string(
+                    send_cmd, receive_cmd, replication_type, options_with_force
+                )
+                self.storage.update_execution_record(
+                    execution_id=execution_id,
+                    command=command_string
+                )
             
             # Execute replication
             if replication_type == ReplicationType.LOCAL:
@@ -833,6 +839,38 @@ class ZFSReplicationService:
         
         cmd.append(target)
         return cmd
+    
+    def _build_command_string(
+        self, send_cmd: List[str], receive_cmd: List[str],
+        replication_type: ReplicationType, options: Dict
+    ) -> str:
+        """Build the full pipeline command string for audit/history.
+        
+        Combines the send and receive commands into a single string
+        that represents what will be (or was) executed, including
+        the SSH transport for remote replication.
+        
+        Args:
+            send_cmd: The zfs send command parts
+            receive_cmd: The zfs receive command parts
+            replication_type: Type of replication
+            options: Options including remote_host, remote_port, ssh_key
+            
+        Returns:
+            Full command string (e.g. "zfs send ... | ssh ... zfs receive ...")
+        """
+        if replication_type == ReplicationType.LOCAL:
+            return ' '.join(send_cmd) + ' | ' + ' '.join(receive_cmd)
+        
+        remote_host = options.get('remote_host', '')
+        remote_port = options.get('remote_port', 22)
+        ssh_key = options.get('ssh_key')
+        ssh_parts = ['ssh', '-p', str(remote_port)]
+        if ssh_key:
+            ssh_parts.extend(['-i', ssh_key])
+        ssh_parts.append(remote_host)
+        ssh_parts.extend(receive_cmd)
+        return ' '.join(send_cmd) + ' | ' + ' '.join(ssh_parts)
     
     def _execute_local_replication(
         self, send_cmd: List[str], receive_cmd: List[str], execution_id: int

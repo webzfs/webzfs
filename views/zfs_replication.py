@@ -850,9 +850,36 @@ async def mark_execution_failed(request: Request, execution_id: int):
         )
 
 
-@router.get("/history/{execution_id}/bug-report")
-async def execution_bug_report(request: Request, execution_id: int):
-    """Generate a downloadable markdown bug report for a failed execution.
+@router.post("/history/{execution_id}/delete", response_class=HTMLResponse)
+async def delete_execution(request: Request, execution_id: int):
+    """Delete a replication execution record from history.
+
+    Only completed (success/failure) executions can be deleted.
+    Running executions must be marked as failed first.
+    """
+    try:
+        success = replication_service.storage.delete_execution_record(execution_id)
+
+        if success:
+            return RedirectResponse(
+                url="/zfs/replication/history?message=Execution record deleted",
+                status_code=303
+            )
+        else:
+            return RedirectResponse(
+                url=f"/zfs/replication/history?error=Could not delete execution (it may still be running)",
+                status_code=303
+            )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/replication/history?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.get("/history/{execution_id}/error-log")
+async def execution_error_log(request: Request, execution_id: int):
+    """Generate a downloadable markdown error log for a failed execution.
 
     Includes system information (OS, kernel, ZFS version), execution
     details, the full replication command, error messages, and log
@@ -877,7 +904,7 @@ async def execution_bug_report(request: Request, execution_id: int):
     generated_at = dt.now().isoformat()
 
     lines = [
-        "# ZFS Replication Failure Report",
+        "# ZFS Replication Error Log",
         "",
         f"**Generated**: {generated_at}",
         f"**Execution ID**: {execution.get('id', 'N/A')}",
