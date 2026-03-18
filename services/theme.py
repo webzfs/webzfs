@@ -14,7 +14,7 @@ from config.settings import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_THEME = "deep-ocean"
+DEFAULT_THEME = "carbon-blue"
 CONFIG_DIR = Path("/opt/webzfs/.config/webzfs")
 CONFIG_FILE = CONFIG_DIR / "theme.conf"
 THEMES_DIR = BASE_DIR / "static" / "css" / "themes"
