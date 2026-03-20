@@ -23,9 +23,11 @@ As for my providence with ZFS and as a developer...
 
 - I worked at iXsystems on TrueCommand and TrueNAS for 5 years.
 - I have been the producer of BSD Now for over a decade.
-- I currently work at Klarasystems as a ZFS Solutions engineer alongside Allan Jude. (Note: This project is unrelated to my work at KlaraSystems, I started working on this before I got hired)
+- I currently work at Klara Systems as a ZFS Solutions Engineer alongside Allan Jude.
+  - (Note: This project is unrelated to my work at KlaraSystems, I started working on this before I started working for Klara)
 - I am the current developer and release maintainer for the Lumina Desktop.
-- I am a release mainainer for five Fedora Releases (Fedora Security Lab, Fedora Jam, Fedora Astonomy, Fedora Games Lab, and Fedora Scientific Lab)
+- I am a release mainainer for five Fedora Releases.
+  - (Fedora Security Lab, Fedora Jam, Fedora Astonomy, Fedora Games Lab, and Fedora Scientific Lab)
 - I was a Puppylinux developer, and I also worked on PC-BSD, TrueOS, and Project Trident.
 
 To address some points brought up by people on reddit in a thread someone posted about this:
