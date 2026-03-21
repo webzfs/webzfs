@@ -2,7 +2,7 @@
 
 A modern web-based management interface for ZFS pools, datasets, snapshots, and SMART disk monitoring built with Python FastAPI and HTMX.
 
-![webzfs dashboard](screenshots/0.70/Dashboard-v0.70.png)
+![webzfs dashboard](screenshots/0.70/dashboard-v0.70.jpg)
 
 ***
 # Disclaimer
@@ -23,9 +23,11 @@ As for my providence with ZFS and as a developer...
 
 - I worked at iXsystems on TrueCommand and TrueNAS for 5 years.
 - I have been the producer of BSD Now for over a decade.
-- I currently work at Klarasystems as a ZFS Solutions engineer alongside Allan Jude.
+- I currently work at Klara Systems as a ZFS Solutions Engineer alongside Allan Jude.
+  - (Note: This project is unrelated to my work at KlaraSystems, I started working on this before I started working for Klara)
 - I am the current developer and release maintainer for the Lumina Desktop.
-- I am a release mainainer for five Fedora Releases (Fedora Security Lab, Fedora Jam, Fedora Astonomy, Fedora Games Lab, and Fedora Scientific Lab)
+- I am a release mainainer for five Fedora Releases.
+  - (Fedora Security Lab, Fedora Jam, Fedora Astonomy, Fedora Games Lab, and Fedora Scientific Lab)
 - I was a Puppylinux developer, and I also worked on PC-BSD, TrueOS, and Project Trident.
 
 To address some points brought up by people on reddit in a thread someone posted about this:
