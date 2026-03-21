@@ -2,11 +2,13 @@
 ZFS Pool Management Views
 Provides web interface for ZFS pool operations
 """
+import re
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import Annotated
 from config.templates import templates
 from services.zfs_pool import ZFSPoolService
+from services.zfs_dataset import ZFSDatasetService
 from services.disk_utils import DiskUtilsService
 from services.audit_logger import audit_logger
 from auth.dependencies import get_current_user
@@ -14,7 +16,102 @@ from auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/zfs/pools", tags=["zfs-pools"], dependencies=[Depends(get_current_user)])
 pool_service = ZFSPoolService()
+dataset_service = ZFSDatasetService()
 disk_service = DiskUtilsService()
+
+
+def parse_pool_status(status_output: str) -> dict:
+    """Parse zpool status output into structured data."""
+    result = {
+        'state': 'UNKNOWN',
+        'status_message': '',
+        'action_message': '',
+        'scan_info': '',
+        'errors_line': '',
+        'vdevs': [],
+        'total_read_errors': 0,
+        'total_write_errors': 0,
+        'total_cksum_errors': 0,
+    }
+
+    lines = status_output.split('\n')
+    in_config = False
+    config_lines = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('state:'):
+            result['state'] = stripped.split(':', 1)[1].strip()
+        elif stripped.startswith('status:'):
+            msg = stripped.split(':', 1)[1].strip()
+            # Collect continuation lines
+            j = i + 1
+            while j < len(lines) and lines[j].startswith('\t') and not lines[j].strip().startswith(('action:', 'scan:', 'config:', 'errors:', 'see:', 'pool:')):
+                msg += ' ' + lines[j].strip()
+                j += 1
+            result['status_message'] = msg
+        elif stripped.startswith('action:'):
+            msg = stripped.split(':', 1)[1].strip()
+            j = i + 1
+            while j < len(lines) and lines[j].startswith('\t') and not lines[j].strip().startswith(('scan:', 'config:', 'errors:', 'see:', 'pool:', 'status:')):
+                msg += ' ' + lines[j].strip()
+                j += 1
+            result['action_message'] = msg
+        elif stripped.startswith('scan:'):
+            result['scan_info'] = stripped.split(':', 1)[1].strip()
+        elif stripped.startswith('errors:'):
+            result['errors_line'] = stripped.split(':', 1)[1].strip()
+        elif stripped == '' and not in_config:
+            pass
+        elif 'NAME' in stripped and 'STATE' in stripped and 'READ' in stripped:
+            in_config = True
+            continue
+        elif in_config:
+            if stripped == '' or stripped.startswith('errors:'):
+                in_config = False
+                if stripped.startswith('errors:'):
+                    result['errors_line'] = stripped.split(':', 1)[1].strip()
+            else:
+                config_lines.append(line)
+
+    # Parse config lines into vdev tree
+    for line in config_lines:
+        # Count leading whitespace to determine depth
+        stripped = line.lstrip()
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip())
+        parts = stripped.split()
+        if len(parts) >= 2:
+            name = parts[0]
+            state = parts[1]
+            read_err = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+            write_err = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+            cksum_err = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+
+            # Determine type: pool root, vdev, or leaf device
+            # Pool root is typically indent ~8 (1 tab), vdevs ~10 (1 tab + 2), leaves ~12+ 
+            vdev_type = 'leaf'
+            if indent <= 8:
+                vdev_type = 'pool'
+            elif indent <= 10:
+                vdev_type = 'vdev'
+
+            result['vdevs'].append({
+                'name': name,
+                'state': state,
+                'read_errors': read_err,
+                'write_errors': write_err,
+                'cksum_errors': cksum_err,
+                'type': vdev_type,
+                'indent': indent,
+            })
+
+            result['total_read_errors'] += read_err
+            result['total_write_errors'] += write_err
+            result['total_cksum_errors'] += cksum_err
+
+    return result
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -47,7 +144,19 @@ async def pool_detail(request: Request, pool_name: str):
     """Display detailed pool information"""
     try:
         pool_status = pool_service.get_pool_status(pool_name)
-        
+
+        # Parse structured data from status output
+        parsed = parse_pool_status(pool_status.get('status_output', ''))
+
+        # Get reservation from the root dataset (zfs property, not zpool)
+        reservation_value = 'none'
+        try:
+            ds_props = dataset_service.get_properties(pool_name)
+            if 'reservation' in ds_props:
+                reservation_value = ds_props['reservation'].get('value', 'none')
+        except Exception:
+            pass
+
         # Get checkpoint info if supported
         checkpoint_info = None
         checkpoint_supported = pool_service.checkpoint_supported()
@@ -55,14 +164,15 @@ async def pool_detail(request: Request, pool_name: str):
             try:
                 checkpoint_info = pool_service.get_checkpoint_info(pool_name)
             except Exception:
-                # Checkpoint feature may not be available on this system
                 checkpoint_info = None
-        
+
         return templates.TemplateResponse(
             "zfs/pools/detail.jinja",
             {
                 "request": request,
                 "pool": pool_status,
+                "parsed": parsed,
+                "reservation_value": reservation_value,
                 "checkpoint_info": checkpoint_info,
                 "checkpoint_supported": checkpoint_supported,
                 "page_title": f"Pool: {pool_name}"
@@ -586,6 +696,35 @@ async def discard_checkpoint(
         audit_logger.log_pool_checkpoint_discard(
             user=current_user, pool_name=pool_name, success=False, error=str(e)
         )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/reservation", response_class=HTMLResponse)
+async def set_pool_reservation(
+    request: Request,
+    pool_name: str,
+    reservation_size: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """Set or remove pool reservation (zfs dataset property on root dataset)"""
+    try:
+        value = reservation_size.strip() if reservation_size.strip() else 'none'
+        dataset_service.set_property(pool_name, 'reservation', value)
+        audit_logger.log_zfs_operation(
+            user=current_user,
+            operation="set_reservation",
+            pool=pool_name,
+            value=value
+        )
+        msg = f"Reservation set to {value}" if value != 'none' else "Reservation removed"
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?message={msg}",
+            status_code=303
+        )
+    except Exception as e:
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}?error={str(e)}",
             status_code=303

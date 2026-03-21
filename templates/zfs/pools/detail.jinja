@@ -1,5 +1,7 @@
 {% extends "layout.jinja" %}
 
+{% set props = pool.properties or {} %}
+
 {% block content %}
 <div class="space-y-6">
     <!-- Breadcrumb -->
@@ -11,11 +13,24 @@
         <span class="text-text-primary font-medium">{{ pool.name }}</span>
     </nav>
 
-    <!-- Page Header -->
+    <!-- Page Header with Status Badge -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-            <h1 class="text-3xl font-bold text-text-primary">Pool: {{ pool.name }}</h1>
-            <p class="text-text-secondary mt-1">View pool status and manage operations</p>
+        <div class="flex items-center gap-4">
+            <h1 class="text-3xl font-bold text-text-primary">{{ pool.name }}</h1>
+            {% set state = parsed.state %}
+            {% if state == 'ONLINE' %}
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-success-900/50 text-success-400 border border-success-900">ONLINE</span>
+            {% elif state == 'DEGRADED' %}
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-warning-900/50 text-warning-400 border border-warning-900">DEGRADED</span>
+            {% elif state == 'FAULTED' %}
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-danger-900/50 text-danger-400 border border-danger-900">FAULTED</span>
+            {% elif state == 'SUSPENDED' %}
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-danger-900/50 text-danger-400 border border-danger-900">SUSPENDED</span>
+            {% elif state == 'UNAVAIL' %}
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-danger-900/50 text-danger-400 border border-danger-900">UNAVAILABLE</span>
+            {% else %}
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-bg-elevated-2 text-text-secondary border border-border-subtle">{{ state }}</span>
+            {% endif %}
         </div>
         <div class="flex gap-2">
             <a href="/zfs/pools/{{ pool.name }}/properties" class="btn-primary inline-flex items-center gap-2">
@@ -40,193 +55,377 @@
             {% include "partials/success.jinja" %}
         {% endwith %}
     {% endif %}
-    
     {% if request.query_params.get('error') %}
         {% with message=request.query_params.get('error') %}
             {% include "partials/error.jinja" %}
         {% endwith %}
     {% endif %}
 
-    <!-- Pool Status -->
+    <!-- Capacity Bar -->
+    {% set cap_val = props.get('capacity', {}).get('value', '0%')|replace('%', '')|int %}
+    <div class="card">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-text-secondary text-sm font-medium">Pool Capacity</span>
+            <span class="text-text-primary font-semibold">{{ props.get('capacity', {}).get('value', '-') }}</span>
+        </div>
+        <div class="w-full bg-bg-elevated-2 rounded-full h-3 overflow-hidden">
+            <div class="h-3 rounded-full transition-all {% if cap_val > 90 %}bg-danger-500{% elif cap_val >= 80 %}bg-warning-500{% else %}bg-success-500{% endif %}"
+                 style="width: {{ cap_val }}%"></div>
+        </div>
+        <div class="flex justify-between mt-2 text-xs text-text-tertiary">
+            <span>{{ props.get('allocated', {}).get('value', '-') }} allocated</span>
+            <span>{{ props.get('free', {}).get('value', '-') }} free of {{ props.get('size', {}).get('value', '-') }}</span>
+        </div>
+    </div>
+
+    <!-- Key Metrics Row -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Size</div>
+            <div class="text-text-primary text-xl font-bold">{{ props.get('size', {}).get('value', '-') }}</div>
+        </div>
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Allocated</div>
+            <div class="text-text-primary text-xl font-bold">{{ props.get('allocated', {}).get('value', '-') }}</div>
+        </div>
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Free</div>
+            <div class="text-text-primary text-xl font-bold">{{ props.get('free', {}).get('value', '-') }}</div>
+        </div>
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Fragmentation</div>
+            <div class="text-text-primary text-xl font-bold">{{ props.get('fragmentation', {}).get('value', '-') }}</div>
+        </div>
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Dedup Ratio</div>
+            <div class="text-text-primary text-xl font-bold">{{ props.get('dedupratio', {}).get('value', '-') }}</div>
+        </div>
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Reservation</div>
+            <div class="text-text-primary text-xl font-bold">{{ reservation_value if reservation_value != 'none' and reservation_value != '0' else 'None' }}</div>
+        </div>
+    </div>
+
+    <!-- Status & Errors Row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Status Output -->
-        <div class="card col-span-2">
-            <div class="card-body">
-                <h2 class="text-xl font-semibold text-text-primary mb-4">Pool Status</h2>
-                <pre class="bg-bg-elevated-2 text-text-primary p-4 rounded-lg overflow-x-auto text-sm font-mono border border-border-subtle">{{ pool.status_output }}</pre>
-            </div>
-        </div>
-
-        <!-- Key Properties -->
+        <!-- Pool Diagnostics -->
         <div class="card">
-            <div class="card-body">
-                <h2 class="text-xl font-semibold text-text-primary mb-4">Key Properties</h2>
-                <div class="space-y-3">
-                    {% if pool.properties %}
-                        {% for prop_name in ['size', 'capacity', 'allocated', 'free', 'fragmentation', 'health', 'version', 'bootfs', 'delegation', 'autoreplace', 'failmode', 'autoexpand'] %}
-                            {% if pool.properties.get(prop_name) %}
-                            <div class="flex justify-between border-b border-border-subtle pb-2">
-                                <span class="text-text-secondary text-sm">{{ prop_name }}:</span>
-                                <span class="text-text-primary font-mono text-sm">{{ pool.properties[prop_name].value }}</span>
-                            </div>
-                            {% endif %}
-                        {% endfor %}
+            <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                </svg>
+                Diagnostics
+            </h2>
+            <div class="space-y-3">
+                {% if parsed.scan_info %}
+                <div class="flex items-start gap-2">
+                    <span class="text-text-tertiary text-sm w-16 flex-shrink-0 pt-0.5">Scan:</span>
+                    <span class="text-text-primary text-sm">{{ parsed.scan_info }}</span>
+                </div>
+                {% endif %}
+                {% if parsed.status_message %}
+                <div class="flex items-start gap-2">
+                    <span class="text-text-tertiary text-sm w-16 flex-shrink-0 pt-0.5">Status:</span>
+                    <span class="text-warning-400 text-sm">{{ parsed.status_message }}</span>
+                </div>
+                {% endif %}
+                {% if parsed.action_message %}
+                <div class="flex items-start gap-2">
+                    <span class="text-text-tertiary text-sm w-16 flex-shrink-0 pt-0.5">Action:</span>
+                    <span class="text-info-400 text-sm">{{ parsed.action_message }}</span>
+                </div>
+                {% endif %}
+                <div class="flex items-start gap-2">
+                    <span class="text-text-tertiary text-sm w-16 flex-shrink-0 pt-0.5">Errors:</span>
+                    {% if parsed.errors_line and 'No known' in parsed.errors_line %}
+                    <span class="text-success-400 text-sm">{{ parsed.errors_line }}</span>
+                    {% elif parsed.errors_line %}
+                    <span class="text-danger-400 text-sm font-semibold">{{ parsed.errors_line }}</span>
                     {% else %}
-                    <p class="text-text-tertiary">No properties available</p>
+                    <span class="text-text-tertiary text-sm">-</span>
                     {% endif %}
-                </div>
-                <div class="mt-4">
-                    <a href="/zfs/pools/{{ pool.name }}/properties" class="text-primary-400 hover:text-primary-300 text-sm inline-flex items-center gap-1 transition-colors">
-                        <span>View All Properties</span>
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                    </a>
                 </div>
             </div>
         </div>
 
-        <!-- Actions -->
+        <!-- Error Counters -->
         <div class="card">
-            <div class="card-body">
-                <h2 class="text-xl font-semibold text-text-primary mb-4">Actions</h2>
-                <div class="space-y-3">
-                    <!-- Scrub -->
-                    <form method="post" action="/zfs/pools/{{ pool.name }}/scrub" id="form-scrub-start">
-                        <button type="button"
-                                class="btn-warning w-full inline-flex items-center justify-center gap-2"
-                                onclick="showConfirm('confirm-scrub-start')">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
-                            Start Scrub
-                        </button>
-                    </form>
-                    
-                    <form method="post" action="/zfs/pools/{{ pool.name }}/scrub/stop" id="form-scrub-stop">
-                        <button type="button"
-                                class="btn-secondary w-full inline-flex items-center justify-center gap-2"
-                                onclick="showConfirm('confirm-scrub-stop')">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            Stop Scrub
-                        </button>
-                    </form>
-                    
-                    {% if checkpoint_supported %}
-                    <!-- Checkpoint - only show create button if no checkpoint exists -->
-                    {% if not checkpoint_info or not checkpoint_info.exists %}
-                    <form method="post" action="/zfs/pools/{{ pool.name }}/checkpoint" id="form-checkpoint-create">
-                        <button type="button"
-                                class="btn-warning w-full inline-flex items-center justify-center gap-2"
-                                onclick="showConfirm('confirm-checkpoint-create')">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
-                            </svg>
-                            Create Checkpoint
-                        </button>
-                    </form>
-                    {% endif %}
-                    {% endif %}
-                    
-                    <!-- Export -->
-                    <a href="/zfs/pools/{{ pool.name }}/export/confirm" 
-                       class="btn-danger w-full inline-flex items-center justify-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                        </svg>
-                        Export Pool
-                    </a>
-                    
-                    <!-- Info Note -->
-                    <div class="card-nested">
-                        <p class="text-xs text-text-tertiary flex items-start gap-2">
-                            <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span><strong class="text-text-secondary">Note:</strong> Pool destruction must be performed via command line for safety.</span>
-                        </p>
+            <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                I/O Error Totals
+            </h2>
+            <div class="grid grid-cols-3 gap-4">
+                {% set has_read = parsed.total_read_errors > 0 %}
+                {% set has_write = parsed.total_write_errors > 0 %}
+                {% set has_cksum = parsed.total_cksum_errors > 0 %}
+                <div class="card-nested text-center {% if has_read %}bg-danger-900/20 border-danger-900{% endif %}">
+                    <div class="text-text-tertiary text-xs uppercase mb-1">Read</div>
+                    <div class="text-2xl font-bold {% if has_read %}text-danger-400{% else %}text-success-400{% endif %}">{{ parsed.total_read_errors }}</div>
+                </div>
+                <div class="card-nested text-center {% if has_write %}bg-danger-900/20 border-danger-900{% endif %}">
+                    <div class="text-text-tertiary text-xs uppercase mb-1">Write</div>
+                    <div class="text-2xl font-bold {% if has_write %}text-danger-400{% else %}text-success-400{% endif %}">{{ parsed.total_write_errors }}</div>
+                </div>
+                <div class="card-nested text-center {% if has_cksum %}bg-danger-900/20 border-danger-900{% endif %}">
+                    <div class="text-text-tertiary text-xs uppercase mb-1">Checksum</div>
+                    <div class="text-2xl font-bold {% if has_cksum %}text-danger-400{% else %}text-success-400{% endif %}">{{ parsed.total_cksum_errors }}</div>
+                </div>
+            </div>
+            <div class="mt-4">
+                <h3 class="text-sm font-medium text-text-secondary mb-2">Pool Settings</h3>
+                <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <div class="flex justify-between border-b border-border-subtle py-1">
+                        <span class="text-text-tertiary">Failmode:</span>
+                        <span class="text-text-primary font-mono">{{ props.get('failmode', {}).get('value', '-') }}</span>
+                    </div>
+                    <div class="flex justify-between border-b border-border-subtle py-1">
+                        <span class="text-text-tertiary">Autoreplace:</span>
+                        <span class="text-text-primary font-mono">{{ props.get('autoreplace', {}).get('value', '-') }}</span>
+                    </div>
+                    <div class="flex justify-between border-b border-border-subtle py-1">
+                        <span class="text-text-tertiary">Autoexpand:</span>
+                        <span class="text-text-primary font-mono">{{ props.get('autoexpand', {}).get('value', '-') }}</span>
+                    </div>
+                    <div class="flex justify-between border-b border-border-subtle py-1">
+                        <span class="text-text-tertiary">Delegation:</span>
+                        <span class="text-text-primary font-mono">{{ props.get('delegation', {}).get('value', '-') }}</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Checkpoint Card - Only shown if a checkpoint exists -->
-    {% if checkpoint_supported and checkpoint_info and checkpoint_info.exists %}
+    <!-- VDev Tree -->
     <div class="card">
-        <div class="card-body">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="p-2 bg-warning-900/50 rounded-lg">
-                    <svg class="w-6 h-6 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
-                    </svg>
-                </div>
-                <div>
-                    <h2 class="text-xl font-semibold text-text-primary">Pool Checkpoint</h2>
-                    <p class="text-text-secondary text-sm">A checkpoint is currently active for this pool</p>
-                </div>
-            </div>
-            
-            <div class="space-y-4">
-                <!-- Checkpoint Details -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="card-nested">
-                        <div class="text-text-tertiary text-xs uppercase mb-1">Created</div>
-                        <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.creation_time or 'Unknown' }}</div>
-                    </div>
-                    {% if checkpoint_info.space_used %}
-                    <div class="card-nested">
-                        <div class="text-text-tertiary text-xs uppercase mb-1">Space Consumed</div>
-                        <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.space_used }}</div>
-                    </div>
-                    {% endif %}
-                </div>
-                
-                {% if checkpoint_info.status_line %}
-                <div class="card-nested">
-                    <div class="text-text-tertiary text-xs uppercase mb-1">Status</div>
-                    <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.status_line }}</div>
-                </div>
-                {% endif %}
-                
-                <!-- Rollback Instructions -->
-                <div class="card-nested bg-warning-900/20 border-warning-900">
-                    <div class="flex items-start gap-3">
-                        <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                        </svg>
-                        <div>
-                            <strong class="text-warning-400 block mb-2">Rollback to Checkpoint</strong>
-                            <p class="text-text-secondary text-sm mb-3">
-                                To roll back this pool to the checkpoint state, you must run the following commands at the CLI. 
-                                <strong class="text-danger-400">This is a destructive operation</strong> - all changes made to the pool 
-                                since the checkpoint was created will be permanently lost.
-                            </p>
-                            <pre class="bg-bg-elevated-2 text-text-primary p-3 rounded-lg text-sm font-mono border border-border-subtle overflow-x-auto">zpool export {{ pool.name }}
-zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Discard Checkpoint Button -->
-                <form method="post" action="/zfs/pools/{{ pool.name }}/checkpoint/discard" id="form-checkpoint-discard">
+        <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+            </svg>
+            VDev Layout
+        </h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle">
+                        <th class="text-left py-2 px-3 text-text-secondary font-medium">Name</th>
+                        <th class="text-left py-2 px-3 text-text-secondary font-medium">State</th>
+                        <th class="text-right py-2 px-3 text-text-secondary font-medium">Read</th>
+                        <th class="text-right py-2 px-3 text-text-secondary font-medium">Write</th>
+                        <th class="text-right py-2 px-3 text-text-secondary font-medium">Cksum</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vdev in parsed.vdevs %}
+                    <tr class="border-b border-border-subtle/50 hover:bg-bg-elevated-2 transition-colors">
+                        <td class="py-2 px-3 font-mono text-text-primary">
+                            {% if vdev.type == 'pool' %}
+                            <span class="font-bold">{{ vdev.name }}</span>
+                            {% elif vdev.type == 'vdev' %}
+                            <span class="ml-4 text-primary-400 font-semibold">{{ vdev.name }}</span>
+                            {% else %}
+                            <span class="ml-8 text-text-secondary">{{ vdev.name }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 px-3">
+                            {% if vdev.state == 'ONLINE' %}
+                            <span class="text-success-400 font-medium">ONLINE</span>
+                            {% elif vdev.state == 'DEGRADED' %}
+                            <span class="text-warning-400 font-semibold">DEGRADED</span>
+                            {% elif vdev.state == 'FAULTED' or vdev.state == 'UNAVAIL' or vdev.state == 'REMOVED' %}
+                            <span class="text-danger-400 font-semibold">{{ vdev.state }}</span>
+                            {% else %}
+                            <span class="text-text-tertiary">{{ vdev.state }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 px-3 text-right font-mono {% if vdev.read_errors > 0 %}text-danger-400 font-bold{% else %}text-text-tertiary{% endif %}">{{ vdev.read_errors }}</td>
+                        <td class="py-2 px-3 text-right font-mono {% if vdev.write_errors > 0 %}text-danger-400 font-bold{% else %}text-text-tertiary{% endif %}">{{ vdev.write_errors }}</td>
+                        <td class="py-2 px-3 text-right font-mono {% if vdev.cksum_errors > 0 %}text-danger-400 font-bold{% else %}text-text-tertiary{% endif %}">{{ vdev.cksum_errors }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Actions + Reservation Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Actions -->
+        <div class="card">
+            <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                Actions
+            </h2>
+            <div class="grid grid-cols-2 gap-3">
+                <!-- Scrub Start -->
+                <form method="post" action="/zfs/pools/{{ pool.name }}/scrub" id="form-scrub-start">
                     <button type="button"
-                            class="btn-danger w-full inline-flex items-center justify-center gap-2"
-                            onclick="showConfirm('confirm-checkpoint-discard')">
+                            class="btn-info w-full inline-flex items-center justify-center gap-2"
+                            onclick="showConfirm('confirm-scrub-start')">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                         </svg>
-                        Discard Checkpoint
+                        Start Scrub
                     </button>
                 </form>
+
+                <!-- Scrub Stop -->
+                <form method="post" action="/zfs/pools/{{ pool.name }}/scrub/stop" id="form-scrub-stop">
+                    <button type="button"
+                            class="btn-secondary w-full inline-flex items-center justify-center gap-2"
+                            onclick="showConfirm('confirm-scrub-stop')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Stop Scrub
+                    </button>
+                </form>
+
+                {% if checkpoint_supported %}
+                {% if not checkpoint_info or not checkpoint_info.exists %}
+                <!-- Checkpoint Create -->
+                <form method="post" action="/zfs/pools/{{ pool.name }}/checkpoint" id="form-checkpoint-create">
+                    <button type="button"
+                            class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-emerald-800/40 text-emerald-300 border border-emerald-700/50 hover:bg-emerald-800/60"
+                            onclick="showConfirm('confirm-checkpoint-create')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                        </svg>
+                        Checkpoint
+                    </button>
+                </form>
+                {% endif %}
+                {% endif %}
+
+                <!-- Export -->
+                <a href="/zfs/pools/{{ pool.name }}/export/confirm"
+                   class="btn-danger w-full inline-flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    Export Pool
+                </a>
+            </div>
+            <div class="card-nested mt-4">
+                <p class="text-xs text-text-tertiary flex items-start gap-2">
+                    <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span><strong class="text-text-secondary">Note:</strong> Pool destruction must be performed via command line for safety.</span>
+                </p>
             </div>
         </div>
+
+        <!-- Reservation Management -->
+        <div class="card">
+            <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+                Pool Reservation
+            </h2>
+            {% if reservation_value and reservation_value != 'none' and reservation_value != '0' %}
+            <div class="card-nested bg-purple-900/20 border-purple-900 mb-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="text-text-tertiary text-xs uppercase">Current Reservation</div>
+                        <div class="text-purple-400 text-xl font-bold mt-1">{{ reservation_value }}</div>
+                    </div>
+                    <form method="post" action="/zfs/pools/{{ pool.name }}/reservation">
+                        <input type="hidden" name="reservation_size" value="none">
+                        <button type="submit" class="btn-secondary text-sm">Remove</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+            <form method="post" action="/zfs/pools/{{ pool.name }}/reservation" class="flex flex-col sm:flex-row gap-3 items-end">
+                <div class="flex-1 w-full">
+                    <label for="reservation_size" class="form-label">Set Reservation</label>
+                    <input type="text"
+                           id="reservation_size"
+                           name="reservation_size"
+                           required
+                           placeholder="e.g., 100G, 1T, none"
+                           class="form-input w-full">
+                </div>
+                <button type="submit" class="btn-primary inline-flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    Apply
+                </button>
+            </form>
+            <p class="text-xs text-text-tertiary mt-3">Reserves a minimum amount of space for this pool's root dataset. Use size suffixes: K, M, G, T. Set to "none" to remove.</p>
+        </div>
+    </div>
+
+    <!-- Checkpoint Card -->
+    {% if checkpoint_supported and checkpoint_info and checkpoint_info.exists %}
+    <div class="card">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="p-2 bg-warning-900/50 rounded-lg">
+                <svg class="w-6 h-6 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-lg font-semibold text-text-primary">Active Checkpoint</h2>
+                <p class="text-text-secondary text-sm">A checkpoint is currently active for this pool</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div class="card-nested">
+                <div class="text-text-tertiary text-xs uppercase mb-1">Created</div>
+                <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.creation_time or 'Unknown' }}</div>
+            </div>
+            {% if checkpoint_info.space_used %}
+            <div class="card-nested">
+                <div class="text-text-tertiary text-xs uppercase mb-1">Space Consumed</div>
+                <div class="text-text-primary font-mono text-sm">{{ checkpoint_info.space_used }}</div>
+            </div>
+            {% endif %}
+        </div>
+        <div class="card-nested bg-warning-900/20 border-warning-900 mb-4">
+            <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <div>
+                    <strong class="text-warning-400 block mb-2">Rollback to Checkpoint</strong>
+                    <p class="text-text-secondary text-sm mb-3">To roll back to the checkpoint state, export and re-import with the rewind flag. <strong class="text-danger-400">This is destructive.</strong></p>
+                    <pre class="bg-bg-elevated-2 text-text-primary p-3 rounded-lg text-sm font-mono border border-border-subtle overflow-x-auto">zpool export {{ pool.name }}
+zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
+                </div>
+            </div>
+        </div>
+        <form method="post" action="/zfs/pools/{{ pool.name }}/checkpoint/discard" id="form-checkpoint-discard">
+            <button type="button"
+                    class="btn-danger inline-flex items-center justify-center gap-2"
+                    onclick="showConfirm('confirm-checkpoint-discard')">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Discard Checkpoint
+            </button>
+        </form>
     </div>
     {% endif %}
 
-    <!-- Back Button -->
+    <!-- Full zpool status Output -->
+    <div class="card">
+        <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            Raw zpool status
+        </h2>
+        <pre class="bg-bg-base text-text-primary p-4 rounded-lg overflow-x-auto text-sm font-mono border border-border-subtle">{{ pool.status_output }}</pre>
+    </div>
+
+    <!-- Back -->
     <div>
         <a href="/zfs/pools" class="text-text-secondary hover:text-text-primary inline-flex items-center gap-2 transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -240,9 +439,9 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 <!-- Confirmation Modals -->
 {% set id = 'confirm-scrub-start' %}
 {% set title = 'Start Pool Scrub' %}
-{% set message = 'Start scrub on ' ~ pool.name ~ '? This operation will scan all data to verify integrity and may take a while depending on pool size.' %}
+{% set message = 'Start scrub on ' ~ pool.name ~ '? This will scan all data to verify integrity.' %}
 {% set confirm_text = 'Start Scrub' %}
-{% set confirm_class = 'warning' %}
+{% set confirm_class = 'info' %}
 {% set confirm_action = 'document.getElementById("form-scrub-start").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
@@ -257,7 +456,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 {% if checkpoint_supported %}
 {% set id = 'confirm-checkpoint-create' %}
 {% set title = 'Create Pool Checkpoint' %}
-{% set message = 'Create a checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br>A checkpoint captures the entire state of the pool at the current moment. You can later rewind the pool to this checkpoint state if needed.<br><br><strong>Note:</strong> Only one checkpoint can exist at a time. Creating a checkpoint will consume additional space as data changes.' %}
+{% set message = 'Create a checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br>A checkpoint captures the entire pool state. Only one checkpoint can exist at a time.' %}
 {% set confirm_text = 'Create Checkpoint' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-checkpoint-create").submit()' %}
@@ -265,7 +464,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-checkpoint-discard' %}
 {% set title = 'Discard Pool Checkpoint' %}
-{% set message = 'Discard the checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br><strong class="text-danger-400">Warning:</strong> This action cannot be undone. Once the checkpoint is discarded, you will no longer be able to rewind the pool to the checkpoint state. The space consumed by the checkpoint will be released.' %}
+{% set message = 'Discard the checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br><strong class="text-danger-400">Warning:</strong> This cannot be undone.' %}
 {% set confirm_text = 'Discard Checkpoint' %}
 {% set confirm_class = 'danger' %}
 {% set confirm_action = 'document.getElementById("form-checkpoint-discard").submit()' %}
@@ -273,35 +472,15 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 {% endif %}
 
 <script>
-// Ensure showConfirm function is available
 window.showConfirm = function(dialogId) {
     const dialog = document.getElementById(dialogId);
-    
-    if (!dialog) {
-        console.error('Dialog not found:', dialogId);
-        return;
-    }
-    
-    // Try using Alpine's global Alpine object if available
+    if (!dialog) { console.error('Dialog not found:', dialogId); return; }
     if (window.Alpine) {
-        // Use Alpine.$data to access the component's data
         const component = window.Alpine.$data(dialog);
-        if (component) {
-            component.open = true;
-            return;
-        }
+        if (component) { component.open = true; return; }
     }
-    
-    // Fallback to __x property
-    if (dialog.__x) {
-        dialog.__x.$data.open = true;
-        return;
-    }
-    
-    // If neither works, try dispatching an event
+    if (dialog.__x) { dialog.__x.$data.open = true; return; }
     dialog.dispatchEvent(new CustomEvent('open-modal'));
-    console.warn('Could not open modal using Alpine.js, tried dispatching event');
 };
 </script>
-
 {% endblock %}

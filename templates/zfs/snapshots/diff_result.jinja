@@ -41,19 +41,11 @@
         </div>
     </div>
 
-    <!-- Diff Output -->
+    <!-- Diff Output - loaded async via HTMX -->
     <div class="card">
         <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-semibold text-text-primary">Changes Detected</h2>
             <div class="flex gap-2">
-                {% if diff_output %}
-                <a href="/zfs/snapshots/diff/download?snapshot1={{ snapshot1 }}&snapshot2={{ snapshot2 }}" class="btn-secondary flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Download
-                </a>
-                {% endif %}
                 <a href="/zfs/snapshots/diff/form" class="btn-primary flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -63,98 +55,23 @@
             </div>
         </div>
 
-        {% if diff_output %}
-        <!-- Legend -->
-        <div class="card-nested mb-4">
-            <div class="text-xs flex flex-wrap gap-4">
-                <div class="flex items-center gap-1.5">
-                    <code class="px-2 py-0.5 bg-success-900/50 text-success-400 rounded font-mono">+</code>
-                    <span class="text-text-secondary">Added</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <code class="px-2 py-0.5 bg-warning-900/50 text-warning-400 rounded font-mono">M</code>
-                    <span class="text-text-secondary">Modified</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <code class="px-2 py-0.5 bg-danger-900/50 text-danger-400 rounded font-mono">-</code>
-                    <span class="text-text-secondary">Removed</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <code class="px-2 py-0.5 bg-info-900/50 text-info-400 rounded font-mono">R</code>
-                    <span class="text-text-secondary">Renamed</span>
-                </div>
+        <div id="diff-data"
+             hx-get="/zfs/snapshots/diff/htmx/compute?snapshot1={{ snapshot1 }}&snapshot2={{ snapshot2_raw|default('', true) }}"
+             hx-trigger="load"
+             hx-swap="innerHTML"
+             hx-target="#diff-data">
+            <!-- Loading state -->
+            <div class="text-center py-12">
+                <div class="loading-spinner mx-auto mb-4"></div>
+                <div class="text-text-secondary text-lg mb-2">Computing differences...</div>
+                <p class="text-text-tertiary text-sm">This may take a moment for large datasets.</p>
             </div>
         </div>
-
-        <!-- Diff Content -->
-        <div class="bg-bg-base border border-border-subtle rounded-lg p-4 overflow-x-auto mb-4">
-            <pre class="text-sm font-mono text-text-primary">{% for line in diff_output.split('\n') %}{% if line.strip() %}{% if line.startswith('+') or line.startswith('A') %}<span class="text-success-400">{{ line }}</span>{% elif line.startswith('M') %}<span class="text-warning-400">{{ line }}</span>{% elif line.startswith('-') or line.startswith('R') %}<span class="text-danger-400">{{ line }}</span>{% elif line.startswith('R') %}<span class="text-info-400">{{ line }}</span>{% else %}<span class="text-text-primary">{{ line }}</span>{% endif %}
-{% endif %}{% endfor %}</pre>
-        </div>
-
-        <!-- Summary -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="card-nested bg-success-900/20 border-success-900">
-                <div class="flex items-center gap-3">
-                    <svg class="w-8 h-8 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                    </svg>
-                    <div>
-                        <div class="text-success-400 text-2xl font-bold">{{ additions }}</div>
-                        <div class="text-text-secondary text-xs">Added</div>
-                    </div>
-                </div>
-            </div>
-            <div class="card-nested bg-warning-900/20 border-warning-900">
-                <div class="flex items-center gap-3">
-                    <svg class="w-8 h-8 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                    </svg>
-                    <div>
-                        <div class="text-warning-400 text-2xl font-bold">{{ modifications }}</div>
-                        <div class="text-text-secondary text-xs">Modified</div>
-                    </div>
-                </div>
-            </div>
-            <div class="card-nested bg-danger-900/20 border-danger-900">
-                <div class="flex items-center gap-3">
-                    <svg class="w-8 h-8 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                    <div>
-                        <div class="text-danger-400 text-2xl font-bold">{{ deletions }}</div>
-                        <div class="text-text-secondary text-xs">Removed</div>
-                    </div>
-                </div>
-            </div>
-            <div class="card-nested bg-info-900/20 border-info-900">
-                <div class="flex items-center gap-3">
-                    <svg class="w-8 h-8 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                    </svg>
-                    <div>
-                        <div class="text-info-400 text-2xl font-bold">{{ renames }}</div>
-                        <div class="text-text-secondary text-xs">Renamed</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        {% else %}
-        <!-- No Changes -->
-        <div class="text-center py-12">
-            <svg class="w-16 h-16 text-success-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <div class="text-text-primary text-lg font-semibold mb-2">No differences found</div>
-            <p class="text-text-secondary text-sm">The snapshots are identical.</p>
-        </div>
-        {% endif %}
     </div>
 
     <!-- Actions -->
     <div class="mt-6 flex flex-wrap gap-4">
-        <a href="/zfs/snapshots/{{ snapshot1.split('@')[0] }}" class="btn-secondary flex items-center gap-2">
+        <a href="/zfs/snapshots" class="btn-secondary flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
             </svg>
@@ -209,6 +126,5 @@
             </li>
         </ul>
     </div>
-
 </div>
 {% endblock %}

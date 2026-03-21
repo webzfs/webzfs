@@ -72,6 +72,11 @@
 
 /* Base Layer - Reset and Defaults */
 @layer base {
+  /* Alpine.js cloak - hide elements until Alpine initializes */
+  [x-cloak] {
+    display: none !important;
+  }
+
   /* Smooth Scrolling */
   html {
     scroll-behavior: smooth;
