@@ -19,7 +19,7 @@ WHEELS_DIR="${INSTALL_DIR}/.wheels"
 WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
 
 # NetBSD 10.x wheel configuration
-WHEEL_SUBDIR="netbsd10-0"
+WHEEL_SUBDIR="netbsd10-1"
 WHEEL_PLATFORM="netbsd_10_1_amd64"
 
 # Wheel packages to download (these require compilation without pre-built wheels)
