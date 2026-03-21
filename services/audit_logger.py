@@ -311,6 +311,107 @@ class AuditLogger:
             error=error
         )
     
+    def log_vdev_warning_acknowledge(self, user: str, pool_name: str) -> None:
+        """Log that a user acknowledged the VDev management data loss warning"""
+        self.log_zfs_operation(
+            user=user,
+            operation="vdev_warning_acknowledge",
+            pool=pool_name,
+            success=True
+        )
+
+    def log_pool_vdev_add(self, user: str, pool_name: str, vdevs: str,
+                          success: bool = True, error: Optional[str] = None) -> None:
+        """Log vdev addition to pool"""
+        self.log_zfs_operation(
+            user=user,
+            operation="add_vdev",
+            pool=pool_name,
+            vdevs=vdevs,
+            success=success,
+            error=error
+        )
+    
+    def log_pool_vdev_attach(self, user: str, pool_name: str,
+                             existing_device: str, new_device: str,
+                             success: bool = True, error: Optional[str] = None) -> None:
+        """Log device attach (mirror creation/extension)"""
+        self.log_zfs_operation(
+            user=user,
+            operation="attach_device",
+            pool=pool_name,
+            existing_device=existing_device,
+            new_device=new_device,
+            success=success,
+            error=error
+        )
+    
+    def log_pool_vdev_detach(self, user: str, pool_name: str, device: str,
+                             success: bool = True, error: Optional[str] = None) -> None:
+        """Log device detach from mirror"""
+        self.log_zfs_operation(
+            user=user,
+            operation="detach_device",
+            pool=pool_name,
+            device=device,
+            success=success,
+            error=error
+        )
+    
+    def log_pool_vdev_replace(self, user: str, pool_name: str,
+                              old_device: str, new_device: str,
+                              success: bool = True, error: Optional[str] = None) -> None:
+        """Log device replacement"""
+        self.log_zfs_operation(
+            user=user,
+            operation="replace_device",
+            pool=pool_name,
+            old_device=old_device,
+            new_device=new_device,
+            success=success,
+            error=error
+        )
+    
+    def log_pool_vdev_remove(self, user: str, pool_name: str, device: str,
+                             success: bool = True, error: Optional[str] = None) -> None:
+        """Log vdev removal from pool"""
+        self.log_zfs_operation(
+            user=user,
+            operation="remove_vdev",
+            pool=pool_name,
+            device=device,
+            success=success,
+            error=error
+        )
+    
+    def log_pool_device_online(self, user: str, pool_name: str, device: str,
+                               expand: bool = False,
+                               success: bool = True, error: Optional[str] = None) -> None:
+        """Log device online"""
+        self.log_zfs_operation(
+            user=user,
+            operation="online_device",
+            pool=pool_name,
+            device=device,
+            expand=expand,
+            success=success,
+            error=error
+        )
+    
+    def log_pool_device_offline(self, user: str, pool_name: str, device: str,
+                                temporary: bool = False,
+                                success: bool = True, error: Optional[str] = None) -> None:
+        """Log device offline"""
+        self.log_zfs_operation(
+            user=user,
+            operation="offline_device",
+            pool=pool_name,
+            device=device,
+            temporary=temporary,
+            success=success,
+            error=error
+        )
+    
     # Dataset Operations
     def log_dataset_create(self, user: str, dataset_name: str,
                            success: bool = True, error: Optional[str] = None) -> None:
