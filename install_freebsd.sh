@@ -79,19 +79,23 @@ detect_freebsd_version() {
     
     echo "Detected FreeBSD version: $FREEBSD_VERSION (major: $MAJOR_VERSION, minor: $MINOR_VERSION)"
     
-    # Map to wheel directory based on major version
-    case "$MAJOR_VERSION" in
-        14)
+    # Map to wheel directory based on major and minor version
+    case "${MAJOR_VERSION}.${MINOR_VERSION}" in
+        14.3)
             WHEEL_SUBDIR="freebsd14-3"
             WHEEL_PLATFORM="freebsd_14_3_release_amd64"
             ;;
-        15)
+        14.4)
+            WHEEL_SUBDIR="freebsd14-4"
+            WHEEL_PLATFORM="freebsd_14_4_release_amd64"
+            ;;
+        15.*)
             WHEEL_SUBDIR="freebsd15-0"
             WHEEL_PLATFORM="freebsd_15_0_release_amd64"
             ;;
         *)
-            printf "${YELLOW}Warning: FreeBSD $MAJOR_VERSION is not directly supported.${NC}\n"
-            printf "${YELLOW}Attempting to use FreeBSD 14 wheels (may not work).${NC}\n"
+            printf "${YELLOW}Warning: FreeBSD ${MAJOR_VERSION}.${MINOR_VERSION} is not directly supported.${NC}\n"
+            printf "${YELLOW}Attempting to use FreeBSD 14.3 wheels (may not work).${NC}\n"
             WHEEL_SUBDIR="freebsd14-3"
             WHEEL_PLATFORM="freebsd_14_3_release_amd64"
             ;;
