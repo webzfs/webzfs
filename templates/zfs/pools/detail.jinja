@@ -1,6 +1,7 @@
 {% extends "layout.jinja" %}
 
 {% set props = pool.properties or {} %}
+{% set ds_props = dataset_props if dataset_props is defined else {} %}
 
 {% block content %}
 <div class="space-y-6">
@@ -33,6 +34,12 @@
             {% endif %}
         </div>
         <div class="flex gap-2">
+            <a href="/zfs/pools/{{ pool.name }}/vdevs" class="btn-info inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                </svg>
+                Manage VDevs
+            </a>
             <a href="/zfs/pools/{{ pool.name }}/properties" class="btn-primary inline-flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
@@ -79,7 +86,9 @@
     </div>
 
     <!-- Key Metrics Row -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    {% set compress_val = ds_props.get('compression', {}).get('value', 'off') %}
+    {% set compress_ratio = ds_props.get('compressratio', {}).get('value', '-') %}
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <div class="card text-center">
             <div class="text-text-tertiary text-xs uppercase mb-1">Size</div>
             <div class="text-text-primary text-xl font-bold">{{ props.get('size', {}).get('value', '-') }}</div>
@@ -95,6 +104,10 @@
         <div class="card text-center">
             <div class="text-text-tertiary text-xs uppercase mb-1">Fragmentation</div>
             <div class="text-text-primary text-xl font-bold">{{ props.get('fragmentation', {}).get('value', '-') }}</div>
+        </div>
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Compression</div>
+            <div class="text-text-primary text-xl font-bold">{% if compress_val != 'off' %}{{ compress_ratio }}{% else %}Off{% endif %}</div>
         </div>
         <div class="card text-center">
             <div class="text-text-tertiary text-xs uppercase mb-1">Dedup Ratio</div>
@@ -217,12 +230,20 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {# Determine the indent levels: min=pool, next=vdev, deeper=leaf #}
+                    {% set min_indent = parsed.vdevs[0].indent if parsed.vdevs else 0 %}
                     {% for vdev in parsed.vdevs %}
+                    {% set is_pool_root = (vdev.indent == min_indent) %}
+                    {% set is_vdev = (vdev.indent == min_indent + 2) %}
+                    {% set is_leaf = (vdev.indent > min_indent + 2) %}
+                    {% set has_errors = (vdev.read_errors > 0 or vdev.write_errors > 0 or vdev.cksum_errors > 0) %}
+                    {# Show pool root and vdevs always; show leaves only if they have errors #}
+                    {% if not is_leaf or has_errors %}
                     <tr class="border-b border-border-subtle/50 hover:bg-bg-elevated-2 transition-colors">
                         <td class="py-2 px-3 font-mono text-text-primary">
-                            {% if vdev.type == 'pool' %}
+                            {% if is_pool_root %}
                             <span class="font-bold">{{ vdev.name }}</span>
-                            {% elif vdev.type == 'vdev' %}
+                            {% elif is_vdev %}
                             <span class="ml-4 text-primary-400 font-semibold">{{ vdev.name }}</span>
                             {% else %}
                             <span class="ml-8 text-text-secondary">{{ vdev.name }}</span>
@@ -243,6 +264,7 @@
                         <td class="py-2 px-3 text-right font-mono {% if vdev.write_errors > 0 %}text-danger-400 font-bold{% else %}text-text-tertiary{% endif %}">{{ vdev.write_errors }}</td>
                         <td class="py-2 px-3 text-right font-mono {% if vdev.cksum_errors > 0 %}text-danger-400 font-bold{% else %}text-text-tertiary{% endif %}">{{ vdev.cksum_errors }}</td>
                     </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
