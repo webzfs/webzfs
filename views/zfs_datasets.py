@@ -528,6 +528,62 @@ async def inherit_encryption_key(
         )
 
 
+@router.post("/{dataset_path:path}/quota", response_class=HTMLResponse)
+async def set_dataset_quota(
+    request: Request,
+    dataset_path: str,
+    quota_size: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """Set or remove dataset quota"""
+    try:
+        value = quota_size.strip() if quota_size.strip() else 'none'
+        dataset_service.set_property(dataset_path, 'quota', value)
+        audit_logger.log_zfs_operation(
+            user=current_user,
+            operation="set_quota",
+            pool=dataset_path.split('/')[0],
+            details=f"Set quota={value} on dataset {dataset_path}"
+        )
+        message = f"Quota set to {value} on {dataset_path}" if value != 'none' else f"Quota removed from {dataset_path}"
+        return RedirectResponse(
+            url=f"/zfs/datasets/{dataset_path}?message={message}",
+            status_code=303
+        )
+    except Exception as e:
+        # Produce a clean, user-friendly error message
+        raw = str(e).strip().replace('\n', ' ')
+        if 'size is less than current used or reserved space' in raw:
+            error_msg = "Quota must be larger than the current used space"
+        elif 'invalid property value' in raw:
+            error_msg = "Invalid quota value. Use sizes like 100G, 500G, 1T, or none"
+        else:
+            error_msg = "Failed to set quota. Check the value and try again"
+        # Re-render page with error instead of redirect to keep URL clean
+        try:
+            dataset = dataset_service.get_dataset(dataset_path)
+            space_usage = []
+            try:
+                space_usage = dataset_service.get_space_usage(dataset_path, recursive=False)
+            except Exception:
+                pass
+            return templates.TemplateResponse(
+                "zfs/datasets/detail.jinja",
+                {
+                    "request": request,
+                    "dataset": dataset,
+                    "space_usage": space_usage,
+                    "error": error_msg,
+                    "page_title": f"Dataset: {dataset_path}"
+                }
+            )
+        except Exception:
+            return RedirectResponse(
+                url=f"/zfs/datasets/{dataset_path}",
+                status_code=303
+            )
+
+
 # Catch-all route - MUST BE LAST to not interfere with more specific routes above
 @router.get("/{dataset_path:path}", response_class=HTMLResponse)
 async def dataset_detail(
