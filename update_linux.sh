@@ -78,6 +78,7 @@ echo
 echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
 rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='*.log' \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='.config' \
+    --exclude='config/gunicorn.conf.py' \
     "${SOURCE_DIR}/" "$INSTALL_DIR/"
 
 # Set ownership

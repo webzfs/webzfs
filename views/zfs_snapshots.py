@@ -24,14 +24,28 @@ async def snapshots_index(
     request: Request,
     dataset: Optional[str] = None
 ):
-    """Display all snapshots"""
+    """Display all snapshots and bookmarks"""
     try:
         snapshots = snapshot_service.list_snapshots(dataset=dataset)
+
+        # Load bookmarks and build a set for quick lookup
+        try:
+            bookmarks = snapshot_service.list_bookmarks(dataset=dataset)
+        except Exception:
+            bookmarks = []
+
+        # Build a set of bookmark names keyed by dataset#bookmark for display
+        bookmark_set = set()
+        for bm in bookmarks:
+            bookmark_set.add(f"{bm['dataset']}#{bm['bookmark']}")
+
         return templates.TemplateResponse(
             "zfs/snapshots/index.jinja",
             {
                 "request": request,
                 "snapshots": snapshots,
+                "bookmarks": bookmarks,
+                "bookmark_set": bookmark_set,
                 "selected_dataset": dataset,
                 "page_title": "ZFS Snapshots"
             }
@@ -42,6 +56,8 @@ async def snapshots_index(
             {
                 "request": request,
                 "snapshots": [],
+                "bookmarks": [],
+                "bookmark_set": set(),
                 "error": str(e),
                 "page_title": "ZFS Snapshots"
             }
@@ -171,35 +187,125 @@ async def create_snapshot(
         )
 
 
+# Bookmark Routes (must be before catch-all {snapshot_path:path} routes)
+
+@router.post("/bookmarks/destroy", response_class=HTMLResponse)
+async def destroy_bookmark(
+    request: Request,
+    bookmark_name: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """Destroy a ZFS bookmark"""
+    try:
+        snapshot_service.destroy_bookmark(bookmark_name)
+        audit_logger.log_zfs_operation(
+            user=current_user,
+            operation="bookmark_destroy",
+            bookmark=bookmark_name
+        )
+        return RedirectResponse(
+            url=f"/zfs/snapshots?message=Bookmark {bookmark_name} destroyed",
+            status_code=303
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/snapshots?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{snapshot_path:path}/bookmark", response_class=HTMLResponse)
+async def create_bookmark(
+    request: Request,
+    snapshot_path: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a bookmark from a snapshot"""
+    try:
+        full_bookmark = snapshot_service.create_bookmark(snapshot_path)
+        audit_logger.log_zfs_operation(
+            user=current_user,
+            operation="bookmark_create",
+            snapshot=snapshot_path,
+            bookmark=full_bookmark
+        )
+        dataset_part = snapshot_path.split('@')[0]
+        return RedirectResponse(
+            url=f"/zfs/snapshots?dataset={dataset_part}&message=Bookmark {full_bookmark} created",
+            status_code=303
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/snapshots?error={str(e)}",
+            status_code=303
+        )
+
+
+# Snapshot Detail and Action Routes
+
 @router.get("/{snapshot_path:path}/detail", response_class=HTMLResponse)
 async def snapshot_detail(
     request: Request,
     snapshot_path: str
 ):
-    """Display snapshot details"""
+    """Display snapshot detail page skeleton - data loads async via HTMX"""
+    # Parse the snapshot name from the path for display
+    snap_name = snapshot_path.rsplit('@', 1)[1] if '@' in snapshot_path else snapshot_path
+    dataset_name = snapshot_path.rsplit('@', 1)[0] if '@' in snapshot_path else ""
+
+    return templates.TemplateResponse(
+        "zfs/snapshots/detail.jinja",
+        {
+            "request": request,
+            "snapshot_path": snapshot_path,
+            "snap_name": snap_name,
+            "dataset_name": dataset_name,
+            "page_title": f"Snapshot: {snapshot_path}"
+        }
+    )
+
+
+@router.get("/{snapshot_path:path}/htmx/data", response_class=HTMLResponse)
+async def snapshot_detail_data(
+    request: Request,
+    snapshot_path: str
+):
+    """HTMX fragment: fetch all snapshot detail data"""
     try:
         snapshot = snapshot_service.get_snapshot(snapshot_path)
         space = snapshot_service.get_snapshot_space(snapshot_path)
         holds = snapshot_service.get_holds(snapshot_path)
-        
+
+        # Check if a bookmark exists for this snapshot
+        has_bookmark = False
+        bookmark_name = ""
+        try:
+            dataset_part, snap_part = snapshot_path.rsplit('@', 1)
+            bookmarks = snapshot_service.list_bookmarks(dataset=dataset_part)
+            for bm in bookmarks:
+                if bm['bookmark'] == snap_part and bm['dataset'] == dataset_part:
+                    has_bookmark = True
+                    bookmark_name = bm['name']
+                    break
+        except Exception:
+            pass
+
         return templates.TemplateResponse(
-            "zfs/snapshots/detail.jinja",
+            "zfs/snapshots/detail_data.jinja",
             {
                 "request": request,
                 "snapshot": snapshot,
+                "snapshot_path": snapshot_path,
                 "space": space,
                 "holds": holds,
-                "page_title": f"Snapshot: {snapshot_path}"
+                "has_bookmark": has_bookmark,
+                "bookmark_name": bookmark_name,
             }
         )
     except Exception as e:
-        return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
-                "error": str(e),
-                "back_url": "/zfs/snapshots"
-            }
+        return HTMLResponse(
+            content=f'<div class="card"><div class="p-6"><div class="text-danger-400 font-semibold">Error loading snapshot data</div><p class="text-text-secondary mt-2">{str(e)}</p></div></div>',
+            status_code=200
         )
 
 
@@ -301,11 +407,8 @@ async def rollback_snapshot(
         snapshot_service.rollback_snapshot(snapshot_path, force=force)
         audit_logger.log_snapshot_rollback(user=current_user, snapshot_name=snapshot_path, force=force)
         
-        # Extract dataset name
-        dataset_name = snapshot_path.rsplit('@', 1)[0]
-        
         return RedirectResponse(
-            url=f"/zfs/datasets/{dataset_name}?message=Rollback successful",
+            url=f"/zfs/snapshots?message=Rollback to {snapshot_path} successful",
             status_code=303
         )
     except Exception as e:
@@ -512,14 +615,14 @@ async def diff_snapshots(
     snapshot1: Annotated[str, Form()],
     snapshot2: Annotated[str, Form()] = ""
 ):
-    """Show differences between snapshots"""
+    """Show diff result page skeleton - actual diff loads async via HTMX"""
     # Validate that snapshot1 is provided
     if not snapshot1:
         try:
             snapshots = snapshot_service.list_snapshots()
         except:
             snapshots = []
-        
+
         return templates.TemplateResponse(
             "zfs/snapshots/diff.jinja",
             {
@@ -531,7 +634,7 @@ async def diff_snapshots(
                 "page_title": "Compare Snapshots"
             }
         )
-    
+
     # Validate that snapshots are from the same dataset (zfs diff requirement)
     if snapshot2:
         try:
@@ -542,7 +645,7 @@ async def diff_snapshots(
                     snapshots = snapshot_service.list_snapshots()
                 except:
                     snapshots = []
-                
+
                 return templates.TemplateResponse(
                     "zfs/snapshots/diff.jinja",
                     {
@@ -555,24 +658,43 @@ async def diff_snapshots(
                     }
                 )
         except:
-            pass  # Let the actual diff command handle malformed snapshot names
-    
+            pass
+
+    # Render the result page skeleton immediately - diff computes async via HTMX
+    return templates.TemplateResponse(
+        "zfs/snapshots/diff_result.jinja",
+        {
+            "request": request,
+            "snapshot1": snapshot1,
+            "snapshot2": snapshot2 if snapshot2 else "current state",
+            "snapshot2_raw": snapshot2,
+            "page_title": "Snapshot Diff"
+        }
+    )
+
+
+@router.get("/diff/htmx/compute", response_class=HTMLResponse)
+async def diff_snapshots_htmx(
+    request: Request,
+    snapshot1: str,
+    snapshot2: str = ""
+):
+    """HTMX fragment: compute and return the actual diff output"""
     try:
         diff_output = snapshot_service.diff_snapshots(
             snapshot1,
             snapshot2 if snapshot2 else None
         )
-        
-        # If diff_output is empty or just whitespace, show no changes message
+
         if not diff_output or not diff_output.strip():
-            diff_output = ""  # Ensure it's an empty string for template logic
-        
+            diff_output = ""
+
         # Calculate summary counts
         additions = 0
         modifications = 0
         deletions = 0
         renames = 0
-        
+
         if diff_output:
             for line in diff_output.split('\n'):
                 line = line.strip()
@@ -584,9 +706,9 @@ async def diff_snapshots(
                     deletions += 1
                 elif line.startswith('R'):
                     renames += 1
-        
+
         return templates.TemplateResponse(
-            "zfs/snapshots/diff_result.jinja",
+            "zfs/snapshots/diff_result_data.jinja",
             {
                 "request": request,
                 "snapshot1": snapshot1,
@@ -596,39 +718,12 @@ async def diff_snapshots(
                 "modifications": modifications,
                 "deletions": deletions,
                 "renames": renames,
-                "page_title": "Snapshot Diff"
             }
         )
     except Exception as e:
-        # Get snapshots list for the form dropdowns
-        try:
-            snapshots = snapshot_service.list_snapshots()
-        except Exception as list_err:
-            snapshots = []
-            # If we can't even list snapshots, add that to the error message
-            error_msg = f"Error comparing snapshots: {str(e)}. Additionally, failed to reload snapshots: {str(list_err)}"
-            return templates.TemplateResponse(
-                "zfs/snapshots/diff.jinja",
-                {
-                    "request": request,
-                    "snapshot1": snapshot1,
-                    "snapshot2": snapshot2,
-                    "snapshots": [],
-                    "error": error_msg,
-                    "page_title": "Compare Snapshots"
-                }
-            )
-        
-        return templates.TemplateResponse(
-            "zfs/snapshots/diff.jinja",
-            {
-                "request": request,
-                "snapshot1": snapshot1,
-                "snapshot2": snapshot2,
-                "snapshots": snapshots,
-                "error": f"Error comparing snapshots: {str(e)}",
-                "page_title": "Compare Snapshots"
-            }
+        return HTMLResponse(
+            content=f'<div class="card"><div class="p-6"><div class="text-danger-400 font-semibold">Error computing diff</div><p class="text-text-secondary mt-2">{str(e)}</p></div></div>',
+            status_code=200
         )
 
 

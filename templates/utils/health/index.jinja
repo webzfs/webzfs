@@ -1,0 +1,191 @@
+{% extends "layout.jinja" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Breadcrumb Navigation -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Health Analysis</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-text-primary">Health Analysis</h1>
+        <button type="button"
+                onclick="showConfirm('confirm-new-analysis')"
+                class="btn-primary px-4 py-2 inline-flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Run New Health Check
+        </button>
+    </div>
+
+    <!-- Success/Error Messages -->
+    {% if request.query_params.get('message') %}
+    <div class="bg-success-900/30 border-2 border-success-500/50 text-success-400 px-4 py-3 rounded mb-4">
+        {{ request.query_params.get('message') }}
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('error') %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
+        <strong>Error:</strong> {{ request.query_params.get('error') }}
+    </div>
+    {% endif %}
+
+    <!-- HTMX deferred loading: fetch report list in background -->
+    <div hx-get="/utils/health/content-partial"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <!-- Loading spinner -->
+        <div class="flex flex-col items-center justify-center py-16">
+            <svg class="animate-spin h-10 w-10 text-primary-400 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-text-secondary text-lg">Loading health reports...</p>
+            <p class="text-text-tertiary text-sm mt-1">Retrieving previous analysis results.</p>
+        </div>
+    </div>
+
+    <!-- Info Box -->
+    <div class="mt-6 bg-info-900/30 border-2 border-info-500/50 text-info-400 px-4 py-3 rounded">
+        <strong>
+            <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            About Health Analysis:
+        </strong>
+        <p class="mt-1 text-sm">
+            Health Analysis performs a comprehensive check of your ZFS pools, disk health via SMART data,
+            self-test scheduling, and scrub status. Results are saved for historical comparison.
+            Disk age is estimated from power-on hours and may not reflect exact calendar age.
+        </p>
+    </div>
+</div>
+
+<!-- New Analysis Configuration Modal -->
+<div id="confirm-new-analysis"
+     class="modal-overlay"
+     x-data="{ open: false }"
+     x-show="open"
+     x-on:keydown.escape.window="open = false"
+     style="display: none;"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0">
+
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
+
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="modal modal-md"
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0 translate-y-4 scale-95"
+                 x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100 translate-y-0 scale-100"
+                 x-transition:leave-end="opacity-0 translate-y-4 scale-95">
+
+                <!-- Icon -->
+                <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-primary-900/50 border-2 border-primary-500">
+                    <svg class="w-6 h-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+
+                <h3 class="text-xl font-semibold text-text-primary text-center mb-2">Run Health Analysis</h3>
+
+                {% if disk_count > 0 %}
+                <div class="bg-warning-900/30 border border-warning-500/30 rounded-lg p-3 mb-4 text-sm text-warning-400">
+                    <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    {{ disk_count }} disk(s) detected. Depending on the number of disks, a full health check may take several minutes.
+                </div>
+                {% endif %}
+
+                <form method="post" action="/utils/health/run" id="health-form">
+                    <div class="space-y-4 mb-6">
+                        <h4 class="text-sm font-semibold text-text-secondary uppercase tracking-wider">Select Checks</h4>
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="check_disk_health" class="form-checkbox mt-0.5" checked>
+                            <div>
+                                <span class="text-text-primary text-sm font-medium">Check Disk Health</span>
+                                <p class="text-text-tertiary text-xs mt-0.5">Power-on hours, reallocated sectors, uncorrectable errors, temperature, failed tests</p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="check_smart_tests" class="form-checkbox mt-0.5" checked>
+                            <div>
+                                <span class="text-text-primary text-sm font-medium">Verify SMART Tests</span>
+                                <p class="text-text-tertiary text-xs mt-0.5">Check that smartctl tests are enabled and have run in the last 30 days</p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="check_scrubs" class="form-checkbox mt-0.5" checked>
+                            <div>
+                                <span class="text-text-primary text-sm font-medium">Verify Scrubs</span>
+                                <p class="text-text-tertiary text-xs mt-0.5">Check that ZFS scrubs are scheduled and have run in the last 30 days</p>
+                            </div>
+                        </label>
+
+                        <hr class="border-border-subtle">
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="aggressive_hours" class="form-checkbox mt-0.5">
+                            <div>
+                                <span class="text-text-primary text-sm font-medium">Aggressively Determine Hours</span>
+                                <div class="bg-danger-900/20 border border-danger-500/30 rounded-lg p-2 mt-1">
+                                    <p class="text-danger-400 text-xs">
+                                        <strong>Warning:</strong> Some drives report power-on hours in non-standard ways, and some do not report them at all.
+                                        Enabling this option will start and immediately cancel a short SMART test on drives that do not report hours.
+                                        This creates a <strong>permanent entry</strong> in the SMART self-test log.
+                                        It is not recommended to do this regularly.
+                                    </p>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="flex space-x-3">
+                        <button type="button" class="btn-secondary flex-1" x-on:click="open = false">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn-primary flex-1 inline-flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Run Analysis
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showConfirm(dialogId) {
+        var dialog = document.getElementById(dialogId);
+        if (dialog && dialog.__x) {
+            dialog.__x.$data.open = true;
+        } else if (window.Alpine) {
+            var component = window.Alpine.$data(dialog);
+            if (component) {
+                component.open = true;
+            }
+        }
+    }
+</script>
+{% endblock %}

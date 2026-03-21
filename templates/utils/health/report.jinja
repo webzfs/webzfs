@@ -1,0 +1,44 @@
+{% extends "layout.jinja" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Breadcrumb -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <a href="/utils/health" class="hover:text-primary-400">Health Analysis</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Report {{ report.started_at[:19] | replace('T', ' ') if report.started_at else report.id }}</span>
+    </nav>
+
+    {% if request.query_params.get('message') %}
+    <div class="bg-success-900/30 border-2 border-success-500/50 text-success-400 px-4 py-3 rounded mb-4">
+        {{ request.query_params.get('message') }}
+    </div>
+    {% endif %}
+
+    <!-- Report Header -->
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary mb-1">Health Report</h1>
+            <p class="text-text-tertiary text-sm">
+                Started: {{ report.started_at[:19] | replace('T', ' ') if report.started_at else 'Unknown' }}
+                {% if report.completed_at %}
+                | Completed: {{ report.completed_at[:19] | replace('T', ' ') }}
+                {% endif %}
+            </p>
+        </div>
+        <a href="/utils/health" class="btn-secondary px-4 py-2 inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            Back to Reports
+        </a>
+    </div>
+
+    <!-- Report content: the content partial self-manages HTMX polling when running -->
+    <div id="report-content">
+        {% include "utils/health/report_content_partial.jinja" %}
+    </div>
+</div>
+{% endblock %}

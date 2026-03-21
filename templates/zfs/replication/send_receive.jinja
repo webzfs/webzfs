@@ -165,7 +165,7 @@
                 <!-- Options -->
                 <div class="space-y-3 mb-6">
                     <label class="flex items-center">
-                        <input type="checkbox" name="incremental" value="true" checked class="form-checkbox">
+                        <input type="checkbox" name="incremental" value="true" class="form-checkbox">
                         <span class="ml-3 text-text-secondary">Incremental (use most recent common snapshot)</span>
                     </label>
 
@@ -173,11 +173,38 @@
                         <input type="checkbox" name="recursive" value="true" class="form-checkbox">
                         <span class="ml-3 text-text-secondary">Recursive (include child datasets)</span>
                     </label>
+
+                    <label class="flex items-center">
+                        <input type="checkbox" name="raw" value="true" class="form-checkbox">
+                        <span class="ml-3 text-text-secondary">Raw send (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-w</code> flag, required for encrypted datasets)</span>
+                    </label>
+                </div>
+
+                <!-- Command Preview -->
+                <div class="mb-6 pt-4 border-t border-border-subtle">
+                    <label class="form-label flex items-center">
+                        <svg class="w-4 h-4 mr-2 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        Command Preview
+                    </label>
+                    <div id="command-preview" class="bg-bg-elevated-2 rounded-lg p-4 font-mono text-sm text-info-400 border border-border-default overflow-x-auto whitespace-pre-wrap">
+                        <span class="text-text-tertiary">Select a source snapshot and target dataset to preview the command.</span>
+                    </div>
+                    <p class="text-text-tertiary text-xs mt-1">This is the command that will be executed. The actual command may include incremental flags if a common snapshot is found.</p>
+                </div>
+
+                <!-- Confirmation Checkbox -->
+                <div class="mb-6">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="confirm-command" class="form-checkbox">
+                        <span class="ml-3 text-text-secondary font-medium">I have reviewed the replication command above and want to proceed</span>
+                    </label>
                 </div>
 
                 <!-- Actions -->
                 <div class="flex items-center justify-between pt-4 border-t border-border-subtle">
-                    <button type="submit" class="btn-primary inline-flex items-center gap-2 htmx-loading">
+                    <button type="submit" id="execute-btn" disabled class="btn-primary inline-flex items-center gap-2 htmx-loading opacity-50 cursor-not-allowed">
                         <span class="htmx-indicator">
                             <div class="loading-spinner loading-spinner-sm"></div>
                         </span>
@@ -235,6 +262,59 @@
         </ul>
     </div>
 
+    <!-- Encrypted Replication -->
+    <div class="card-nested bg-warning-900/20 border-warning-700 mb-6">
+        <h3 class="font-semibold mb-3 text-text-primary flex items-center">
+            <svg class="w-5 h-5 mr-2 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            Encrypted Dataset Replication
+        </h3>
+        <div class="text-sm text-text-secondary space-y-3">
+            <p>
+                When replicating encrypted datasets, the <strong class="text-text-primary">Raw send</strong> option
+                (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-w</code>) must be enabled. This sends the
+                data in its encrypted form so that the receiving side preserves the encryption properties without
+                requiring access to the encryption key.
+            </p>
+            <p>
+                Without raw send, ZFS will attempt to decrypt the data before sending, which requires the encryption
+                key to be loaded on the source. The received dataset on the target will not retain its encryption
+                properties.
+            </p>
+            <p>
+                For full details on send and receive behavior with encrypted datasets, consult the OpenZFS man pages:
+            </p>
+            <div class="flex flex-wrap items-center gap-3 mt-2">
+                {% if zfs_send_man_url %}
+                <a href="{{ zfs_send_man_url }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="btn-secondary btn-sm inline-flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                    </svg>
+                    zfs-send(8) Man Page
+                </a>
+                {% endif %}
+                {% if zfs_receive_man_url %}
+                <a href="{{ zfs_receive_man_url }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="btn-secondary btn-sm inline-flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                    </svg>
+                    zfs-receive(8) Man Page
+                </a>
+                {% endif %}
+                {% if not zfs_send_man_url and not zfs_receive_man_url %}
+                <span class="text-text-tertiary text-xs">Man page links unavailable (could not determine ZFS version).</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
     <!-- SSH Connection Info -->
     <div class="card-nested bg-success-900/20 border-success-700">
         <h3 class="font-semibold mb-3 text-text-primary flex items-center">
@@ -243,8 +323,23 @@
             </svg>
             SSH Key-Based Authentication
         </h3>
-        <div class="text-sm text-text-secondary">
-            <p class="mb-3">Remote replication uses secure SSH key-based authentication. Connections are managed centrally in the SSH Connection Manager.</p>
+        <div class="text-sm text-text-secondary space-y-3">
+            <p>
+                Remote replication requires SSH key-based authentication. All SSH keys <strong class="text-text-primary">must</strong>
+                be created through the <a href="/utils/ssh" class="text-primary-400 hover:text-primary-300">SSH Connection Manager</a>.
+            </p>
+            <div class="bg-warning-900/30 border border-warning-700 text-warning-400 px-3 py-2 rounded-lg">
+                <p class="flex items-start">
+                    <svg class="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span>
+                        On Linux, WebZFS runs as the <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">webzfs</code> user.
+                        SSH keys created manually as root will <strong>not</strong> be accessible. Always use the SSH Connection Manager
+                        to generate and manage keys so that the correct ownership and permissions are applied.
+                    </span>
+                </p>
+            </div>
             <div class="flex items-center gap-3">
                 <a href="/utils/ssh" class="btn-success btn-sm inline-flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -401,10 +496,107 @@ testConnectionBtn.addEventListener('click', async function() {
     }
 });
 
+// Command preview elements
+const commandPreview = document.getElementById('command-preview');
+const confirmCheckbox = document.getElementById('confirm-command');
+const executeBtn = document.getElementById('execute-btn');
+const incrementalCheckbox = document.querySelector('input[name="incremental"]');
+const recursiveCheckbox = document.querySelector('input[name="recursive"]');
+const rawCheckbox = document.querySelector('input[name="raw"]');
+const compressionSelect = document.getElementById('compression');
+
+// Build command preview string based on current form state
+function updateCommandPreview() {
+    const source = sourceSelect.value;
+    const target = targetSelect.value;
+    const replType = replicationTypeSelect.value;
+
+    if (!source || !target) {
+        commandPreview.innerHTML = '<span class="text-text-tertiary">Select a source snapshot and target dataset to preview the command.</span>';
+        return;
+    }
+
+    // Build send command
+    var sendParts = ['zfs', 'send'];
+
+    if (recursiveCheckbox && recursiveCheckbox.checked) {
+        sendParts.push('-R');
+    }
+    if (rawCheckbox && rawCheckbox.checked) {
+        sendParts.push('-w');
+    }
+    if (compressionSelect && compressionSelect.value !== 'none') {
+        sendParts.push('-c');
+    }
+    if (incrementalCheckbox && incrementalCheckbox.checked) {
+        sendParts.push('-i <common_snapshot>');
+    }
+
+    sendParts.push(source);
+
+    // Build receive command.
+    // Full send: creates a child dataset under the target using the
+    // source dataset basename (e.g. target/source_basename).
+    // Incremental send: writes directly into the selected target.
+    var receiveParts = ['zfs', 'receive'];
+    var isIncremental = incrementalCheckbox && incrementalCheckbox.checked;
+
+    if (isIncremental) {
+        receiveParts.push(target);
+    } else {
+        // Extract source dataset basename for the child target path
+        var sourceDataset = source.split('@')[0];
+        var sourceBasename = sourceDataset.split('/').pop();
+        receiveParts.push(target + '/' + sourceBasename);
+    }
+
+    // Build full pipeline
+    var fullCommand = '';
+    if (replType === 'push') {
+        var remoteHost = remoteHostInput.value || '<remote_host>';
+        var remotePort = remotePortInput.value || '22';
+        fullCommand = sendParts.join(' ') + ' | ssh -p ' + remotePort + ' ' + remoteHost + ' ' + receiveParts.join(' ');
+    } else {
+        fullCommand = sendParts.join(' ') + ' | ' + receiveParts.join(' ');
+    }
+
+    commandPreview.textContent = fullCommand;
+
+    // Reset confirmation when command changes
+    confirmCheckbox.checked = false;
+    executeBtn.disabled = true;
+    executeBtn.classList.add('opacity-50', 'cursor-not-allowed');
+}
+
+// Handle confirmation checkbox
+confirmCheckbox.addEventListener('change', function() {
+    var source = sourceSelect.value;
+    var target = targetSelect.value;
+
+    if (this.checked && source && target) {
+        executeBtn.disabled = false;
+        executeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    } else {
+        executeBtn.disabled = true;
+        executeBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+});
+
+// Listen for changes on all form fields that affect the command
+sourceSelect.addEventListener('change', updateCommandPreview);
+targetSelect.addEventListener('change', updateCommandPreview);
+replicationTypeSelect.addEventListener('change', updateCommandPreview);
+compressionSelect.addEventListener('change', updateCommandPreview);
+if (incrementalCheckbox) incrementalCheckbox.addEventListener('change', updateCommandPreview);
+if (recursiveCheckbox) recursiveCheckbox.addEventListener('change', updateCommandPreview);
+if (rawCheckbox) rawCheckbox.addEventListener('change', updateCommandPreview);
+if (sshConnectionSelect) sshConnectionSelect.addEventListener('change', updateCommandPreview);
+
 // Initialize on page load
 if (replicationTypeSelect.value === 'local') {
     loadLocalDatasets();
 }
+updateCommandPreview();
 })();
 </script>
 {% endblock %}

@@ -4,19 +4,32 @@
 
 {% block content %}
 <div class="container-page max-w-7xl">
-    <div class="flex items-center space-x-3 mb-6">
-        <a href="/zfs/replication/history" class="text-text-secondary hover:text-text-primary">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-            </svg>
-        </a>
-        <h1 class="text-3xl font-bold text-text-primary mb-0">Execution #{{ execution.id }} - {{ execution.job_name }}</h1>
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center space-x-3">
+            <a href="/zfs/replication/history" class="text-text-secondary hover:text-text-primary">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <h1 class="text-3xl font-bold text-text-primary mb-0">Execution #{{ execution.id }} - {{ execution.job_name }}</h1>
+            {% if execution.status == 'running' %}
+                <span class="badge-warning animate-pulse">Running</span>
+            {% elif execution.status == 'success' %}
+                <span class="badge-success">Completed</span>
+            {% elif execution.status == 'failure' %}
+                <span class="badge-danger">Failed</span>
+            {% endif %}
+        </div>
         {% if execution.status == 'running' %}
-            <span class="badge-warning animate-pulse">Running</span>
-        {% elif execution.status == 'success' %}
-            <span class="badge-success">Completed</span>
-        {% elif execution.status == 'failure' %}
-            <span class="badge-danger">Failed</span>
+        <form method="post" action="/zfs/replication/history/{{ execution.id }}/mark-failed"
+              onsubmit="return confirm('Are you sure you want to mark this execution as failed? Only do this if the replication process is no longer running.');">
+            <button type="submit" class="btn-danger btn-sm inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+                Mark as Failed
+            </button>
+        </form>
         {% endif %}
     </div>
 
@@ -49,6 +62,13 @@
                     <div class="font-mono text-sm">{{ execution.snapshot_name or 'N/A' }}</div>
                 </div>
             </div>
+
+            {% if execution.command %}
+            <div class="mt-4 pt-4 border-t border-border-subtle">
+                <div class="text-sm text-text-tertiary mb-1">Command</div>
+                <pre class="bg-bg-elevated-2 rounded-lg p-3 text-sm font-mono text-info-400 whitespace-pre-wrap overflow-x-auto border border-border-default">{{ execution.command }}</pre>
+            </div>
+            {% endif %}
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-4 border-t border-border-subtle">
                 <div>
@@ -86,13 +106,21 @@
     <!-- Error Message (if failed) -->
     {% if execution.status == 'failure' and execution.error_message %}
     <div class="card mb-6">
-        <div class="px-6 py-4 border-b border-border-subtle bg-danger-900/20">
+        <div class="px-6 py-4 border-b border-border-subtle bg-danger-900/20 flex items-center justify-between">
             <h2 class="text-xl font-semibold text-danger-400 flex items-center">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
                 Error Details
             </h2>
+            <a href="/zfs/replication/history/{{ execution.id }}/error-log"
+               hx-boost="false"
+               class="btn-danger btn-sm inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Download Error Log
+            </a>
         </div>
         <div class="p-6">
             <pre class="bg-bg-elevated-2 rounded-lg p-4 text-sm font-mono text-danger-400 whitespace-pre-wrap overflow-x-auto border border-danger-900/30">{{ execution.error_message }}</pre>

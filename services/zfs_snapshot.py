@@ -548,6 +548,109 @@ class ZFSSnapshotService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to rename snapshot: {e.stderr}")
     
+    # ========================
+    # Bookmark Operations
+    # ========================
+
+    def list_bookmarks(self, dataset: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        List ZFS bookmarks, optionally filtered by dataset.
+
+        Args:
+            dataset: Optional dataset name to filter by
+
+        Returns:
+            List of bookmarks with their properties
+        """
+        if dataset:
+            self.validate_dataset_name(dataset)
+        try:
+            cmd = ['zfs', 'list', '-H', '-t', 'bookmark', '-o',
+                   'name,creation', '-s', 'creation']
+
+            if dataset:
+                cmd.extend(['-r', dataset])
+
+            result = run_zfs_command(cmd)
+
+            bookmarks = []
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+
+                parts = line.split('\t')
+                if len(parts) >= 2:
+                    full_name = parts[0]
+                    if '#' in full_name:
+                        dataset_name, bookmark_name = full_name.rsplit('#', 1)
+                    else:
+                        dataset_name, bookmark_name = full_name, ""
+
+                    bookmarks.append({
+                        'name': full_name,
+                        'dataset': dataset_name,
+                        'bookmark': bookmark_name,
+                        'creation': parts[1]
+                    })
+
+            return bookmarks
+
+        except subprocess.CalledProcessError as e:
+            # If no bookmarks exist, some ZFS versions return an error
+            if 'no datasets available' in (e.stderr or '').lower():
+                return []
+            raise Exception(f"Failed to list bookmarks: {e.stderr}")
+
+    def create_bookmark(self, snapshot_name: str,
+                        bookmark_name: Optional[str] = None) -> str:
+        """
+        Create a bookmark from a snapshot.
+
+        Args:
+            snapshot_name: Full snapshot name (dataset@snapshot)
+            bookmark_name: Optional bookmark name. If not provided, uses the
+                           snapshot name as the bookmark name.
+
+        Returns:
+            Full bookmark name (dataset#bookmark)
+        """
+        self.validate_full_snapshot_name(snapshot_name)
+        dataset_part, snap_part = snapshot_name.rsplit('@', 1)
+
+        if bookmark_name:
+            self.validate_snapshot_name(bookmark_name)
+        else:
+            bookmark_name = snap_part
+
+        full_bookmark = f"{dataset_part}#{bookmark_name}"
+
+        try:
+            run_zfs_command(['zfs', 'bookmark', snapshot_name, full_bookmark])
+            return full_bookmark
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to create bookmark: {e.stderr}")
+
+    def destroy_bookmark(self, bookmark_name: str) -> None:
+        """
+        Destroy a ZFS bookmark.
+
+        Args:
+            bookmark_name: Full bookmark name (dataset#bookmark)
+        """
+        if '#' not in bookmark_name:
+            raise ValueError(
+                f"Invalid bookmark name format '{bookmark_name}'. "
+                "Expected format: dataset#bookmark"
+            )
+        dataset_part, bmark_part = bookmark_name.rsplit('#', 1)
+        self.validate_dataset_name(dataset_part)
+        self.validate_snapshot_name(bmark_part)
+
+        try:
+            run_zfs_command(['zfs', 'destroy', bookmark_name])
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to destroy bookmark: {e.stderr}")
+
     def get_snapshot_space(self, snapshot_name: str) -> Dict[str, str]:
         """
         Get space usage information for a snapshot

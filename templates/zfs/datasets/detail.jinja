@@ -48,16 +48,83 @@
     {% endif %}
     
     {% if request.query_params.get('error') %}
-        {% with message=request.query_params.get('error') %}
-            {% include "partials/error.jinja" %}
-        {% endwith %}
+    <div class="alert-danger" role="alert">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <svg class="w-5 h-5 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+            </div>
+            <div class="flex-1 ml-3">
+                <h3 class="text-sm font-semibold text-danger-400">Error</h3>
+                <div class="mt-1 text-sm text-danger-300">
+                    {{ request.query_params.get('error') }}
+                </div>
+            </div>
+            <div class="flex-shrink-0 ml-4">
+                <button type="button"
+                        class="inline-flex text-danger-400 hover:text-danger-300 focus:outline-none rounded-lg p-1.5 transition-colors"
+                        onclick="this.closest('.alert-danger').remove()"
+                        aria-label="Dismiss">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
     {% endif %}
     
     {% if error %}
-        {% include "partials/error.jinja" %}
+    <div class="alert-danger" role="alert">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <svg class="w-5 h-5 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+            </div>
+            <div class="flex-1 ml-3">
+                <h3 class="text-sm font-semibold text-danger-400">Error</h3>
+                <div class="mt-1 text-sm text-danger-300">
+                    {{ error }}
+                </div>
+            </div>
+        </div>
+    </div>
     {% endif %}
 
     {% if dataset %}
+    <!-- Clone Origin Banner -->
+    {% if 'origin' in dataset.properties and dataset.properties.origin.value not in ['-', ''] %}
+    <div class="card-nested bg-purple-900/20 border-purple-800/50">
+        <div class="flex items-center gap-3">
+            <div class="flex-shrink-0">
+                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+            </div>
+            <div class="flex-1">
+                <div class="text-purple-400 font-semibold text-sm">Cloned Dataset</div>
+                <div class="text-text-secondary text-sm mt-0.5">
+                    This dataset is a clone of snapshot
+                    <a href="/zfs/snapshots/{{ dataset.properties.origin.value }}/detail" class="text-purple-400 hover:text-purple-300 transition-colors font-mono">{{ dataset.properties.origin.value }}</a>
+                </div>
+            </div>
+            <div class="flex-shrink-0">
+                <form method="post" action="/zfs/datasets/{{ dataset.name }}/promote" id="form-promote-banner">
+                    <button type="button" class="btn-secondary text-sm inline-flex items-center gap-1.5"
+                            onclick="showConfirm('confirm-promote')">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path>
+                        </svg>
+                        Promote
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Dataset Information Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Basic Information -->
@@ -104,6 +171,21 @@
                                     Not encrypted
                                 </span>
                             {% endif %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    {% if 'origin' in dataset.properties and dataset.properties.origin.value not in ['-', ''] %}
+                    <div class="flex justify-between items-center">
+                        <dt class="text-text-secondary">Clone Origin:</dt>
+                        <dd>
+                            <span class="inline-flex items-center gap-1 text-purple-400">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                </svg>
+                                <a href="/zfs/snapshots/{{ dataset.properties.origin.value }}/detail" class="text-purple-400 hover:text-purple-300 transition-colors font-mono text-sm">
+                                    {{ dataset.properties.origin.value }}
+                                </a>
+                            </span>
                         </dd>
                     </div>
                     {% endif %}
@@ -260,45 +342,111 @@
     </div>
 
     <!-- Quotas & Reservations -->
-    {% if 'quota' in dataset.properties or 'reservation' in dataset.properties or 'refquota' in dataset.properties or 'refreservation' in dataset.properties %}
-    <div class="card">
-        <div class="card-body">
-            <h2 class="text-xl font-semibold text-text-primary mb-4 pb-3 border-b border-border-subtle">Quotas & Reservations</h2>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {% if 'quota' in dataset.properties %}
-                <div class="flex justify-between items-center">
-                    <dt class="text-text-secondary">Quota:</dt>
-                    <dd class="text-text-primary">{{ dataset.properties.quota.value }}</dd>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Current Values Display -->
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-xl font-semibold text-text-primary mb-4 pb-3 border-b border-border-subtle">Quotas & Reservations</h2>
+                <div class="space-y-3">
+                    {% if 'quota' in dataset.properties %}
+                    <div class="flex justify-between items-center">
+                        <span class="text-text-secondary">Quota:</span>
+                        <span class="text-text-primary font-mono">{{ dataset.properties.quota.value }}</span>
+                    </div>
+                    {% endif %}
+                    {% if 'reservation' in dataset.properties %}
+                    <div class="flex justify-between items-center">
+                        <span class="text-text-secondary">Reservation:</span>
+                        <span class="text-text-primary font-mono">{{ dataset.properties.reservation.value }}</span>
+                    </div>
+                    {% endif %}
+                    {% if 'refquota' in dataset.properties %}
+                    <div class="flex justify-between items-center">
+                        <span class="text-text-secondary">Ref Quota:</span>
+                        <span class="text-text-primary font-mono">{{ dataset.properties.refquota.value }}</span>
+                    </div>
+                    {% endif %}
+                    {% if 'refreservation' in dataset.properties %}
+                    <div class="flex justify-between items-center">
+                        <span class="text-text-secondary">Ref Reservation:</span>
+                        <span class="text-text-primary font-mono">{{ dataset.properties.refreservation.value }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Quota Management -->
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-xl font-semibold text-text-primary mb-4 pb-3 border-b border-border-subtle flex items-center gap-2">
+                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    Set Quota
+                </h2>
+                {% set current_quota = dataset.properties.quota.value if 'quota' in dataset.properties else 'none' %}
+                {% if current_quota and current_quota not in ['none', '0', '-'] %}
+                <div class="card-nested bg-purple-900/20 border-purple-900 mb-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-text-tertiary text-xs uppercase">Current Quota</div>
+                            <div class="text-purple-400 text-xl font-bold mt-1">{{ current_quota }}</div>
+                        </div>
+                        <form method="post" action="/zfs/datasets/{{ dataset.name }}/quota">
+                            <input type="hidden" name="quota_size" value="none">
+                            <button type="submit" class="btn-secondary text-sm">Remove</button>
+                        </form>
+                    </div>
                 </div>
                 {% endif %}
-                {% if 'reservation' in dataset.properties %}
-                <div class="flex justify-between items-center">
-                    <dt class="text-text-secondary">Reservation:</dt>
-                    <dd class="text-text-primary">{{ dataset.properties.reservation.value }}</dd>
-                </div>
-                {% endif %}
-                {% if 'refquota' in dataset.properties %}
-                <div class="flex justify-between items-center">
-                    <dt class="text-text-secondary">Ref Quota:</dt>
-                    <dd class="text-text-primary">{{ dataset.properties.refquota.value }}</dd>
-                </div>
-                {% endif %}
-                {% if 'refreservation' in dataset.properties %}
-                <div class="flex justify-between items-center">
-                    <dt class="text-text-secondary">Ref Reservation:</dt>
-                    <dd class="text-text-primary">{{ dataset.properties.refreservation.value }}</dd>
-                </div>
-                {% endif %}
+                <form method="post" action="/zfs/datasets/{{ dataset.name }}/quota" id="quota-form"
+                      {% if space_usage and space_usage|length > 0 %}
+                      data-used="{{ space_usage[0].used }}"
+                      data-avail="{{ space_usage[0].avail }}"
+                      {% endif %}
+                      class="flex flex-col gap-3">
+                    <div class="flex flex-col sm:flex-row gap-3 items-end">
+                        <div class="flex-1 w-full">
+                            <label for="quota_size" class="form-label">Set Quota</label>
+                            <input type="text"
+                                   id="quota_size"
+                                   name="quota_size"
+                                   required
+                                   placeholder="e.g., 200G, 1T, none"
+                                   class="form-input w-full"
+                                   oninput="validateQuota()">
+                        </div>
+                        <button type="submit" id="quota-submit" class="btn-primary inline-flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            Apply
+                        </button>
+                    </div>
+                    <div id="quota-validation" class="text-xs hidden"></div>
+                    {% if space_usage and space_usage|length > 0 %}
+                    <p class="text-xs text-text-tertiary">Valid range: <span class="text-text-secondary font-mono">{{ space_usage[0].used }}</span> (used) to <span class="text-text-secondary font-mono">{{ space_usage[0].used }} + {{ space_usage[0].avail }}</span> (total available). Set to "none" to remove.</p>
+                    {% else %}
+                    <p class="text-xs text-text-tertiary">Use size suffixes: K, M, G, T. Set to "none" to remove.</p>
+                    {% endif %}
+                </form>
             </div>
         </div>
     </div>
-    {% endif %}
 
     <!-- Action Buttons -->
     <div class="card">
         <div class="card-body">
             <h2 class="text-xl font-semibold text-text-primary mb-4 pb-3 border-b border-border-subtle">Actions</h2>
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <a href="/zfs/snapshots/create/form?dataset={{ dataset.name }}" class="btn-info rounded-lg inline-flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    Snapshot
+                </a>
                 <a href="/zfs/datasets/create/form?parent={{ dataset.name }}" class="btn-primary rounded-lg inline-flex items-center justify-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
@@ -462,6 +610,83 @@
 {% endif %}
 
 <script>
+// Parse human-readable size string (e.g., "160G", "1T", "48.7M") to bytes
+function parseSizeToBytes(sizeStr) {
+    if (!sizeStr) return 0;
+    sizeStr = sizeStr.trim().toUpperCase();
+    if (sizeStr === 'NONE' || sizeStr === '0' || sizeStr === '-' || sizeStr === '0B') return 0;
+    var multipliers = { 'K': 1024, 'M': 1024*1024, 'G': 1024*1024*1024, 'T': 1024*1024*1024*1024, 'P': 1024*1024*1024*1024*1024 };
+    var match = sizeStr.match(/^([0-9]*\.?[0-9]+)\s*([KMGTP]?)B?$/);
+    if (!match) return -1;
+    var num = parseFloat(match[1]);
+    var suffix = match[2];
+    if (suffix && multipliers[suffix]) {
+        return num * multipliers[suffix];
+    }
+    return num;
+}
+
+// Format bytes to human-readable
+function formatBytes(bytes) {
+    if (bytes <= 0) return '0B';
+    var units = ['B', 'K', 'M', 'G', 'T', 'P'];
+    var i = 0;
+    while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+    return (i === 0 ? bytes : bytes.toFixed(1)) + units[i];
+}
+
+// Validate quota input against used/available space
+function validateQuota() {
+    var input = document.getElementById('quota_size');
+    var msgDiv = document.getElementById('quota-validation');
+    var submitBtn = document.getElementById('quota-submit');
+    var form = document.getElementById('quota-form');
+    var value = input.value.trim();
+
+    if (!value || value.toLowerCase() === 'none') {
+        msgDiv.classList.add('hidden');
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        return;
+    }
+
+    var usedStr = form.dataset.used || '0';
+    var availStr = form.dataset.avail || '0';
+    var usedBytes = parseSizeToBytes(usedStr);
+    var availBytes = parseSizeToBytes(availStr);
+    var maxBytes = usedBytes + availBytes;
+    var inputBytes = parseSizeToBytes(value);
+
+    if (inputBytes === -1) {
+        msgDiv.textContent = 'Invalid format. Use a number with suffix: K, M, G, T (e.g., 200G, 1T)';
+        msgDiv.className = 'text-xs text-warning-400';
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        return;
+    }
+
+    if (usedBytes > 0 && inputBytes < usedBytes) {
+        msgDiv.textContent = 'Too small: must be at least ' + usedStr + ' (current used space)';
+        msgDiv.className = 'text-xs text-danger-400';
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        return;
+    }
+
+    if (maxBytes > 0 && inputBytes > maxBytes) {
+        msgDiv.textContent = 'Too large: maximum is ' + formatBytes(maxBytes) + ' (used + available)';
+        msgDiv.className = 'text-xs text-danger-400';
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        return;
+    }
+
+    msgDiv.textContent = 'Valid: ' + formatBytes(inputBytes);
+    msgDiv.className = 'text-xs text-success-400';
+    submitBtn.disabled = false;
+    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+}
+
 // Ensure showConfirm function is available
 window.showConfirm = function(dialogId) {
     const dialog = document.getElementById(dialogId);

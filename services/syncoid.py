@@ -16,43 +16,66 @@ from services.utils import run_privileged_command, run_zfs_command
 class SyncoidService:
     """Service for managing syncoid replication operations"""
     
-    def __init__(self):
-        """Initialize the syncoid service"""
-        pass
+    # Common paths where syncoid might be installed.
+    # Checked as fallback when 'which' fails (e.g. restricted PATH on FreeBSD services).
+    COMMON_PATHS = [
+        '/usr/local/bin/syncoid',   # FreeBSD pkg install location
+        '/usr/bin/syncoid',          # Linux package manager location
+        '/usr/sbin/syncoid',         # Alternative Linux location
+        '/usr/local/sbin/syncoid',   # Alternative FreeBSD/local location
+    ]
     
-    def check_syncoid_status(self) -> Dict[str, Any]:
+    def __init__(self):
+        """Initialize the syncoid service and discover the binary path"""
+        self.syncoid_path = self._find_syncoid_path()
+    
+    def _find_syncoid_path(self) -> Optional[str]:
         """
-        Check if syncoid is installed and get its status
+        Discover the syncoid binary path.
+        
+        Tries 'which' first, then falls back to checking common install paths
+        directly. This handles restricted PATH environments such as FreeBSD
+        rc.d services where /usr/local/bin may not be in PATH.
         
         Returns:
-            Dictionary with syncoid status information
+            Full path to syncoid binary, or None if not found.
         """
+        # Try to find syncoid using which first
         try:
-            # Common paths where syncoid might be installed
-            common_paths = [
-                '/usr/local/bin/syncoid',  # FreeBSD pkg install location
-                '/usr/bin/syncoid',         # Linux package manager location
-                '/usr/sbin/syncoid',        # Alternative Linux location
-                'syncoid'                    # In PATH
-            ]
-            
-            syncoid_path = None
-            
-            # Try to find syncoid using which first
             which_result = subprocess.run(
                 ['which', 'syncoid'],
                 capture_output=True,
                 text=True
             )
-            
             if which_result.returncode == 0:
-                syncoid_path = which_result.stdout.strip()
-            else:
-                # Check common paths directly
-                for path in common_paths[:-1]:  # Skip 'syncoid' since we already tried which
-                    if Path(path).exists() and Path(path).is_file():
-                        syncoid_path = path
-                        break
+                return which_result.stdout.strip()
+        except Exception:
+            pass
+        
+        # Check common paths directly (handles restricted PATH environments)
+        for path in self.COMMON_PATHS:
+            if Path(path).exists() and Path(path).is_file():
+                return path
+        
+        return None
+    
+    def check_syncoid_status(self) -> Dict[str, Any]:
+        """
+        Check if syncoid is installed and get its status.
+        
+        Uses the path discovered at init time. If not found at init,
+        re-checks in case syncoid was installed after service start.
+        
+        Returns:
+            Dictionary with syncoid status information
+        """
+        try:
+            # Re-discover if not found at init (in case installed after startup)
+            syncoid_path = self.syncoid_path
+            if not syncoid_path:
+                syncoid_path = self._find_syncoid_path()
+                if syncoid_path:
+                    self.syncoid_path = syncoid_path
             
             if not syncoid_path:
                 return {
@@ -70,7 +93,7 @@ class SyncoidService:
                     timeout=5
                 )
                 version = version_result.stdout.strip() if version_result.returncode == 0 else 'unknown'
-            except:
+            except Exception:
                 version = 'unknown'
             
             return {
@@ -132,8 +155,18 @@ class SyncoidService:
             Dictionary with execution results
         """
         try:
-            # Build the syncoid command
-            cmd = ['syncoid']
+            # Re-discover path if not cached (in case installed after startup)
+            if not self.syncoid_path:
+                self.syncoid_path = self._find_syncoid_path()
+            
+            if not self.syncoid_path:
+                return {
+                    'success': False,
+                    'error': 'syncoid binary not found. Install sanoid/syncoid and restart WebZFS.'
+                }
+            
+            # Build the syncoid command using the discovered full path
+            cmd = [self.syncoid_path]
             
             # Add options
             if recursive:

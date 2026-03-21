@@ -12,349 +12,235 @@
             </div>
         </div>
 
-        <!-- Utilities Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            
-            <!-- Shell Terminal Card -->
-            <a href="/utils/shell" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-danger-500/10 border border-danger-500/20 rounded-lg group-hover:bg-danger-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                            </svg>
-                        </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-danger-400 transition-colors">Shell</h2>
-                    </div>
-                    <p class="text-text-secondary mb-4">
-                        Execute shell commands directly from the web interface with full terminal access.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-danger-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Interactive command execution
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-danger-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Tab completion support
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-danger-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Command history tracking
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-danger-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>Open Terminal</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
-                    </div>
-                </div>
-            </a>
+        <!-- Utilities List -->
+        <div class="flex flex-col gap-4">
 
-            <!-- Text Editor Card -->
-            <a href="/utils/text" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group" style="animation-delay: 0.1s;">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-primary-500/10 border border-primary-500/20 rounded-lg group-hover:bg-primary-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                            </svg>
-                        </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-primary-400 transition-colors">Text Editor</h2>
-                    </div>
-                    <p class="text-text-secondary mb-4">
-                        Edit text files and configuration files directly from your browser with syntax highlighting.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            In-browser file editing
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Configuration file support
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Save changes instantly
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-primary-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>Edit Files</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
-                    </div>
-                </div>
-            </a>
-
-            <!-- File Browser Card -->
-            <a href="/utils/files" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group" style="animation-delay: 0.2s;">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-info-500/10 border border-info-500/20 rounded-lg group-hover:bg-info-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
-                            </svg>
-                        </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-info-400 transition-colors">File Browser</h2>
-                    </div>
-                    <p class="text-text-secondary mb-4">
-                        Browse and manage files and directories on your system with an intuitive interface.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Navigate directory tree
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            View file details
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Quick file operations
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-info-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>Browse Files</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
-                    </div>
-                </div>
-            </a>
-
-            <!-- SMART Monitoring Card -->
-            <a href="/utils/smart" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group" style="animation-delay: 0.3s;">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-warning-500/10 border border-warning-500/20 rounded-lg group-hover:bg-warning-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-                            </svg>
-                        </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-warning-400 transition-colors">SMART Monitoring</h2>
-                    </div>
-                    <p class="text-text-secondary mb-4">
-                        Monitor disk health, view SMART attributes, run diagnostics, and track disk temperature.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Disk health monitoring
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            SMART attributes & tests
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Temperature tracking
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-warning-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>View SMART Data</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
-                    </div>
-                </div>
-            </a>
-
-            <!-- SSH Connection Manager Card -->
-            <a href="/utils/ssh" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group" style="animation-delay: 0.4s;">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg group-hover:bg-orange-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
-                            </svg>
-                        </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-orange-400 transition-colors">SSH Connections</h2>
-                    </div>
-                    <p class="text-text-secondary mb-4">
-                        Manage SSH connections for Fleet Monitoring and ZFS Replication with secure key-based authentication.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Centralized connection management
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Automatic SSH key generation
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Secure key-based authentication
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-orange-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>Manage Connections</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
-                    </div>
-                </div>
-            </a>
-
-            <!-- Scrub Scheduling Card -->
-            <a href="/utils/scrub-scheduling" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group" style="animation-delay: 0.5s;">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-success-500/10 border border-success-500/20 rounded-lg group-hover:bg-success-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- ZFS Scrub Scheduling -->
+            <a href="/utils/scrub-scheduling" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-green-500/10 rounded-lg group-hover:bg-green-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
                             </svg>
                         </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-success-400 transition-colors">ZFS Scrub Scheduling</h2>
-                    </div>
-                    <p class="text-text-secondary mb-4">
-                        Schedule automatic scrub operations for your ZFS pools to maintain data integrity.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-success-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-success-400 transition-colors">ZFS Scrub Scheduling</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Schedule automatic scrub operations for your ZFS pools to maintain data integrity</p>
+                        </div>
+                        <div class="flex items-center text-success-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage Scrubs</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
                             </svg>
-                            Automated pool scrubbing
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-success-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Flexible cron scheduling
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-success-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Pool health verification
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-success-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>Manage Scrubs</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
+                        </div>
                     </div>
                 </div>
             </a>
 
-            <!-- System Services Card -->
-            <a href="/utils/services" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group" style="animation-delay: 0.6s;">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-teal-500/10 border border-teal-500/20 rounded-lg group-hover:bg-teal-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- SMART Monitoring -->
+            <a href="/utils/smart" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.05s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-amber-500/10 rounded-lg group-hover:bg-amber-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-warning-400 transition-colors">SMART Monitoring</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Monitor disk health, view SMART attributes, run diagnostics, and track disk temperature</p>
+                        </div>
+                        <div class="flex items-center text-warning-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">View SMART Data</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- SSH Connections -->
+            <a href="/utils/ssh" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.1s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-orange-500/10 rounded-lg group-hover:bg-orange-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-orange-400 transition-colors">SSH Connections</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Manage SSH connections for Fleet Monitoring and ZFS Replication with secure key-based authentication</p>
+                        </div>
+                        <div class="flex items-center text-orange-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage Connections</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Health Analysis -->
+            <a href="/utils/health" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.15s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-cyan-500/10 rounded-lg group-hover:bg-cyan-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-cyan-400 transition-colors">Health Analysis</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Comprehensive ZFS pool, disk health, SMART test, and scrub status analysis with historical tracking</p>
+                        </div>
+                        <div class="flex items-center text-cyan-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Run Analysis</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- System Services -->
+            <a href="/utils/services" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.2s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-teal-500/10 rounded-lg group-hover:bg-teal-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
                             </svg>
                         </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-teal-400 transition-colors">System Services</h2>
-                    </div>
-                    <p class="text-text-secondary mb-4">
-                        View the status of all system services including running state, enabled state, and descriptions.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-teal-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-teal-400 transition-colors">System Services</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">View the status of all system services including running state, enabled state, and descriptions</p>
+                        </div>
+                        <div class="flex items-center text-teal-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">View Services</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
                             </svg>
-                            Service status overview
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-teal-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Enabled and disabled tracking
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-teal-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Linux and FreeBSD support
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-teal-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>View Services</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
+                        </div>
                     </div>
                 </div>
             </a>
 
-            <!-- Audit Logs Card -->
-            <a href="/utils/logs" class="card animate-fade-in hover:scale-105 transition-transform duration-200 group" style="animation-delay: 0.7s;">
-                <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg group-hover:bg-purple-500/20 transition-colors">
-                            <svg class="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- Shell -->
+            <a href="/utils/shell" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.25s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-red-500/10 rounded-lg group-hover:bg-red-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-danger-400 transition-colors">Shell</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Execute shell commands directly from the web interface with full terminal access</p>
+                        </div>
+                        <div class="flex items-center text-danger-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Open Terminal</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Text Editor -->
+            <a href="/utils/text" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.3s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-primary-400 transition-colors">Text Editor</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Edit text files and configuration files directly from your browser with syntax highlighting</p>
+                        </div>
+                        <div class="flex items-center text-primary-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Edit Files</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- File Browser -->
+            <a href="/utils/files" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.35s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-sky-500/10 rounded-lg group-hover:bg-sky-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-info-400 transition-colors">File Browser</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Browse and manage files and directories on your system with an intuitive interface</p>
+                        </div>
+                        <div class="flex items-center text-info-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Browse Files</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Audit Logs -->
+            <a href="/utils/logs" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.4s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-violet-500/10 rounded-lg group-hover:bg-violet-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
                         </div>
-                        <h2 class="text-2xl font-semibold text-text-primary group-hover:text-purple-400 transition-colors">Audit Logs</h2>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-purple-400 transition-colors">Audit Logs</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">View and download audit logs for authentication, ZFS operations, and file access</p>
+                        </div>
+                        <div class="flex items-center text-purple-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">View Logs</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
                     </div>
-                    <p class="text-text-secondary mb-4">
-                        View and download audit logs for authentication, ZFS operations, and file access.
-                    </p>
-                    <ul class="space-y-2 text-sm text-text-secondary">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </div>
+            </a>
+
+            <!-- WebZFS Settings -->
+            <a href="/utils/settings" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.45s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-indigo-500/10 rounded-lg group-hover:bg-indigo-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
                             </svg>
-                            Authentication tracking
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-indigo-400 transition-colors">WebZFS Settings</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Configure the WebZFS interface including theme selection, appearance, and display preferences</p>
+                        </div>
+                        <div class="flex items-center text-indigo-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Open Settings</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
                             </svg>
-                            ZFS operation history
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            File access monitoring
-                        </li>
-                    </ul>
-                    <div class="mt-6 flex items-center text-purple-400 font-medium group-hover:gap-3 gap-2 transition-all">
-                        <span>View Logs</span>
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
+                        </div>
                     </div>
                 </div>
             </a>
@@ -362,7 +248,7 @@
         </div>
 
         <!-- Info Banner -->
-        <div class="card-nested bg-warning-900/30 border-warning-900 animate-fade-in" style="animation-delay: 0.3s;">
+        <div class="card-nested bg-warning-900/30 border-warning-900 animate-fade-in" style="animation-delay: 0.5s;">
             <div class="flex items-start gap-3">
                 <svg class="w-6 h-6 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>

@@ -230,6 +230,24 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                     </svg>
                                 </a>
+                                {% set bmark_key = snapshot.dataset ~ '#' ~ snapshot.snapshot %}
+                                {% if bmark_key in bookmark_set %}
+                                <span class="p-1.5 text-purple-400 rounded cursor-default" title="Bookmarked">
+                                    <svg class="w-4 h-4" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                                    </svg>
+                                </span>
+                                {% else %}
+                                <form method="post" action="/zfs/snapshots/{{ snapshot.name }}/bookmark" class="inline">
+                                    <button type="submit" 
+                                            class="p-1.5 text-purple-400 hover:text-purple-300 hover:bg-purple-900/20 rounded transition-colors"
+                                            title="Create Bookmark">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                                {% endif %}
                                 <a href="/zfs/snapshots/{{ snapshot.name }}/clone/form" 
                                    class="p-1.5 text-success-400 hover:text-success-300 hover:bg-success-900/20 rounded transition-colors" 
                                    title="Clone">
@@ -275,12 +293,18 @@
             </svg>
             Action Icons
         </h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-xs text-text-secondary">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3 text-xs text-text-secondary">
             <div class="flex items-center gap-2">
                 <svg class="w-3.5 h-3.5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                 </svg>
                 <span>View Details</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                </svg>
+                <span>Create Bookmark</span>
             </div>
             <div class="flex items-center gap-2">
                 <svg class="w-3.5 h-3.5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -308,6 +332,68 @@
             </div>
         </div>
     </div>
+
+    {# Bookmarks Section #}
+    {% if bookmarks %}
+    <div class="card">
+        <div class="p-4 bg-bg-elevated-2 border-b border-border-subtle">
+            <h2 class="text-xl font-semibold text-text-primary inline-flex items-center gap-2">
+                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                </svg>
+                Bookmarks ({{ bookmarks|length }})
+            </h2>
+            <p class="text-text-tertiary text-sm mt-1">Lightweight references to snapshots used for incremental replication. Bookmarks persist even after the source snapshot is deleted.</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-bg-elevated-2">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Bookmark Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Dataset</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Created</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-text-secondary uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-border-subtle">
+                    {% for bm in bookmarks %}
+                    <tr class="hover:bg-bg-elevated-2 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="text-purple-400 font-semibold inline-flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                                </svg>
+                                {{ bm.bookmark }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="/zfs/datasets/{{ bm.dataset }}" class="text-text-secondary hover:text-text-primary text-sm transition-colors">
+                                {{ bm.dataset }}
+                            </a>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-text-tertiary">
+                            {{ bm.creation }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <form method="post" action="/zfs/snapshots/bookmarks/destroy" class="inline" id="form-destroy-bookmark-{{ loop.index }}">
+                                <input type="hidden" name="bookmark_name" value="{{ bm.name }}">
+                                <button type="button"
+                                        class="p-1.5 text-danger-400 hover:text-danger-300 hover:bg-danger-900/20 rounded transition-colors"
+                                        title="Destroy Bookmark"
+                                        onclick="showConfirm('modal-destroy-bookmark-{{ loop.index }}')">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 
     {% else %}
     <!-- No Snapshots -->
@@ -345,4 +431,39 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Bookmark Destroy Confirmation Modals -->
+{% if bookmarks %}
+    {% for bm in bookmarks %}
+    {% set id = 'modal-destroy-bookmark-' ~ loop.index %}
+    {% set title = 'Destroy Bookmark' %}
+    {% set message = 'Destroy bookmark "' ~ bm.name ~ '"? This will remove the bookmark reference but will not affect the original snapshot.' %}
+    {% set confirm_text = 'Destroy' %}
+    {% set confirm_class = 'danger' %}
+    {% set confirm_action = 'document.getElementById("form-destroy-bookmark-' ~ loop.index|string ~ '").submit()' %}
+    {% include 'partials/confirm.jinja' %}
+    {% endfor %}
+{% endif %}
+
+<script>
+window.showConfirm = function(dialogId) {
+    const dialog = document.getElementById(dialogId);
+    if (!dialog) {
+        console.error('Dialog not found:', dialogId);
+        return;
+    }
+    if (window.Alpine) {
+        const component = window.Alpine.$data(dialog);
+        if (component) {
+            component.open = true;
+            return;
+        }
+    }
+    if (dialog.__x) {
+        dialog.__x.$data.open = true;
+        return;
+    }
+    dialog.dispatchEvent(new CustomEvent('open-modal'));
+};
+</script>
 {% endblock %}

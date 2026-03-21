@@ -88,6 +88,7 @@ __pycache__
 *.pyc
 .env
 .config
+config/gunicorn.conf.py
 EOF
 
 # Create a backup tar of the source, excluding unwanted files

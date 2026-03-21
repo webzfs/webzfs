@@ -81,168 +81,182 @@
     {% include "partials/error.jinja" with context %}
   {% endif %}
 
-  {# Action Buttons #}
-  <div class="flex flex-wrap gap-3 mb-6">
-    <a href="/fleet/servers/add" class="btn-primary inline-flex items-center">
-      <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-      </svg>
-      Add Server
-    </a>
-    
-    {% if servers %}
-    <form action="/fleet/refresh" method="post" class="inline">
-      <button type="submit" class="btn-success inline-flex items-center">
+  {# Action Buttons and Auto-Refresh #}
+  <div x-data="{
+    enabled: localStorage.getItem('fleetAutoRefresh') !== 'false',
+    interval: 600,
+    remaining: 600,
+    timer: null,
+    init() {
+      if (this.enabled) { this.start(); }
+    },
+    start() {
+      this.remaining = this.interval;
+      this.timer = setInterval(() => {
+        this.remaining--;
+        if (this.remaining <= 0) {
+          this.stop();
+          let form = document.getElementById('fleet-refresh-form');
+          if (form) { form.submit(); }
+        }
+      }, 1000);
+    },
+    stop() {
+      if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    },
+    toggle() {
+      this.enabled = !this.enabled;
+      localStorage.setItem('fleetAutoRefresh', this.enabled);
+      if (this.enabled) { this.start(); } else { this.stop(); }
+    },
+    formatTime() {
+      let m = Math.floor(this.remaining / 60);
+      let s = this.remaining % 60;
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+  }" class="mb-6">
+    <div class="flex flex-wrap items-center gap-3">
+      <a href="/fleet/servers/add" class="btn-primary inline-flex items-center">
         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
         </svg>
-        Refresh All Servers
-      </button>
-    </form>
-    
-    <a href="/fleet/servers/remove" class="btn-secondary inline-flex items-center">
-      <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-      </svg>
-      Manage Servers
-    </a>
-    {% endif %}
+        Add Server
+      </a>
+      
+      {% if servers %}
+      <form id="fleet-refresh-form" action="/fleet/refresh" method="post" class="inline">
+        <button type="submit" class="btn-success inline-flex items-center">
+          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          Refresh All Servers
+        </button>
+      </form>
+      
+      <a href="/fleet/servers/remove" class="btn-secondary inline-flex items-center">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        </svg>
+        Manage Servers
+      </a>
+
+      {# Auto-Refresh Toggle #}
+      <div class="ml-auto flex items-center gap-3">
+        <button @click="toggle()" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                :class="enabled ? 'bg-success-500/15 text-success-400 border border-success-500/30' : 'bg-bg-elevated-2 text-text-tertiary border border-border-default hover:text-text-secondary'">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          <span x-text="enabled ? 'Auto-Refresh On' : 'Auto-Refresh Off'"></span>
+        </button>
+        <span x-show="enabled" x-cloak class="text-xs text-text-tertiary font-mono" x-text="'Next: ' + formatTime()"></span>
+      </div>
+      {% endif %}
+    </div>
   </div>
 
-  {# Server Cards Grid #}
+  {# Server List #}
   {% if servers %}
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 max-w-[1600px] mx-auto">
+    <div class="space-y-3">
       {% for server in servers %}
-        <div class="card border-l-4 border-l-purple-500">
-          <div class="card-body">
-            {# Server Header #}
-            <div class="flex items-start justify-between mb-4">
-              <div class="flex-1">
-                <h3 class="text-xl font-semibold text-text-primary mb-1">
-                  {{ server.name }}
-                </h3>
-                <p class="text-sm text-text-secondary">
-                  <span class="font-mono">{{ server.username }}@{{ server.ip }}:{{ server.port }}</span>
-                </p>
+        {# Determine if the server card should pulse based on pool health or capacity #}
+        {% set ns = namespace(pulse_class='') %}
+        {% if server.pools %}
+          {% for pool in server.pools %}
+            {% if pool.health in ['FAULTED', 'SUSPENDED', 'UNAVAIL'] %}
+              {% set ns.pulse_class = 'pulse-border-danger' %}
+            {% endif %}
+            {% if pool.health == 'DEGRADED' and ns.pulse_class != 'pulse-border-danger' %}
+              {% set ns.pulse_class = 'pulse-border-warning' %}
+            {% endif %}
+            {% if pool.capacity.rstrip('%') | int > 95 and ns.pulse_class != 'pulse-border-danger' %}
+              {% set ns.pulse_class = 'pulse-border-warning' %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        <div class="card {% if ns.pulse_class %}{{ ns.pulse_class }}{% else %}border-l-4 {% if server.status == 'online' %}border-l-success-500{% elif server.status == 'error' %}border-l-danger-500{% elif server.status == 'offline' %}border-l-text-tertiary{% else %}border-l-purple-500{% endif %}{% endif %}">
+          {# Server Header Row #}
+          <div class="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+            <div class="flex items-center gap-4 flex-wrap min-w-0">
+              {# Server Name and Connection #}
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-base font-semibold text-text-primary truncate">{{ server.name }}</h3>
+                  <span class="badge {% if server.status == 'online' %}badge-success{% elif server.status == 'offline' %}badge-secondary{% elif server.status == 'error' %}badge-danger{% else %}badge-info{% endif %}">
+                    {% if server.status == 'online' %}Online{% elif server.status == 'offline' %}Offline{% elif server.status == 'error' %}Error{% else %}Unknown{% endif %}
+                  </span>
+                </div>
+                <p class="text-xs text-text-tertiary font-mono">{{ server.username }}@{{ server.ip }}:{{ server.port }}</p>
               </div>
-              
-              {# Status Badge #}
-              <span class="badge {% if server.status == 'online' %}badge-success{% elif server.status == 'offline' %}badge-secondary{% elif server.status == 'error' %}badge-danger{% else %}badge-info{% endif %}">
-                {% if server.status == 'online' %}
-                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                  Online
-                {% elif server.status == 'offline' %}
-                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                  </svg>
-                  Offline
-                {% elif server.status == 'error' %}
-                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                  </svg>
-                  Error
-                {% else %}
-                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                  </svg>
-                  Unknown
-                {% endif %}
-              </span>
+
+              {# Timestamps #}
+              <div class="hidden sm:flex items-center gap-4 text-xs text-text-tertiary">
+                <span>Added: {{ server.added_at[:10] if server.added_at else 'N/A' }}</span>
+                <span class="text-border-default">|</span>
+                <span>Checked: {{ server.last_checked[:19] if server.last_checked else 'Never' }}</span>
+              </div>
             </div>
 
-            {# Server Info #}
-            <div class="mb-4 text-sm text-text-secondary">
-              <div class="flex items-center mb-1">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                <span>Added: {{ server.added_at[:10] if server.added_at else 'N/A' }}</span>
-              </div>
-              <div class="flex items-center">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {# Refresh Button #}
+            <form action="/fleet/servers/{{ server.id }}/refresh" method="post" class="flex-shrink-0">
+              <button type="submit" class="btn-info btn-sm inline-flex items-center">
+                <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                 </svg>
-                <span>Last checked: {{ server.last_checked[:19] if server.last_checked else 'Never' }}</span>
-              </div>
-            </div>
-
-            {# Pool Information Section #}
-            <div class="border-t border-border-subtle pt-4">
-              <h4 class="text-sm font-semibold text-text-primary mb-3 flex items-center">
-                <svg class="w-4 h-4 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
-                </svg>
-                ZFS Pools
-              </h4>
-              
-              {% if server.pools %}
-                <div class="space-y-2">
-                  {% for pool in server.pools %}
-                    {% set cap_val = pool.capacity.rstrip('%') | int %}
-                    <div class="card-nested overflow-hidden {% if pool.health == 'SUSPENDED' or pool.health == 'FAULTED' or pool.health == 'UNAVAIL' %}pulse-border-danger{% elif pool.health == 'DEGRADED' %}pulse-border-warning{% endif %}">
-                      <table class="min-w-full text-sm">
-                        <thead>
-                          <tr class="text-xs font-medium text-text-secondary uppercase">
-                            <th class="px-3 py-2 text-left"></th>
-                            <th class="px-3 py-2 text-center">Size</th>
-                            <th class="px-3 py-2 text-center">Allocated</th>
-                            <th class="px-3 py-2 text-center">Free</th>
-                            <th class="px-3 py-2 text-center">Capacity</th>
-                            <th class="px-3 py-2 text-center">Health</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td class="px-3 py-2 font-semibold text-purple-400">
-                              {{ pool.name }}
-                            </td>
-                            <td class="px-3 py-2 text-center text-text-primary">{{ pool.size }}</td>
-                            <td class="px-3 py-2 text-center text-text-primary">{{ pool.allocated }}</td>
-                            <td class="px-3 py-2 text-center text-text-primary">{{ pool.free }}</td>
-                            <td class="px-3 py-2 text-center">
-                              <div class="flex items-center justify-center gap-2">
-                                <span class="text-text-primary">{{ pool.capacity }}</span>
-                                <div class="w-16 bg-bg-elevated-3 rounded-full h-2">
-                                  <div class="{% if cap_val > 90 %}bg-danger-500{% elif cap_val >= 80 %}bg-warning-500{% else %}bg-success-500{% endif %} h-2 rounded-full transition-all" style="width: {{ pool.capacity }}"></div>
-                                </div>
-                              </div>
-                            </td>
-                            <td class="px-3 py-2 text-center">
-                              {% if pool.health == 'ONLINE' %}
-                                <span class="badge-success text-xs">{{ pool.health }}</span>
-                              {% elif pool.health == 'DEGRADED' %}
-                                <span class="badge-warning text-xs">{{ pool.health }}</span>
-                              {% else %}
-                                <span class="badge-danger text-xs">{{ pool.health }}</span>
-                              {% endif %}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <p class="text-sm text-text-secondary italic">
-                  No pool data available. Click refresh to fetch data.
-                </p>
-              {% endif %}
-            </div>
-
-            {# Action Buttons #}
-            <div class="flex gap-2 mt-4 pt-4 border-t border-border-subtle">
-              <form action="/fleet/servers/{{ server.id }}/refresh" method="post" class="flex-1">
-                <button type="submit" class="btn-info w-full text-sm py-2">
-                  <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                  </svg>
-                  Refresh
-                </button>
-              </form>
-            </div>
+                Refresh
+              </button>
+            </form>
           </div>
+
+          {# Pool Table (inline, compact) #}
+          {% if server.pools %}
+          <div class="border-t border-border-subtle overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="bg-bg-elevated-2">
+                  <th class="px-4 py-1.5 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Pool</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Size</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Alloc</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Free</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Capacity</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Health</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border-subtle">
+                {% for pool in server.pools %}
+                  {% set cap_val = pool.capacity.rstrip('%') | int %}
+                  <tr class="{% if pool.health == 'SUSPENDED' or pool.health == 'FAULTED' or pool.health == 'UNAVAIL' %}bg-danger-500/10{% elif pool.health == 'DEGRADED' %}bg-warning-500/10{% endif %}">
+                    <td class="px-4 py-1.5 font-semibold text-purple-400 whitespace-nowrap">{{ pool.name }}</td>
+                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.size }}</td>
+                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.allocated }}</td>
+                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.free }}</td>
+                    <td class="px-3 py-1.5 text-center whitespace-nowrap">
+                      <div class="flex items-center justify-center gap-2">
+                        <span class="text-text-primary">{{ pool.capacity }}</span>
+                        <div class="w-16 bg-bg-elevated-3 rounded-full h-1.5">
+                          <div class="{% if cap_val > 90 %}bg-danger-500{% elif cap_val >= 80 %}bg-warning-500{% else %}bg-success-500{% endif %} h-1.5 rounded-full transition-all" style="width: {{ pool.capacity }}"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-3 py-1.5 text-center whitespace-nowrap">
+                      {% if pool.health == 'ONLINE' %}
+                        <span class="badge-success text-xs">{{ pool.health }}</span>
+                      {% elif pool.health == 'DEGRADED' %}
+                        <span class="badge-warning text-xs">{{ pool.health }}</span>
+                      {% else %}
+                        <span class="badge-danger text-xs">{{ pool.health }}</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="border-t border-border-subtle px-4 py-2">
+            <p class="text-xs text-text-tertiary italic">No pool data available. Click refresh to fetch data.</p>
+          </div>
+          {% endif %}
         </div>
       {% endfor %}
     </div>

@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from config.settings import Settings
+from services.utils import is_freebsd, is_netbsd
 
 
 class ZFSPerformanceService:
@@ -636,7 +637,6 @@ class ZFSPerformanceService:
     
     def _read_arc_stats(self) -> Dict[str, Any]:
         """Read current ARC statistics"""
-
         # FreeBSD/NetBSD use sysctl for ARC stats
         if self.system in ('FreeBSD', 'NetBSD'):
             return self._read_arc_stats_sysctl()
@@ -677,11 +677,9 @@ class ZFSPerformanceService:
             
         except Exception as e:
             return {'error': f'Failed to read ARC stats: {str(e)}'}
-    
 
     def _read_arc_stats_sysctl(self) -> Dict[str, Any]:
         """Read ARC statistics using sysctl (for BSD systems)"""
-
         try:
             result = subprocess.run(
                 ['sysctl', 'kstat.zfs.misc.arcstats'],
@@ -691,7 +689,6 @@ class ZFSPerformanceService:
             )
             
             if result.returncode != 0:
-
                 return {'error': 'Failed to read sysctl for ARC stats'}
             
             stats = {}
@@ -714,7 +711,7 @@ class ZFSPerformanceService:
                 # Extract just the stat name (last part after dots)
                 # kstat.zfs.misc.arcstats.hits -> hits
                 stat_name = name.split('.')[-1]
-
+                
                 try:
                     stats[stat_name] = int(value)
                 except ValueError:
@@ -722,7 +719,7 @@ class ZFSPerformanceService:
             
             if not stats:
                 return {'error': 'ARC stats not available via sysctl'}
-
+            
             # Calculate derived metrics
             if 'hits' in stats and 'misses' in stats:
                 total = stats['hits'] + stats['misses']
@@ -741,6 +738,7 @@ class ZFSPerformanceService:
         
         On Linux: cat /proc/spl/kstat/zfs/arcstats
         On FreeBSD: zfs-stats -A
+        On NetBSD: sysctl -a | grep arcstats
         
         Returns:
             Dictionary with raw output and system info
@@ -797,6 +795,31 @@ class ZFSPerformanceService:
                 except subprocess.TimeoutExpired:
                     return {
                         'error': 'zfs-stats command timed out',
+                        'system': self.system
+                    }
+            
+            elif self.system == 'NetBSD':
+                # NetBSD uses sysctl for ARC stats
+                try:
+                    result = subprocess.run(
+                        ['sh', '-c', 'sysctl -a | grep -i arcstats'],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    output = result.stdout if result.stdout else 'No ARC stats found via sysctl'
+                    
+                    return {
+                        'output': output,
+                        'system': self.system,
+                        'command': 'sysctl -a | grep -i arcstats',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                except subprocess.TimeoutExpired:
+                    return {
+                        'error': 'sysctl command timed out',
                         'system': self.system
                     }
             else:

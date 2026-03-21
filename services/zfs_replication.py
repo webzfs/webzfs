@@ -189,6 +189,7 @@ class ZFSReplicationService:
         replication_type: ReplicationType,
         incremental: bool = True,
         recursive: bool = False,
+        raw: bool = False,
         compression: CompressionMethod = CompressionMethod.LZ4,
         job_id: Optional[str] = None,
         job_name: Optional[str] = None,
@@ -204,6 +205,8 @@ class ZFSReplicationService:
             replication_type: Type of replication
             incremental: Use incremental send
             recursive: Replicate recursively
+            raw: Use raw send (-w flag). Required for encrypted datasets
+                 to preserve encryption on the target side.
             compression: Compression method
             job_id: Optional job ID for scheduled jobs
             job_name: Optional job name
@@ -239,32 +242,97 @@ class ZFSReplicationService:
                 
                 latest_snapshot = snapshots[-1]
             
-            # Auto-detect if we need -F flag when target exists
-            if force is None:
-                force = self._check_target_exists(target)
+            # Determine the actual receive target and -F flag based on
+            # whether this is a full or incremental send.
+            #
+            # Full (non-incremental) send:
+            #   - Creates a NEW child dataset under the selected target.
+            #     e.g. source "olympus/test1@first" + target "phobos"
+            #     -> receive into "phobos/test1"
+            #
+            # Incremental send:
+            #   - Writes directly into the selected target dataset,
+            #     which must already exist from a prior full send.
+            #   - The -i flag with the common and new snapshots is
+            #     sufficient; no -F flag is needed.
+            if not incremental:
+                # Extract the source dataset basename to build the
+                # child target path.  e.g. "olympus/test1" -> "test1"
+                source_dataset = source.split('@')[0] if '@' in source else source
+                source_basename = source_dataset.split('/')[-1]
+                actual_target = f"{target}/{source_basename}"
+            else:
+                actual_target = target
+            
+            # Never use -F. Full sends create a new child dataset
+            # (no overwrite needed). Incremental sends apply cleanly
+            # when the common snapshot and new snapshot are specified.
+            force = False
             
             # Merge force into options
             options_with_force = dict(options)
             options_with_force['force'] = force
             
-            # For incremental send, find the common/base snapshot
+            # Build the send and receive commands early so the
+            # command string is stored even if validation fails
+            # (e.g. no common snapshot for incremental).  The send
+            # command is built without -i for now; if a base snapshot
+            # is found below, we rebuild with -i included.
+            send_cmd = self._build_send_command(
+                source, latest_snapshot, incremental, recursive, raw,
+                compression, base_snapshot=None
+            )
+            receive_cmd = self._build_receive_command(
+                actual_target, replication_type, options_with_force
+            )
+            
+            # Build and store the planned command string immediately
+            # so it appears in error logs even if validation fails.
+            command_string = self._build_command_string(
+                send_cmd, receive_cmd, replication_type, options_with_force
+            )
+            self.storage.update_execution_record(
+                execution_id=execution_id,
+                status='running',
+                command=command_string
+            )
+            
+            # For incremental send, find the common/base snapshot.
+            # Both the source and target must share at least one snapshot
+            # for incremental replication to work. If no common snapshot
+            # is found, we raise an error rather than silently falling back
+            # to a full send, because a full send would overwrite
+            # the target dataset and destroy any existing data.
             base_snapshot = None
             if incremental:
-                base_snapshot = self._find_common_snapshot(source, target, replication_type, options_with_force)
-                # If no common snapshot found, fall back to full send
+                base_snapshot = self._find_common_snapshot(
+                    source, target, replication_type, options_with_force
+                )
                 if not base_snapshot:
-                    incremental = False
-            
-            # Build the send command
-            send_cmd = self._build_send_command(
-                source, latest_snapshot, incremental, recursive, compression,
-                base_snapshot=base_snapshot
-            )
-            
-            # Build the receive command
-            receive_cmd = self._build_receive_command(
-                target, replication_type, options_with_force
-            )
+                    raise Exception(
+                        "Incremental replication requested but no common "
+                        "snapshot was found between the source and target "
+                        "datasets. Both systems must share at least one "
+                        "snapshot for incremental send to work. Either "
+                        "perform a full (non-incremental) send first, or "
+                        "verify that the target dataset has a snapshot "
+                        "matching one on the source."
+                    )
+                
+                # Rebuild the send command now that we have the base snapshot
+                send_cmd = self._build_send_command(
+                    source, latest_snapshot, incremental, recursive, raw,
+                    compression, base_snapshot=base_snapshot
+                )
+                
+                # Update the stored command string with the actual -i flag
+                command_string = self._build_command_string(
+                    send_cmd, receive_cmd, replication_type, options_with_force
+                )
+                self.storage.update_execution_record(
+                    execution_id=execution_id,
+                    command=command_string
+                )
             
             # Execute replication
             if replication_type == ReplicationType.LOCAL:
@@ -551,13 +619,32 @@ class ZFSReplicationService:
     
     # Private helper methods
     
-    def _get_snapshots(self, dataset: str) -> List[str]:
-        """Get list of snapshots for a dataset"""
+    def _get_snapshots(self, dataset: str, recursive: bool = False) -> List[str]:
+        """Get list of snapshots for a dataset.
+        
+        Args:
+            dataset: ZFS dataset name
+            recursive: If True, include snapshots from child datasets.
+                       If False (default), return only snapshots belonging
+                       to the exact dataset specified.
+        
+        Returns:
+            Ordered list of snapshot names (e.g. pool/data@snap1)
+        """
         try:
-            result = run_zfs_command(
-                ['zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', dataset]
-            )
-            return [line.strip() for line in result.stdout.split('\n') if line.strip()]
+            cmd = ['zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name']
+            if recursive:
+                cmd.append('-r')
+            cmd.append(dataset)
+            result = run_zfs_command(cmd)
+            all_snaps = [line.strip() for line in result.stdout.split('\n') if line.strip()]
+            
+            if recursive:
+                return all_snaps
+            
+            # Without -r, ZFS still returns child dataset snapshots on some
+            # platforms. Filter to only exact dataset matches to be safe.
+            return [s for s in all_snaps if s.split('@')[0] == dataset]
         except subprocess.CalledProcessError:
             return []
     
@@ -567,7 +654,16 @@ class ZFSReplicationService:
     ) -> Optional[str]:
         """
         Find the most recent common snapshot between source and target.
-        This is used as the base snapshot for incremental sends.
+        
+        For incremental send (zfs send -i base@snap new@snap), the base
+        snapshot must:
+          1. Exist on the source dataset (same filesystem, not a child)
+          2. Exist on the target dataset (same filesystem, not a child)
+        
+        This method uses NON-recursive snapshot listings so that only
+        direct snapshots of the source and target datasets are compared.
+        Child dataset snapshots are excluded to prevent false matches
+        that would produce "incremental source must be in same filesystem".
         
         Args:
             source: Source dataset (may include @snapshot)
@@ -576,15 +672,20 @@ class ZFSReplicationService:
             options: Additional options including remote_host, etc.
             
         Returns:
-            The most recent common snapshot name, or None if no common snapshot exists
+            The full source snapshot name (e.g. pool/data@snap) for the
+            most recent common snapshot, or None if none exists.
         """
         # Extract dataset name from source (remove @snapshot if present)
         source_dataset = source.split('@')[0] if '@' in source else source
         
-        # Get source snapshots
-        source_snapshots = self._get_snapshots(source_dataset)
+        # Get snapshots for the exact source dataset only (non-recursive).
+        # This ensures we only get Mpool/music@... not Mpool/music/child@...
+        source_snapshots = self._get_snapshots(source_dataset, recursive=False)
         
-        # Extract just snapshot names (part after @)
+        if not source_snapshots:
+            return None
+        
+        # Build a set of snapshot short names from the source
         source_snap_names = set()
         for snap in source_snapshots:
             if '@' in snap:
@@ -593,43 +694,49 @@ class ZFSReplicationService:
         if not source_snap_names:
             return None
         
-        # Get target snapshots
+        # Get snapshots for the exact target dataset only (non-recursive).
+        # For local targets, query directly. For remote, query via SSH.
         if replication_type == ReplicationType.LOCAL:
-            # Local target
-            target_snapshots = self._get_snapshots(target)
+            target_snapshots = self._get_snapshots(target, recursive=False)
         else:
-            # Remote target
-            target_snapshots = self._get_remote_snapshots(target, options)
+            target_snapshots = self._get_remote_snapshots(
+                target, options, recursive=False
+            )
         
-        # Extract just snapshot names from target
+        # Build a set of snapshot short names from the target
         target_snap_names = set()
         for snap in target_snapshots:
             if '@' in snap:
                 target_snap_names.add(snap.split('@')[1])
         
-        # Find common snapshots
-        common_snaps = source_snap_names & target_snap_names
+        # Find snapshot names that exist on both source and target
+        common_snap_names = source_snap_names & target_snap_names
         
-        if not common_snaps:
+        if not common_snap_names:
             return None
         
-        # Find the most recent common snapshot from source list (preserves order)
+        # Return the most recent common snapshot from source (preserves order).
+        # The source list is ordered oldest-first, so iterate in reverse.
         for snap in reversed(source_snapshots):
             if '@' in snap:
                 snap_name = snap.split('@')[1]
-                if snap_name in common_snaps:
-                    # Return the full snapshot name from source
+                if snap_name in common_snap_names:
                     return snap
         
         return None
     
-    def _get_remote_snapshots(self, dataset: str, options: Dict) -> List[str]:
+    def _get_remote_snapshots(
+        self, dataset: str, options: Dict, recursive: bool = False
+    ) -> List[str]:
         """
-        Get list of snapshots from a remote dataset via SSH
+        Get list of snapshots from a remote dataset via SSH.
         
         Args:
             dataset: Remote dataset name
             options: Options including remote_host, remote_port, ssh_key
+            recursive: If True, include child dataset snapshots.
+                       If False (default), return only snapshots belonging
+                       to the exact dataset specified.
             
         Returns:
             List of snapshot names
@@ -651,8 +758,11 @@ class ZFSReplicationService:
                 '-o', 'BatchMode=yes',
                 '-o', 'ConnectTimeout=10',
                 remote_host,
-                'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', dataset
+                'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name'
             ])
+            if recursive:
+                ssh_cmd.append('-r')
+            ssh_cmd.append(dataset)
             
             result = subprocess.run(
                 ssh_cmd,
@@ -663,7 +773,11 @@ class ZFSReplicationService:
             )
             
             if result.returncode == 0:
-                return [line.strip() for line in result.stdout.split('\n') if line.strip()]
+                all_snaps = [line.strip() for line in result.stdout.split('\n') if line.strip()]
+                if recursive:
+                    return all_snaps
+                # Filter to only exact dataset matches
+                return [s for s in all_snaps if s.split('@')[0] == dataset]
             return []
             
         except Exception:
@@ -671,7 +785,7 @@ class ZFSReplicationService:
     
     def _build_send_command(
         self, dataset: str, snapshot: str, incremental: bool,
-        recursive: bool, compression: CompressionMethod,
+        recursive: bool, raw: bool, compression: CompressionMethod,
         base_snapshot: Optional[str] = None
     ) -> List[str]:
         """Build the zfs send command
@@ -681,6 +795,8 @@ class ZFSReplicationService:
             snapshot: The snapshot to send
             incremental: Whether to do incremental send
             recursive: Whether to include child datasets
+            raw: Whether to use raw send (-w). Required for encrypted
+                 datasets to preserve encryption on the receiving side.
             compression: Compression method
             base_snapshot: For incremental send, the base snapshot to send from
             
@@ -692,9 +808,16 @@ class ZFSReplicationService:
         if recursive:
             cmd.append('-R')
         
-        # Add compression if not NONE
+        # Raw send (-w) must be explicitly enabled by the user.
+        # This is required when replicating encrypted datasets so that
+        # the data is sent in its encrypted form and the receiving side
+        # preserves the encryption properties.
+        if raw:
+            cmd.append('-w')
+        
+        # Add compressed send if compression is not NONE
         if compression != CompressionMethod.NONE:
-            cmd.extend(['-c', '-w'])  # Compressed, raw send
+            cmd.append('-c')
         
         # For incremental send, use -i flag with base snapshot
         if incremental and base_snapshot:
@@ -716,6 +839,38 @@ class ZFSReplicationService:
         
         cmd.append(target)
         return cmd
+    
+    def _build_command_string(
+        self, send_cmd: List[str], receive_cmd: List[str],
+        replication_type: ReplicationType, options: Dict
+    ) -> str:
+        """Build the full pipeline command string for audit/history.
+        
+        Combines the send and receive commands into a single string
+        that represents what will be (or was) executed, including
+        the SSH transport for remote replication.
+        
+        Args:
+            send_cmd: The zfs send command parts
+            receive_cmd: The zfs receive command parts
+            replication_type: Type of replication
+            options: Options including remote_host, remote_port, ssh_key
+            
+        Returns:
+            Full command string (e.g. "zfs send ... | ssh ... zfs receive ...")
+        """
+        if replication_type == ReplicationType.LOCAL:
+            return ' '.join(send_cmd) + ' | ' + ' '.join(receive_cmd)
+        
+        remote_host = options.get('remote_host', '')
+        remote_port = options.get('remote_port', 22)
+        ssh_key = options.get('ssh_key')
+        ssh_parts = ['ssh', '-p', str(remote_port)]
+        if ssh_key:
+            ssh_parts.extend(['-i', ssh_key])
+        ssh_parts.append(remote_host)
+        ssh_parts.extend(receive_cmd)
+        return ' '.join(send_cmd) + ' | ' + ' '.join(ssh_parts)
     
     def _execute_local_replication(
         self, send_cmd: List[str], receive_cmd: List[str], execution_id: int
@@ -811,6 +966,11 @@ class ZFSReplicationService:
         ssh_cmd = ['ssh', '-p', str(remote_port)]
         if ssh_key:
             ssh_cmd.extend(['-i', ssh_key])
+        ssh_cmd.extend([
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'BatchMode=yes'
+        ])
         ssh_cmd.append(remote_host)
         ssh_cmd.extend(receive_cmd)
         

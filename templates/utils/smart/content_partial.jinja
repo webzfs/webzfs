@@ -1,0 +1,173 @@
+<!-- Bulk Actions -->
+{% if disks and disks|length > 0 %}
+<div class="bg-bg-elevated rounded-lg p-4 mb-6">
+    <h2 class="text-lg font-bold text-text-primary mb-3">Bulk Actions</h2>
+    <div class="flex flex-wrap gap-2">
+        <a href="/utils/smart/download/all" class="btn-info px-4 py-2 rounded inline-flex items-center shadow" hx-boost="false">
+            <span class="mr-2"><svg class="w-5 h-5 inline text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                </svg></span>
+            Download All SMART Data (ZIP)
+        </a>
+        <form method="post" action="/utils/smart/test/all/short" class="inline">
+            <button type="button"
+                    class="bg-blue-600 hover:bg-blue-700 text-text-primary px-4 py-2 rounded inline-flex items-center"
+                    onclick="showConfirm('confirm-short-test-all')">
+                <span class="mr-2"><svg class="w-5 h-5 inline text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                </svg></span>
+                Run Short Test on All Disks
+            </button>
+        </form>
+        <form method="post" action="/utils/smart/test/all/long" class="inline">
+            <button type="button"
+                    class="bg-green-600 hover:bg-green-700 text-text-primary px-4 py-2 rounded inline-flex items-center"
+                    onclick="showConfirm('confirm-long-test-all')">
+                <span class="mr-2"><svg class="w-5 h-5 inline text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                </svg></span>
+                Run Long Test on All Disks
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Disks List -->
+{% if disks %}
+<div class="bg-bg-elevated rounded-lg overflow-hidden shadow-lg">
+    <div class="overflow-x-auto">
+        <table class="min-w-full">
+            <thead class="bg-bg-elevated-2 text-text-secondary">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Device</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Model</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Serial</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">SMART Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="bg-bg-elevated divide-y divide-border-subtle">
+                {% for disk in disks %}
+                <tr class="hover:bg-bg-elevated-2 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}" class="text-blue-400 hover:text-blue-300 font-mono font-semibold">
+                            {{ disk.path }}
+                        </a>
+                    </td>
+                    <td class="px-6 py-4 text-text-secondary">{{ disk.model }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-text-secondary font-mono text-sm">{{ disk.serial }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if disk.smart_enabled %}
+                        <span class="badge badge-success">
+                            Enabled
+                        </span>
+                        {% elif disk.smart_available %}
+                        <span class="badge badge-warning">
+                            Available (Disabled)
+                        </span>
+                        {% else %}
+                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-bg-elevated-2 text-text-tertiary">
+                            Not Available
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <div class="flex space-x-2">
+                            <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}"
+                               class="text-blue-400 hover:text-blue-300"
+                               title="View Details">
+                                <svg class="w-5 h-5 inline text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                            </a>
+                            <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}/attributes"
+                               class="text-green-400 hover:text-green-300"
+                               title="SMART Attributes">
+                                <svg class="w-5 h-5 inline text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                    </svg>
+                            </a>
+                            <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}/health"
+                               class="text-purple-400 hover:text-purple-300"
+                               title="Health Status">
+                                <svg class="w-5 h-5 inline text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                    </svg>
+                            </a>
+                            <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}/tests"
+                               class="text-yellow-400 hover:text-yellow-300"
+                               title="Run Tests">
+                                <svg class="w-5 h-5 inline text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                    </svg>
+                            </a>
+                            <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}/temperature"
+                               class="text-orange-400 hover:text-orange-300"
+                               title="Temperature">
+                                <svg class="w-5 h-5 inline text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                            </a>
+                            <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}/errors"
+                               class="text-red-400 hover:text-red-300"
+                               title="Error Log">
+                                <svg class="w-5 h-5 inline text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                            </a>
+                            <a href="/utils/smart/disk/{{ disk.path.lstrip('/') }}/download"
+                               class="text-cyan-400 hover:text-cyan-300"
+                               title="Download SMART Data"
+                               hx-boost="false">
+                                <svg class="w-5 h-5 inline text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                    </svg>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Disk Count Summary -->
+<div class="mt-4 text-text-tertiary text-sm">
+    <p>Total Disks: {{ disks|length }}</p>
+</div>
+{% else %}
+<!-- No Disks Found -->
+<div class="bg-bg-elevated rounded-lg p-8 text-center">
+    <div class="text-text-tertiary mb-4">
+        <svg class="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+        </svg>
+    </div>
+    <h3 class="text-lg font-medium text-text-primary mb-2">No Disks Found</h3>
+    <p class="text-text-tertiary mb-2">No SMART-capable disks detected on this system.</p>
+    <p class="text-text-tertiary text-sm">Make sure smartmontools is installed and you have the necessary permissions.</p>
+</div>
+{% endif %}
+
+<!-- Confirmation Modals (only rendered when disks are present) -->
+{% if disks and disks|length > 0 %}
+{% set modal_id = 'confirm-short-test-all' %}
+{% set modal_title = 'Run Short Test on All Disks' %}
+{% set modal_message = 'Start short SMART test on all SMART-enabled disks? This will run a quick diagnostic test on each disk.' %}
+{% set confirm_text = 'Start Tests' %}
+{% set confirm_class = 'primary' %}
+{% set action_url = '/utils/smart/test/all/short' %}
+{% set method = 'post' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set modal_id = 'confirm-long-test-all' %}
+{% set modal_title = 'Run Long Test on All Disks' %}
+{% set modal_message = 'Start long SMART test on all SMART-enabled disks? This comprehensive test may take several hours per disk and will impact disk performance.' %}
+{% set confirm_text = 'Start Tests' %}
+{% set confirm_class = 'warning' %}
+{% set action_url = '/utils/smart/test/all/long' %}
+{% set method = 'post' %}
+{% include 'partials/confirm.jinja' %}
+{% endif %}
