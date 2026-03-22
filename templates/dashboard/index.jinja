@@ -4,6 +4,7 @@
 
 {% block content %}
     <style>
+        /* Pool health pulse animations */
         @keyframes pulse-border-danger {
             0%, 100% {
                 border-color: rgb(239 68 68);
@@ -41,48 +42,82 @@
             border: 4px solid rgb(234 179 8);
         }
     </style>
+
     <div class="space-y-6">
         <!-- Page Header -->
         <div class="flex items-center justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-text-primary">System Dashboard</h1>
-                <p class="text-text-secondary mt-1">Overview of system resources and ZFS pools</p>
+                <p class="text-text-secondary mt-1">Holistic overview of system resources and ZFS status</p>
             </div>
         </div>
 
-        <!-- Dashboard Content -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            <!-- Left Column: System Information -->
-            <div class="space-y-6">
-                <!-- System Info Card -->
-                <div class="card animate-fade-in">
-                    <div class="card-body">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="p-2 bg-primary-500/10 border border-primary-500/20 rounded-lg">
-                                <svg class="w-6 h-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                                </svg>
-                            </div>
-                            <h2 class="text-xl font-semibold text-text-primary">System Information</h2>
+        <!-- ================================================================
+             ROW 1: System Info | Memory + Load | CPU Time  (3 columns)
+             ================================================================ -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Column 1: System Specs + Uptime -->
+            <div class="card animate-fade-in">
+                <div class="card-body">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="p-2 bg-primary-500/10 border border-primary-500/20 rounded-lg">
+                            <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
                         </div>
-                        {% if platform %}
-                            {% with data=platform %}
-                                {% include "dashboard/table.jinja" %}
-                            {% endwith %}
+                        <h2 class="text-lg font-semibold text-text-primary">System Information</h2>
+                    </div>
+
+                    {% if specs %}
+                    <table class="w-full text-sm">
+                        <tbody class="divide-y divide-border-subtle">
+                            <tr><td class="py-1.5 text-text-secondary w-28">Hostname</td><td class="py-1.5 text-text-primary font-medium">{{ specs.hostname }}</td></tr>
+                            <tr><td class="py-1.5 text-text-secondary">CPU</td><td class="py-1.5 text-text-primary text-xs">{{ specs.cpu_model }}</td></tr>
+                            <tr><td class="py-1.5 text-text-secondary">Cores</td><td class="py-1.5 text-text-primary">{{ specs.cpu_count_physical or '?' }} physical / {{ specs.cpu_count }} logical</td></tr>
+                            <tr><td class="py-1.5 text-text-secondary">Platform</td><td class="py-1.5 text-text-primary text-xs">{{ specs.platform }}</td></tr>
+                            {% if specs.os_release %}
+                            <tr><td class="py-1.5 text-text-secondary">Release</td><td class="py-1.5 text-text-primary text-xs">{{ specs.os_release }}</td></tr>
+                            {% endif %}
+                            {% if specs.zfs_version %}
+                            {% if specs.zfs_version.get('module') %}
+                            <tr><td class="py-1.5 text-text-secondary">ZFS Module</td><td class="py-1.5 text-text-primary text-xs">{{ specs.zfs_version.module }}</td></tr>
+                            {% endif %}
+                            {% if specs.zfs_version.get('userland') %}
+                            <tr><td class="py-1.5 text-text-secondary">ZFS Userland</td><td class="py-1.5 text-text-primary text-xs">{{ specs.zfs_version.userland }}</td></tr>
+                            {% endif %}
+                            {% endif %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+
+                    <!-- Uptime (updated via OOB every 60s) -->
+                    <div id="dash-uptime" class="mt-3 pt-3 border-t border-border-subtle">
+                        {% if realtime and realtime.uptime %}
+                        <div class="flex items-center gap-2 text-sm">
+                            <svg class="w-4 h-4 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span class="text-text-secondary">Uptime:</span>
+                            <span class="text-text-primary font-semibold">{{ realtime.uptime.formatted }}</span>
+                        </div>
                         {% endif %}
                     </div>
                 </div>
+            </div>
 
-                <!-- Memory Info Card -->
+            <!-- Column 2: Memory Usage (top) + System Load (bottom) stacked -->
+            <div class="space-y-6">
+                <!-- Memory Usage (refreshes every 15s) -->
                 <div class="card animate-fade-in" style="animation-delay: 0.1s;">
                     <div class="card-body">
-                        <div class="flex items-center gap-3 mb-4">
+                        <div class="flex items-center gap-3 mb-3">
                             <div class="p-2 bg-success-500/10 border border-success-500/20 rounded-lg">
-                                <svg class="w-6 h-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                                <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
                                 </svg>
                             </div>
+<<<<<<< HEAD
                             <h2 class="text-xl font-semibold text-text-primary">Memory Information</h2>
                             <button type="button"
                                     class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
@@ -105,21 +140,59 @@
                                 {% with data=memory %}
                                     {% include "dashboard/table.jinja" %}
                                 {% endwith %}
+=======
+                            <h2 class="text-lg font-semibold text-text-primary">Memory Usage</h2>
+                        </div>
+
+                        <div id="dash-memory">
+                            {% if realtime and realtime.memory %}
+                            {% set mem = realtime.memory %}
+                            <div class="space-y-2">
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span class="text-text-secondary">Used</span>
+                                        <span class="text-text-primary font-medium">{{ mem.used_human }} ({{ mem.used_percent }}%)</span>
+                                    </div>
+                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                                        <div class="bg-primary-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.used_percent }}%"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span class="text-text-secondary">Buff/Cache</span>
+                                        <span class="text-text-primary font-medium">{{ mem.buff_cache_human }} ({{ mem.buff_cache_percent }}%)</span>
+                                    </div>
+                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                                        <div class="bg-warning-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.buff_cache_percent }}%"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span class="text-text-secondary">Available</span>
+                                        <span class="text-text-primary font-medium">{{ mem.available_human }} ({{ mem.available_percent }}%)</span>
+                                    </div>
+                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                                        <div class="bg-success-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.available_percent }}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-1 text-xs text-text-tertiary text-center">Total: {{ mem.total_human }}</div>
+>>>>>>> 95d006b (add new dashboard)
                             {% endif %}
                         </div>
                     </div>
                 </div>
 
-                <!-- System Load Card -->
-                <div class="card animate-fade-in" 
-                     style="animation-delay: 0.2s;">
+                <!-- System Load (refreshes every 60s) -->
+                <div class="card animate-fade-in" style="animation-delay: 0.15s;">
                     <div class="card-body">
-                        <div class="flex items-center gap-3 mb-4">
+                        <div class="flex items-center gap-3 mb-3">
                             <div class="p-2 bg-info-500/10 border border-info-500/20 rounded-lg">
-                                <svg class="w-6 h-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                                 </svg>
                             </div>
+<<<<<<< HEAD
                             <h2 class="text-xl font-semibold text-text-primary">System Load</h2>
                             <button type="button"
                                     class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
@@ -156,45 +229,221 @@
                                         </tbody>
                                     </table>
                                 </div>
+=======
+                            <h2 class="text-lg font-semibold text-text-primary">System Load</h2>
+                        </div>
+
+                        <div id="dash-load">
+                            {% if realtime and realtime.system_load %}
+                            {% set load = realtime.system_load %}
+                            <div class="space-y-2">
+                                {% for label, value, pct in [('1 min', load.load_1m, load.load_1m_pct), ('5 min', load.load_5m, load.load_5m_pct), ('15 min', load.load_15m, load.load_15m_pct)] %}
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span class="text-text-secondary">{{ label }}</span>
+                                        <span class="text-text-primary font-medium">{{ value }} ({{ pct }}%)</span>
+                                    </div>
+                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                                        <div class="{% if pct > 80 %}bg-danger-500{% elif pct > 50 %}bg-warning-500{% else %}bg-success-500{% endif %} h-full rounded-full transition-all duration-500" style="width: {{ pct }}%"></div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Tasks (updated via OOB every 60s) -->
+                        <div id="dash-tasks" class="mt-2 pt-2 border-t border-border-subtle">
+                            {% if realtime and realtime.tasks %}
+                            <div class="text-xs text-text-secondary">
+                                <span class="font-medium text-text-primary">{{ realtime.tasks.total }}</span> tasks:
+                                <span class="text-success-400">{{ realtime.tasks.running }} run</span>,
+                                <span>{{ realtime.tasks.sleeping }} sleep</span>,
+                                <span>{{ realtime.tasks.stopped }} stop</span>,
+                                <span class="{% if realtime.tasks.zombie > 0 %}text-danger-400{% endif %}">{{ realtime.tasks.zombie }} zombie</span>
+                                {% if realtime.system_load %}
+                                / <span class="font-medium text-text-primary">{{ realtime.tasks.threads }}</span> threads
+                                ({{ realtime.system_load.cpu_count }} CPUs)
+                                {% endif %}
+                            </div>
+>>>>>>> 95d006b (add new dashboard)
                             {% endif %}
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Right Column: ZFS Pools -->
-            <div class="space-y-6">
-                <div class="card animate-fade-in" style="animation-delay: 0.3s;">
-                    <div class="card-body">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
-                                </svg>
-                            </div>
-                            <h2 class="text-xl font-semibold text-text-primary">ZFS Pools</h2>
-                            <button type="button"
-                                    class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
-                                    hx-get="/zfs-pools-refresh"
-                                    hx-target="#zfs-pools-content"
-                                    hx-swap="innerHTML"
-                                    hx-indicator="#zfs-pools-spinner"
-                                    title="Refresh pool information">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                </svg>
-                            </button>
-                            <svg id="zfs-pools-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <!-- Column 3: CPU Time Distribution (refreshes every 60s + manual button) -->
+            <div class="card animate-fade-in" style="animation-delay: 0.2s;">
+                <div class="card-body">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                            <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                             </svg>
                         </div>
-                        <div id="zfs-pools-content">
-                            {% include "dashboard/zfs_pools.jinja" %}
+                        <h2 class="text-lg font-semibold text-text-primary">CPU Time</h2>
+                        <button type="button"
+                                class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
+                                hx-get="/system-stats-refresh"
+                                hx-swap="none"
+                                hx-indicator="#cpu-spinner"
+                                title="Refresh system stats">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                        </button>
+                        <svg id="cpu-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+
+                    <div id="dash-cpu">
+                        {% if realtime and realtime.cpu_pct %}
+                        {% set cpu = realtime.cpu_pct %}
+                        <div class="space-y-2">
+                            {% for key, label, desc, color in [
+                                ('user', 'User', 'Non-kernel code', 'bg-primary-500'),
+                                ('system', 'System', 'Kernel processes', 'bg-info-500'),
+                                ('nice', 'Nice', 'Low-priority procs', 'bg-purple-500'),
+                                ('iowait', 'IO Wait', 'Disk I/O wait', 'bg-warning-500'),
+                                ('irq', 'HW IRQ', 'Hardware interrupts', 'bg-danger-500'),
+                                ('softirq', 'SW IRQ', 'Software interrupts', 'bg-pink-500'),
+                                ('steal', 'Steal', 'Hypervisor stolen', 'bg-orange-500'),
+                                ('idle', 'Idle', 'Waiting for work', 'bg-success-500'),
+                            ] %}
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-text-secondary" title="{{ desc }}">{{ label }} <span class="text-text-tertiary">({{ key[:2] }})</span></span>
+                                    <span class="text-text-primary font-medium">{{ "%.1f"|format(cpu[key]) }}%</span>
+                                </div>
+                                <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                                    <div class="{{ color }} h-full rounded-full transition-all duration-500" style="width: {{ cpu[key] }}%"></div>
+                                </div>
+                            </div>
+                            {% endfor %}
                         </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- ================================================================
+             ROW 3: ZFS Pool Info (full width)
+             ================================================================ -->
+        <div class="card animate-fade-in" style="animation-delay: 0.4s;">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-lg font-semibold text-text-primary">ZFS Pools</h2>
+                    <button type="button"
+                            class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
+                            hx-get="/zfs-pools-refresh"
+                            hx-target="#zfs-pools-content"
+                            hx-swap="innerHTML"
+                            hx-indicator="#zfs-pools-spinner"
+                            title="Refresh pool information">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                    <svg id="zfs-pools-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <div id="zfs-pools-content">
+                    {% include "dashboard/zfs_pools.jinja" %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ================================================================
+             ROW 4: ARC Statistics Summary
+             ================================================================ -->
+        <div class="card animate-fade-in" style="animation-delay: 0.5s;">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="p-2 bg-success-500/10 border border-success-500/20 rounded-lg">
+                        <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-lg font-semibold text-text-primary">ARC Statistics</h2>
+                    <a href="/zfs/performance/arc-realtime" class="text-xs text-primary-400 hover:text-primary-300 transition-colors">Full ARC Stats</a>
+                    <button type="button"
+                            class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
+                            hx-get="/arc-stats-refresh"
+                            hx-target="#arc-stats-content"
+                            hx-swap="innerHTML"
+                            hx-indicator="#arc-stats-spinner"
+                            title="Refresh ARC statistics">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                    <svg id="arc-stats-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <div id="arc-stats-content"
+                     hx-get="/arc-stats-refresh"
+                     hx-trigger="every 300s"
+                     hx-swap="innerHTML">
+                    {% include "dashboard/arc_stats_data.jinja" %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ================================================================
+             ROW 5: Scrub Status
+             ================================================================ -->
+        <div class="card animate-fade-in" style="animation-delay: 0.6s;">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="p-2 bg-warning-500/10 border border-warning-500/20 rounded-lg">
+                        <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-lg font-semibold text-text-primary">Scrub Status</h2>
+                    <button type="button"
+                            class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
+                            hx-get="/scrub-status-refresh"
+                            hx-target="#scrub-status-content"
+                            hx-swap="innerHTML"
+                            hx-indicator="#scrub-spinner"
+                            title="Refresh scrub status">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                    <svg id="scrub-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <div id="scrub-status-content"
+                     hx-get="/scrub-status-refresh"
+                     hx-trigger="every 300s"
+                     hx-swap="innerHTML">
+                    {% include "dashboard/scrub_status_data.jinja" %}
+                </div>
+            </div>
+        </div>
+
     </div>
+
+    {# Memory refreshes every 15 seconds #}
+    <div hx-get="/realtime-data" hx-trigger="every 15s" hx-swap="none"></div>
+
+    {# System stats (uptime, tasks, load, CPU) refresh every 60 seconds #}
+    <div hx-get="/system-stats-refresh" hx-trigger="every 60s" hx-swap="none"></div>
 {% endblock %}
