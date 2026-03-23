@@ -1472,6 +1472,9 @@ function escAttr(str) {
 
 // ==================== Warning Acknowledgment ====================
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7e122d2 (add timeout for warning)
 var ACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 var ACK_STORAGE_KEY = 'vdev-warning-ack-' + poolName;
 
@@ -1494,8 +1497,11 @@ function dismissWarningAndLoad() {
     loadPageData();
 }
 
+<<<<<<< HEAD
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+>>>>>>> 7e122d2 (add timeout for warning)
 async function acknowledgeWarning() {
     var btn = document.getElementById('btn-acknowledge');
     btn.disabled = true;
@@ -1508,12 +1514,16 @@ async function acknowledgeWarning() {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7e122d2 (add timeout for warning)
     // Store acknowledgment timestamp (5-minute timeout)
     try {
         sessionStorage.setItem(ACK_STORAGE_KEY, String(Date.now()));
     } catch (e) {
         // sessionStorage may be unavailable; proceed anyway
     }
+<<<<<<< HEAD
 
     dismissWarningAndLoad();
 }
@@ -1527,14 +1537,21 @@ if (isAckValid()) {
     // Hide the warning banner and locked overlay
     document.getElementById('vdev-warning-banner').style.display = 'none';
     document.getElementById('vdev-locked-overlay').style.display = 'none';
+=======
+>>>>>>> 7e122d2 (add timeout for warning)
 
-    // Show the page content and begin loading data
-    document.getElementById('vdev-page-content').style.display = 'block';
-    loadPageData();
+    dismissWarningAndLoad();
 }
 
 // ==================== Init ====================
+<<<<<<< HEAD
 // Page data loads only after user acknowledges the warning
 >>>>>>> 7fb748f (add vdev management)
+=======
+// If the user acknowledged within the last 5 minutes, skip the warning
+if (isAckValid()) {
+    dismissWarningAndLoad();
+}
+>>>>>>> 7e122d2 (add timeout for warning)
 </script>
 {% endblock %}
