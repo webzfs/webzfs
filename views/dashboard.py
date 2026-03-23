@@ -1,6 +1,10 @@
 """
 Dashboard Views
-Provides the main dashboard page and HTMX refresh endpoints.
+Provides the main dashboard page and HTMX async loading / refresh endpoints.
+
+Each dashboard card loads independently via HTMX deferred loading.
+The page shell renders immediately, then each card fetches its data
+in parallel via separate requests triggered on page load.
 """
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -20,35 +24,84 @@ from services.dashboard import (
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+# ---------------------------------------------------------------------------
+# Main page shell (no data fetching -- renders immediately)
+# ---------------------------------------------------------------------------
+
+
 @router.get("/")
 def index(request: Request):
-    """Main dashboard page -- initial load with all data."""
+    """Main dashboard page shell. All card data loads async via HTMX."""
+    return templates.TemplateResponse(
+        request, name="dashboard/index.jinja", context={},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Async initial load endpoints (hx-trigger="load")
+# ---------------------------------------------------------------------------
+
+
+@router.get("/system-info-data", response_class=HTMLResponse)
+def system_info_data(request: Request):
+    """HTMX endpoint: system information card (specs + uptime)."""
     try:
         specs = get_system_specs()
         realtime = get_realtime_system_data()
-        pools = get_pool_info_extended()
-        arc_stats = get_arc_stats_summary()
-        scrub_status = get_scrub_status_all()
-        context = {
-            'specs': specs,
-            'realtime': realtime,
-            'pools': pools,
-            'arc_stats': arc_stats,
-            'scrub_status': scrub_status,
-        }
+        context = {'specs': specs, 'realtime': realtime}
     except Exception as exc:
-        context = {
-            'error': str(exc),
-            'specs': {},
-            'realtime': {},
-            'pools': [],
-            'arc_stats': {},
-            'scrub_status': {'pools': []},
-        }
+        context = {'error': str(exc), 'specs': {}, 'realtime': {}}
 
     return templates.TemplateResponse(
-        request, name="dashboard/index.jinja", context=context,
+        request, name="dashboard/system_info_data.jinja", context=context,
     )
+
+
+@router.get("/memory-data", response_class=HTMLResponse)
+def memory_data(request: Request):
+    """HTMX endpoint: memory usage card."""
+    try:
+        realtime = get_realtime_system_data()
+        context = {'realtime': realtime}
+    except Exception as exc:
+        context = {'error': str(exc), 'realtime': {}}
+
+    return templates.TemplateResponse(
+        request, name="dashboard/memory_data.jinja", context=context,
+    )
+
+
+@router.get("/system-load-data", response_class=HTMLResponse)
+def system_load_data(request: Request):
+    """HTMX endpoint: system load + tasks card."""
+    try:
+        realtime = get_realtime_system_data()
+        context = {'realtime': realtime}
+    except Exception as exc:
+        context = {'error': str(exc), 'realtime': {}}
+
+    return templates.TemplateResponse(
+        request, name="dashboard/system_load_data.jinja", context=context,
+    )
+
+
+@router.get("/cpu-time-data", response_class=HTMLResponse)
+def cpu_time_data(request: Request):
+    """HTMX endpoint: CPU time distribution card."""
+    try:
+        realtime = get_realtime_system_data()
+        context = {'realtime': realtime}
+    except Exception as exc:
+        context = {'error': str(exc), 'realtime': {}}
+
+    return templates.TemplateResponse(
+        request, name="dashboard/cpu_time_data.jinja", context=context,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Periodic refresh endpoints (polled by HTMX after initial load)
+# ---------------------------------------------------------------------------
 
 
 @router.get("/realtime-data", response_class=HTMLResponse)

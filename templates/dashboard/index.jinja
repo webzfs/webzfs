@@ -69,46 +69,24 @@
                         <h2 class="text-lg font-semibold text-text-primary">System Information</h2>
                     </div>
 
-                    {% if specs %}
-                    <table class="w-full text-sm">
-                        <tbody class="divide-y divide-border-subtle">
-                            <tr><td class="py-1.5 text-text-secondary w-28">Hostname</td><td class="py-1.5 text-text-primary font-medium">{{ specs.hostname }}</td></tr>
-                            <tr><td class="py-1.5 text-text-secondary">CPU</td><td class="py-1.5 text-text-primary text-xs">{{ specs.cpu_model }}</td></tr>
-                            <tr><td class="py-1.5 text-text-secondary">Cores</td><td class="py-1.5 text-text-primary">{{ specs.cpu_count_physical or '?' }} physical / {{ specs.cpu_count }} logical</td></tr>
-                            <tr><td class="py-1.5 text-text-secondary">Platform</td><td class="py-1.5 text-text-primary text-xs">{{ specs.platform }}</td></tr>
-                            {% if specs.os_release %}
-                            <tr><td class="py-1.5 text-text-secondary">Release</td><td class="py-1.5 text-text-primary text-xs">{{ specs.os_release }}</td></tr>
-                            {% endif %}
-                            {% if specs.zfs_version %}
-                            {% if specs.zfs_version.get('module') %}
-                            <tr><td class="py-1.5 text-text-secondary">ZFS Module</td><td class="py-1.5 text-text-primary text-xs">{{ specs.zfs_version.module }}</td></tr>
-                            {% endif %}
-                            {% if specs.zfs_version.get('userland') %}
-                            <tr><td class="py-1.5 text-text-secondary">ZFS Userland</td><td class="py-1.5 text-text-primary text-xs">{{ specs.zfs_version.userland }}</td></tr>
-                            {% endif %}
-                            {% endif %}
-                        </tbody>
-                    </table>
-                    {% endif %}
-
-                    <!-- Uptime (updated via OOB every 60s) -->
-                    <div id="dash-uptime" class="mt-3 pt-3 border-t border-border-subtle">
-                        {% if realtime and realtime.uptime %}
-                        <div class="flex items-center gap-2 text-sm">
-                            <svg class="w-4 h-4 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    <!-- Async load: system info -->
+                    <div hx-get="/system-info-data"
+                         hx-trigger="load"
+                         hx-swap="innerHTML">
+                        <div class="flex items-center justify-center py-8">
+                            <svg class="w-6 h-6 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            <span class="text-text-secondary">Uptime:</span>
-                            <span class="text-text-primary font-semibold">{{ realtime.uptime.formatted }}</span>
+                            <span class="ml-2 text-sm text-text-tertiary">Loading system info...</span>
                         </div>
-                        {% endif %}
                     </div>
                 </div>
             </div>
 
             <!-- Column 2: Memory Usage (top) + System Load (bottom) stacked -->
             <div class="space-y-6">
-                <!-- Memory Usage (refreshes every 15s) -->
+                <!-- Memory Usage -->
                 <div class="card animate-fade-in" style="animation-delay: 0.1s;">
                     <div class="card-body">
                         <div class="flex items-center gap-3 mb-3">
@@ -144,46 +122,28 @@
                             <h2 class="text-lg font-semibold text-text-primary">Memory Usage</h2>
                         </div>
 
-                        <div id="dash-memory">
-                            {% if realtime and realtime.memory %}
-                            {% set mem = realtime.memory %}
-                            <div class="space-y-2">
-                                <div>
-                                    <div class="flex justify-between text-xs mb-1">
-                                        <span class="text-text-secondary">Used</span>
-                                        <span class="text-text-primary font-medium">{{ mem.used_human }} ({{ mem.used_percent }}%)</span>
-                                    </div>
-                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
-                                        <div class="bg-primary-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.used_percent }}%"></div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div class="flex justify-between text-xs mb-1">
-                                        <span class="text-text-secondary">Buff/Cache</span>
-                                        <span class="text-text-primary font-medium">{{ mem.buff_cache_human }} ({{ mem.buff_cache_percent }}%)</span>
-                                    </div>
-                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
-                                        <div class="bg-warning-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.buff_cache_percent }}%"></div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div class="flex justify-between text-xs mb-1">
-                                        <span class="text-text-secondary">Available</span>
-                                        <span class="text-text-primary font-medium">{{ mem.available_human }} ({{ mem.available_percent }}%)</span>
-                                    </div>
-                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
-                                        <div class="bg-success-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.available_percent }}%"></div>
-                                    </div>
-                                </div>
+                        <!-- Async load: memory -->
+                        <div hx-get="/memory-data"
+                             hx-trigger="load"
+                             hx-swap="innerHTML">
+                            <div class="flex items-center justify-center py-6">
+                                <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="ml-2 text-sm text-text-tertiary">Loading memory...</span>
                             </div>
+<<<<<<< HEAD
                             <div class="mt-1 text-xs text-text-tertiary text-center">Total: {{ mem.total_human }}</div>
 >>>>>>> 95d006b (add new dashboard)
                             {% endif %}
+=======
+>>>>>>> 6336018 (set dashboard to load async)
                         </div>
                     </div>
                 </div>
 
-                <!-- System Load (refreshes every 60s) -->
+                <!-- System Load -->
                 <div class="card animate-fade-in" style="animation-delay: 0.15s;">
                     <div class="card-body">
                         <div class="flex items-center gap-3 mb-3">
@@ -233,22 +193,18 @@
                             <h2 class="text-lg font-semibold text-text-primary">System Load</h2>
                         </div>
 
-                        <div id="dash-load">
-                            {% if realtime and realtime.system_load %}
-                            {% set load = realtime.system_load %}
-                            <div class="space-y-2">
-                                {% for label, value, pct in [('1 min', load.load_1m, load.load_1m_pct), ('5 min', load.load_5m, load.load_5m_pct), ('15 min', load.load_15m, load.load_15m_pct)] %}
-                                <div>
-                                    <div class="flex justify-between text-xs mb-1">
-                                        <span class="text-text-secondary">{{ label }}</span>
-                                        <span class="text-text-primary font-medium">{{ value }} ({{ pct }}%)</span>
-                                    </div>
-                                    <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
-                                        <div class="{% if pct > 80 %}bg-danger-500{% elif pct > 50 %}bg-warning-500{% else %}bg-success-500{% endif %} h-full rounded-full transition-all duration-500" style="width: {{ pct }}%"></div>
-                                    </div>
-                                </div>
-                                {% endfor %}
+                        <!-- Async load: system load + tasks -->
+                        <div hx-get="/system-load-data"
+                             hx-trigger="load"
+                             hx-swap="innerHTML">
+                            <div class="flex items-center justify-center py-6">
+                                <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="ml-2 text-sm text-text-tertiary">Loading system load...</span>
                             </div>
+<<<<<<< HEAD
                             {% endif %}
                         </div>
 
@@ -268,12 +224,14 @@
                             </div>
 >>>>>>> 95d006b (add new dashboard)
                             {% endif %}
+=======
+>>>>>>> 6336018 (set dashboard to load async)
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Column 3: CPU Time Distribution (refreshes every 60s + manual button) -->
+            <!-- Column 3: CPU Time Distribution -->
             <div class="card animate-fade-in" style="animation-delay: 0.2s;">
                 <div class="card-body">
                     <div class="flex items-center gap-3 mb-4">
@@ -299,32 +257,17 @@
                         </svg>
                     </div>
 
-                    <div id="dash-cpu">
-                        {% if realtime and realtime.cpu_pct %}
-                        {% set cpu = realtime.cpu_pct %}
-                        <div class="space-y-2">
-                            {% for key, label, desc, color in [
-                                ('user', 'User', 'Non-kernel code', 'bg-primary-500'),
-                                ('system', 'System', 'Kernel processes', 'bg-info-500'),
-                                ('nice', 'Nice', 'Low-priority procs', 'bg-purple-500'),
-                                ('iowait', 'IO Wait', 'Disk I/O wait', 'bg-warning-500'),
-                                ('irq', 'HW IRQ', 'Hardware interrupts', 'bg-danger-500'),
-                                ('softirq', 'SW IRQ', 'Software interrupts', 'bg-pink-500'),
-                                ('steal', 'Steal', 'Hypervisor stolen', 'bg-orange-500'),
-                                ('idle', 'Idle', 'Waiting for work', 'bg-success-500'),
-                            ] %}
-                            <div>
-                                <div class="flex justify-between text-xs mb-1">
-                                    <span class="text-text-secondary" title="{{ desc }}">{{ label }} <span class="text-text-tertiary">({{ key[:2] }})</span></span>
-                                    <span class="text-text-primary font-medium">{{ "%.1f"|format(cpu[key]) }}%</span>
-                                </div>
-                                <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
-                                    <div class="{{ color }} h-full rounded-full transition-all duration-500" style="width: {{ cpu[key] }}%"></div>
-                                </div>
-                            </div>
-                            {% endfor %}
+                    <!-- Async load: CPU time -->
+                    <div hx-get="/cpu-time-data"
+                         hx-trigger="load"
+                         hx-swap="innerHTML">
+                        <div class="flex items-center justify-center py-8">
+                            <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="ml-2 text-sm text-text-tertiary">Loading CPU stats...</span>
                         </div>
-                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -358,8 +301,18 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </div>
-                <div id="zfs-pools-content">
-                    {% include "dashboard/zfs_pools.jinja" %}
+                <!-- Async load: ZFS pools -->
+                <div id="zfs-pools-content"
+                     hx-get="/zfs-pools-refresh"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <div class="flex items-center justify-center py-8">
+                        <svg class="w-6 h-6 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="ml-2 text-sm text-text-tertiary">Loading pool information...</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -393,11 +346,18 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </div>
+                <!-- Async load: ARC stats (also refreshes every 5 min) -->
                 <div id="arc-stats-content"
                      hx-get="/arc-stats-refresh"
-                     hx-trigger="every 300s"
+                     hx-trigger="load, every 300s"
                      hx-swap="innerHTML">
-                    {% include "dashboard/arc_stats_data.jinja" %}
+                    <div class="flex items-center justify-center py-8">
+                        <svg class="w-6 h-6 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="ml-2 text-sm text-text-tertiary">Loading ARC statistics...</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -430,20 +390,27 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </div>
+                <!-- Async load: scrub status (also refreshes every 5 min) -->
                 <div id="scrub-status-content"
                      hx-get="/scrub-status-refresh"
-                     hx-trigger="every 300s"
+                     hx-trigger="load, every 300s"
                      hx-swap="innerHTML">
-                    {% include "dashboard/scrub_status_data.jinja" %}
+                    <div class="flex items-center justify-center py-8">
+                        <svg class="w-6 h-6 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="ml-2 text-sm text-text-tertiary">Loading scrub status...</span>
+                    </div>
                 </div>
             </div>
         </div>
 
     </div>
 
-    {# Memory refreshes every 15 seconds #}
+    {# Memory refreshes every 15 seconds via OOB swap #}
     <div hx-get="/realtime-data" hx-trigger="every 15s" hx-swap="none"></div>
 
-    {# System stats (uptime, tasks, load, CPU) refresh every 60 seconds #}
+    {# System stats (uptime, tasks, load, CPU) refresh every 60 seconds via OOB swap #}
     <div hx-get="/system-stats-refresh" hx-trigger="every 60s" hx-swap="none"></div>
 {% endblock %}
