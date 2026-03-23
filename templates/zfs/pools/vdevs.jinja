@@ -1340,6 +1340,28 @@ function escAttr(str) {
 }
 
 // ==================== Warning Acknowledgment ====================
+var ACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+var ACK_STORAGE_KEY = 'vdev-warning-ack-' + poolName;
+
+function isAckValid() {
+    try {
+        var stored = sessionStorage.getItem(ACK_STORAGE_KEY);
+        if (!stored) return false;
+        var ackTime = parseInt(stored, 10);
+        if (isNaN(ackTime)) return false;
+        return (Date.now() - ackTime) < ACK_TIMEOUT_MS;
+    } catch (e) {
+        return false;
+    }
+}
+
+function dismissWarningAndLoad() {
+    document.getElementById('vdev-warning-banner').style.display = 'none';
+    document.getElementById('vdev-locked-overlay').style.display = 'none';
+    document.getElementById('vdev-page-content').style.display = 'block';
+    loadPageData();
+}
+
 async function acknowledgeWarning() {
     var btn = document.getElementById('btn-acknowledge');
     btn.disabled = true;
@@ -1351,16 +1373,20 @@ async function acknowledgeWarning() {
         console.error('Failed to log acknowledgment:', err);
     }
 
-    // Hide the warning banner and locked overlay
-    document.getElementById('vdev-warning-banner').style.display = 'none';
-    document.getElementById('vdev-locked-overlay').style.display = 'none';
+    // Store acknowledgment timestamp (5-minute timeout)
+    try {
+        sessionStorage.setItem(ACK_STORAGE_KEY, String(Date.now()));
+    } catch (e) {
+        // sessionStorage may be unavailable; proceed anyway
+    }
 
-    // Show the page content and begin loading data
-    document.getElementById('vdev-page-content').style.display = 'block';
-    loadPageData();
+    dismissWarningAndLoad();
 }
 
 // ==================== Init ====================
-// Page data loads only after user acknowledges the warning
+// If the user acknowledged within the last 5 minutes, skip the warning
+if (isAckValid()) {
+    dismissWarningAndLoad();
+}
 </script>
 {% endblock %}
