@@ -95,7 +95,6 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
                                 </svg>
                             </div>
-<<<<<<< HEAD
                             <h2 class="text-xl font-semibold text-text-primary">Memory Information</h2>
                             <button type="button"
                                     class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
@@ -113,32 +112,18 @@
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                         </div>
-                        <div id="memory-content">
-                            {% if memory %}
-                                {% with data=memory %}
-                                    {% include "dashboard/table.jinja" %}
-                                {% endwith %}
-=======
-                            <h2 class="text-lg font-semibold text-text-primary">Memory Usage</h2>
-                        </div>
-
-                        <!-- Async load: memory -->
-                        <div hx-get="/memory-data"
+                        <!-- Async load: memory info -->
+                        <div id="memory-content"
+                             hx-get="/memory-data"
                              hx-trigger="load"
                              hx-swap="innerHTML">
-                            <div class="flex items-center justify-center py-6">
+                            <div class="flex items-center justify-center py-4">
                                 <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
-                                <span class="ml-2 text-sm text-text-tertiary">Loading memory...</span>
+                                <span class="ml-2 text-sm text-text-tertiary">Loading memory info...</span>
                             </div>
-<<<<<<< HEAD
-                            <div class="mt-1 text-xs text-text-tertiary text-center">Total: {{ mem.total_human }}</div>
->>>>>>> 95d006b (add new dashboard)
-                            {% endif %}
-=======
->>>>>>> 6336018 (set dashboard to load async)
                         </div>
                     </div>
                 </div>
@@ -152,7 +137,6 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                                 </svg>
                             </div>
-<<<<<<< HEAD
                             <h2 class="text-xl font-semibold text-text-primary">System Load</h2>
                             <button type="button"
                                     class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
@@ -170,62 +154,18 @@
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                         </div>
-                        <div id="system-load-content">
-                            {% if system_load %}
-                                <div class="overflow-x-auto"
-                                     hx-get="/system-load-values"
-                                     hx-trigger="every 1s"
-                                     hx-swap="none">
-                                    <table class="min-w-full">
-                                        <tbody>
-                                            {% for key, value in system_load.items() %}
-                                            <tr>
-                                                <td class="px-4 py-2 text-sm text-text-secondary">{{ key }}</td>
-                                                <td class="px-4 py-2 text-sm font-medium text-text-primary">
-                                                    <span id="system-load-{{ loop.index }}">{{ value }}</span>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-=======
-                            <h2 class="text-lg font-semibold text-text-primary">System Load</h2>
-                        </div>
-
-                        <!-- Async load: system load + tasks -->
-                        <div hx-get="/system-load-data"
+                        <!-- Async load: system load -->
+                        <div id="system-load-content"
+                             hx-get="/system-load-data"
                              hx-trigger="load"
                              hx-swap="innerHTML">
-                            <div class="flex items-center justify-center py-6">
+                            <div class="flex items-center justify-center py-4">
                                 <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
                                 <span class="ml-2 text-sm text-text-tertiary">Loading system load...</span>
                             </div>
-<<<<<<< HEAD
-                            {% endif %}
-                        </div>
-
-                        <!-- Tasks (updated via OOB every 60s) -->
-                        <div id="dash-tasks" class="mt-2 pt-2 border-t border-border-subtle">
-                            {% if realtime and realtime.tasks %}
-                            <div class="text-xs text-text-secondary">
-                                <span class="font-medium text-text-primary">{{ realtime.tasks.total }}</span> tasks:
-                                <span class="text-success-400">{{ realtime.tasks.running }} run</span>,
-                                <span>{{ realtime.tasks.sleeping }} sleep</span>,
-                                <span>{{ realtime.tasks.stopped }} stop</span>,
-                                <span class="{% if realtime.tasks.zombie > 0 %}text-danger-400{% endif %}">{{ realtime.tasks.zombie }} zombie</span>
-                                {% if realtime.system_load %}
-                                / <span class="font-medium text-text-primary">{{ realtime.tasks.threads }}</span> threads
-                                ({{ realtime.system_load.cpu_count }} CPUs)
-                                {% endif %}
-                            </div>
->>>>>>> 95d006b (add new dashboard)
-                            {% endif %}
-=======
->>>>>>> 6336018 (set dashboard to load async)
                         </div>
                     </div>
                 </div>

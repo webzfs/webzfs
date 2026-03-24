@@ -629,7 +629,7 @@ def get_scrub_status_all() -> dict[str, Any]:
 
 def get_memory_stats() -> dict[str, Any]:
     """Public function to get memory statistics."""
-    return _get_memory_info()
+    return get_realtime_system_data()['memory']
 
 
 def get_system_load_stats() -> dict[str, Any]:

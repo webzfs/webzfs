@@ -122,31 +122,31 @@ def realtime_data(request: Request):
     )
 
 
-@router.get("/memory-refresh")
+@router.get("/memory-refresh", response_class=HTMLResponse)
 def memory_refresh(request: Request):
     """Return refreshed memory information."""
     try:
-        memory = get_memory_stats()
-        context = {"data": memory}
+        realtime = get_realtime_system_data()
+        context = {"realtime": realtime}
     except Exception as exc:
-        context = {"data": {"Error": str(exc)}}
+        context = {"error": str(exc), "realtime": {}}
 
     return templates.TemplateResponse(
-        request, name="dashboard/table.jinja", context=context
+        request, name="dashboard/memory_data.jinja", context=context,
     )
 
 
-@router.get("/system-load-refresh")
+@router.get("/system-load-refresh", response_class=HTMLResponse)
 def system_load_refresh(request: Request):
     """Return refreshed system load information."""
     try:
-        system_load = get_system_load_stats()
-        context = {"system_load": system_load}
+        realtime = get_realtime_system_data()
+        context = {"realtime": realtime}
     except Exception as exc:
-        context = {"system_load": {"Error": str(exc)}}
+        context = {"error": str(exc), "realtime": {}}
 
     return templates.TemplateResponse(
-        request, name="dashboard/system_load_table.jinja", context=context
+        request, name="dashboard/system_load_data.jinja", context=context,
     )
 
 
