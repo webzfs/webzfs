@@ -48,6 +48,9 @@ class DiskUtilsService:
         # Get system disks (OS/swap) that should be excluded
         system_disks = self._get_system_disks_linux()
         
+        # Get disk sizes in bytes for size comparison (e.g., spare validation)
+        disk_sizes_bytes = self._get_disk_sizes_bytes_linux()
+        
         try:
             # Get disk list using lsblk (works on Linux)
             result = subprocess.run(
@@ -81,6 +84,7 @@ class DiskUtilsService:
                         'name': name,
                         'device_path': f'/dev/{name}',
                         'size': size,
+                        'size_bytes': disk_sizes_bytes.get(name, 0),
                         'model': model,
                         'type': disk_type,
                         'in_use': in_use or is_system_disk,  # Mark system disks as in use
@@ -180,6 +184,7 @@ class DiskUtilsService:
                 'name': disk_name,
                 'device_path': f'/dev/{disk_name}',
                 'size': 'Unknown',
+                'size_bytes': 0,
                 'model': 'Unknown',
                 'type': 'HDD',
                 'in_use': False,
@@ -195,6 +200,10 @@ class DiskUtilsService:
                     match = re.search(r'\(([^)]+)\)', line)
                     if match:
                         disk_info['size'] = match.group(1)
+                    # Extract raw bytes for size comparison
+                    bytes_match = re.search(r'Mediasize:\s*(\d+)', line)
+                    if bytes_match:
+                        disk_info['size_bytes'] = int(bytes_match.group(1))
                 
                 elif line.startswith('descr:'):
                     disk_info['model'] = line.split(':', 1)[1].strip()
@@ -294,6 +303,7 @@ class DiskUtilsService:
             'name': disk_name,
             'device_path': f'/dev/{disk_name}',
             'size': 'Unknown',
+            'size_bytes': 0,
             'model': 'Unknown',
             'type': 'HDD',
             'in_use': False,
@@ -335,6 +345,7 @@ class DiskUtilsService:
                             # Assume 512 byte sectors
                             size_bytes = sectors * 512
                             disk_info['size'] = self._format_size(size_bytes)
+                            disk_info['size_bytes'] = size_bytes
                     
                     # Try to get disk type/model from label
                     elif line.startswith('disk:') or line.startswith('label:'):
@@ -1300,6 +1311,10 @@ class DiskUtilsService:
                 match = re.search(r'\(([^)]+)\)', line)
                 if match:
                     current_disk['size'] = match.group(1)
+                # Extract raw bytes for size comparison
+                bytes_match = re.search(r'Mediasize:\s*(\d+)', line)
+                if bytes_match:
+                    current_disk['size_bytes'] = int(bytes_match.group(1))
             elif line.startswith('descr:') and current_disk:
                 current_disk['model'] = line.split(':', 1)[1].strip()
             elif line.startswith('ident:') and current_disk:
@@ -1314,12 +1329,193 @@ class DiskUtilsService:
         for disk in disks:
             disk.setdefault('device_path', f'/dev/{disk["name"]}')
             disk.setdefault('size', 'Unknown')
+            disk.setdefault('size_bytes', 0)
             disk.setdefault('model', 'Unknown')
             disk.setdefault('type', 'HDD')
             disk['in_use'] = self._is_disk_in_use(disk['name'])
             disk['exported'] = False
         
         return disks
+    
+    def _get_disk_sizes_bytes_linux(self) -> Dict[str, int]:
+        """
+        Get disk sizes in bytes for all disks on Linux using lsblk.
+        
+        Returns:
+            Dictionary mapping disk name to size in bytes
+        """
+        sizes = {}
+        try:
+            result = subprocess.run(
+                ['lsblk', '-d', '-n', '-b', '-o', 'NAME,SIZE'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        sizes[parts[0]] = int(parts[1])
+                    except ValueError:
+                        pass
+        except subprocess.CalledProcessError:
+            pass
+        return sizes
+    
+    def get_device_size_bytes(self, device_path: str) -> Optional[int]:
+        """
+        Get the size of a specific block device in bytes.
+        
+        Works cross-platform: uses blockdev on Linux, diskinfo on FreeBSD,
+        and disklabel on NetBSD.
+        
+        Args:
+            device_path: Full path to device (e.g., /dev/sda)
+            
+        Returns:
+            Size in bytes, or None if unable to determine
+        """
+        if is_freebsd():
+            return self._get_device_size_bytes_freebsd(device_path)
+        elif is_netbsd():
+            return self._get_device_size_bytes_netbsd(device_path)
+        else:
+            return self._get_device_size_bytes_linux(device_path)
+    
+    def _get_device_size_bytes_linux(self, device_path: str) -> Optional[int]:
+        """Get device size in bytes on Linux using blockdev.
+        Handles direct paths, simple names, and disk-by-id identifiers."""
+        # Resolve the path first (handles by-id, by-uuid, symlinks, etc.)
+        resolved = self.resolve_device_path(device_path)
+        if resolved:
+            device_path = resolved
+        try:
+            result = run_privileged_command(
+                ['blockdev', '--getsize64', device_path],
+                timeout=10
+            )
+            return int(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError, subprocess.TimeoutExpired):
+            return None
+    
+    def _get_device_size_bytes_freebsd(self, device_path: str) -> Optional[int]:
+        """Get device size in bytes on FreeBSD using diskinfo"""
+        try:
+            result = subprocess.run(
+                ['diskinfo', device_path],
+                capture_output=True, text=True, check=True
+            )
+            # diskinfo output: device sectorsize mediasize sectorcount
+            parts = result.stdout.strip().split()
+            if len(parts) >= 3:
+                return int(parts[2])
+        except (subprocess.CalledProcessError, ValueError, IndexError):
+            pass
+        return None
+    
+    def _get_device_size_bytes_netbsd(self, device_path: str) -> Optional[int]:
+        """Get device size in bytes on NetBSD using disklabel"""
+        disk_name = device_path.replace('/dev/', '')
+        try:
+            result = subprocess.run(
+                ['disklabel', '-r', disk_name],
+                capture_output=True, text=True, check=False
+            )
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'total sectors:' in line.lower():
+                        match = re.search(r'total sectors:\s*(\d+)', line, re.IGNORECASE)
+                        if match:
+                            return int(match.group(1)) * 512
+        except (subprocess.CalledProcessError, ValueError):
+            pass
+        return None
+    
+    @staticmethod
+    def parse_size_string_to_bytes(size_str: str) -> Optional[int]:
+        """
+        Parse a human-readable size string to bytes.
+        
+        Handles formats like: 500G, 1.8T, 931.5G, 100M, 2T
+        
+        Args:
+            size_str: Human-readable size string
+            
+        Returns:
+            Size in bytes, or None if parsing fails
+        """
+        if not size_str:
+            return None
+        
+        size_str = size_str.strip().upper()
+        
+        multipliers = {
+            'B': 1,
+            'K': 1024,
+            'M': 1024 ** 2,
+            'G': 1024 ** 3,
+            'T': 1024 ** 4,
+            'P': 1024 ** 5,
+            'E': 1024 ** 6,
+        }
+        
+        match = re.match(r'^([\d.]+)\s*([BKMGTPE])?$', size_str)
+        if not match:
+            return None
+        
+        value = float(match.group(1))
+        unit = match.group(2) or 'B'
+        
+        return int(value * multipliers.get(unit, 1))
+    
+    def resolve_device_path(self, device_identifier: str) -> Optional[str]:
+        """
+        Resolve a device identifier to its real /dev/ path.
+        
+        Handles:
+          - Full paths: /dev/sda -> /dev/sda (resolved via realpath)
+          - Simple names: sda -> /dev/sda
+          - Disk-by-id: nvme-VENDOR_MODEL_SERIAL -> /dev/nvme0n1
+          - Partition by-id: nvme-VENDOR-part1 -> /dev/nvme0n1p1
+        
+        Args:
+            device_identifier: Device name, by-id string, or full path
+            
+        Returns:
+            Resolved real device path, or None if unable to resolve
+        """
+        if not device_identifier:
+            return None
+        
+        # Already a full path -- resolve symlinks
+        if device_identifier.startswith('/'):
+            try:
+                real = os.path.realpath(device_identifier)
+                if os.path.exists(real):
+                    return real
+            except Exception:
+                pass
+            return device_identifier if os.path.exists(device_identifier) else None
+        
+        # Simple device name (sda, nvme0n1, etc.)
+        simple_path = f'/dev/{device_identifier}'
+        if os.path.exists(simple_path):
+            return simple_path
+        
+        # Try disk-by-id resolution (Linux)
+        by_id_dirs = ['/dev/disk/by-id', '/dev/disk/by-path', '/dev/disk/by-uuid']
+        for by_dir in by_id_dirs:
+            candidate = os.path.join(by_dir, device_identifier)
+            if os.path.exists(candidate):
+                try:
+                    return os.path.realpath(candidate)
+                except Exception:
+                    pass
+        
+        return None
     
     def get_disk_info(self, device_path: str) -> Optional[Dict[str, Any]]:
         """

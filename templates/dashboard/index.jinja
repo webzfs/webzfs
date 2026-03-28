@@ -84,12 +84,29 @@
                                 </svg>
                             </div>
                             <h2 class="text-xl font-semibold text-text-primary">Memory Information</h2>
+                            <button type="button"
+                                    class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
+                                    hx-get="/memory-refresh"
+                                    hx-target="#memory-content"
+                                    hx-swap="innerHTML"
+                                    hx-indicator="#memory-spinner"
+                                    title="Refresh memory information">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                            </button>
+                            <svg id="memory-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
                         </div>
-                        {% if memory %}
-                            {% with data=memory %}
-                                {% include "dashboard/table.jinja" %}
-                            {% endwith %}
-                        {% endif %}
+                        <div id="memory-content">
+                            {% if memory %}
+                                {% with data=memory %}
+                                    {% include "dashboard/table.jinja" %}
+                                {% endwith %}
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
 
@@ -104,30 +121,43 @@
                                 </svg>
                             </div>
                             <h2 class="text-xl font-semibold text-text-primary">System Load</h2>
-                            <svg class="w-4 h-4 text-text-tertiary htmx-indicator ml-auto animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <button type="button"
+                                    class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
+                                    hx-get="/system-load-refresh"
+                                    hx-target="#system-load-content"
+                                    hx-swap="innerHTML"
+                                    hx-indicator="#system-load-spinner"
+                                    title="Refresh system load">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                            </button>
+                            <svg id="system-load-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                         </div>
-                        {% if system_load %}
-                            <div class="overflow-x-auto"
-                                 hx-get="/system-load-values"
-                                 hx-trigger="every 1s"
-                                 hx-swap="none">
-                                <table class="min-w-full">
-                                    <tbody>
-                                        {% for key, value in system_load.items() %}
-                                        <tr>
-                                            <td class="px-4 py-2 text-sm text-text-secondary">{{ key }}</td>
-                                            <td class="px-4 py-2 text-sm font-medium text-text-primary">
-                                                <span id="system-load-{{ loop.index }}">{{ value }}</span>
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        {% endif %}
+                        <div id="system-load-content">
+                            {% if system_load %}
+                                <div class="overflow-x-auto"
+                                     hx-get="/system-load-values"
+                                     hx-trigger="every 1s"
+                                     hx-swap="none">
+                                    <table class="min-w-full">
+                                        <tbody>
+                                            {% for key, value in system_load.items() %}
+                                            <tr>
+                                                <td class="px-4 py-2 text-sm text-text-secondary">{{ key }}</td>
+                                                <td class="px-4 py-2 text-sm font-medium text-text-primary">
+                                                    <span id="system-load-{{ loop.index }}">{{ value }}</span>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>

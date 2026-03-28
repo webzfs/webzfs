@@ -70,22 +70,36 @@
 
 {% else %}
 <!-- Completed: full report content (no polling) -->
+<div x-data="{ filter: 'all', poolTopology: true, diskHealth: true, smartTest: true, scrubStatus: true }">
 
 <!-- Summary Cards -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+{% set total_disks = (report.summary.healthy_disks | default(0)) + (report.summary.warning_disks | default(0)) + (report.summary.critical_disks | default(0)) %}
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
     <div class="card p-4 text-center">
         <div class="text-2xl font-bold text-text-primary">{{ report.summary.total_pools | default(0) }}</div>
         <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Pools</div>
     </div>
-    <div class="card p-4 text-center">
+    <div class="card p-4 text-center cursor-pointer hover:ring-2 hover:ring-primary-500/50 transition-all"
+         :class="filter === 'all' ? 'ring-2 ring-primary-500' : ''"
+         @click="filter = 'all'; diskHealth = true">
+        <div class="text-2xl font-bold text-primary-400">{{ total_disks }}</div>
+        <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Total Disks</div>
+    </div>
+    <div class="card p-4 text-center cursor-pointer hover:ring-2 hover:ring-success-500/50 transition-all"
+         :class="filter === 'healthy' ? 'ring-2 ring-success-500' : ''"
+         @click="filter = 'healthy'; diskHealth = true; poolTopology = false; smartTest = false; scrubStatus = false">
         <div class="text-2xl font-bold text-success-400">{{ report.summary.healthy_disks | default(0) }}</div>
         <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Healthy Disks</div>
     </div>
-    <div class="card p-4 text-center">
+    <div class="card p-4 text-center cursor-pointer hover:ring-2 hover:ring-warning-500/50 transition-all"
+         :class="filter === 'warning' ? 'ring-2 ring-warning-500' : ''"
+         @click="filter = 'warning'; diskHealth = true; poolTopology = false; smartTest = false; scrubStatus = false">
         <div class="text-2xl font-bold text-warning-400">{{ report.summary.warning_disks | default(0) }}</div>
         <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Warning Disks</div>
     </div>
-    <div class="card p-4 text-center">
+    <div class="card p-4 text-center cursor-pointer hover:ring-2 hover:ring-danger-500/50 transition-all"
+         :class="filter === 'critical' ? 'ring-2 ring-danger-500' : ''"
+         @click="filter = 'critical'; diskHealth = true; poolTopology = false; smartTest = false; scrubStatus = false">
         <div class="text-2xl font-bold text-danger-400">{{ report.summary.critical_disks | default(0) }}</div>
         <div class="text-xs text-text-tertiary uppercase tracking-wider mt-1">Critical Disks</div>
     </div>
@@ -94,14 +108,23 @@
 <!-- Pool Topology Section -->
 {% if report.pools and report.pools | length > 0 %}
 <div class="mb-8">
-    <h2 class="text-xl font-bold text-text-primary mb-4">Pool Topology</h2>
+    <button type="button" @click="poolTopology = !poolTopology" class="flex items-center gap-2 w-full text-left mb-4 group">
+        <svg class="w-5 h-5 text-text-tertiary transition-transform" :class="poolTopology ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+        <h2 class="text-xl font-bold text-text-primary group-hover:text-primary-400 transition-colors">Pool Topology</h2>
+    </button>
+    <div x-show="poolTopology" x-transition>
     <p class="text-text-tertiary text-xs mb-4">Note: Pool creation date does not equate 1:1 with the age of individual disks.</p>
 
     {% for pool in report.pools %}
-    <div class="card mb-4">
+    <div class="card mb-4" x-data="{ poolOpen: true }">
         <div class="card-body p-4">
-            <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center justify-between cursor-pointer" @click="poolOpen = !poolOpen" :class="poolOpen ? 'mb-4' : ''">
                 <div class="flex items-center gap-3">
+                    <svg class="w-4 h-4 text-text-tertiary transition-transform" :class="poolOpen ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
                     <h3 class="text-lg font-semibold text-text-primary">{{ pool.name }}</h3>
                     {% if pool.health == 'ONLINE' %}
                     <span class="px-2 py-0.5 rounded text-xs font-semibold bg-success-900/50 text-success-400 border border-success-500/30">ONLINE</span>
@@ -119,6 +142,7 @@
                 </div>
             </div>
 
+            <div x-show="poolOpen" x-transition>
             <!-- Pool Errors Summary -->
             {% if pool.errors and (pool.errors.read > 0 or pool.errors.write > 0 or pool.errors.checksum > 0) %}
             <div class="bg-danger-900/20 border border-danger-500/30 rounded-lg p-3 mb-4">
@@ -215,6 +239,7 @@
                 {% endfor %}
             </div>
             {% endif %}
+            </div>
         </div>
     </div>
     {% endfor %}
@@ -249,17 +274,28 @@
             </div>
         </div>
     </div>
+    </div>{# close x-transition #}
 </div>
 {% endif %}
 
 <!-- Disk Health Section -->
 {% if report.disks and report.disks | length > 0 %}
 <div class="mb-8">
-    <h2 class="text-xl font-bold text-text-primary mb-4">Disk Health Details</h2>
+    <button type="button" @click="diskHealth = !diskHealth" class="flex items-center gap-2 w-full text-left mb-4 group">
+        <svg class="w-5 h-5 text-text-tertiary transition-transform" :class="diskHealth ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+        <h2 class="text-xl font-bold text-text-primary group-hover:text-primary-400 transition-colors">Disk Health Details</h2>
+        <span x-show="filter !== 'all'" class="text-sm text-primary-400 ml-2" x-text="'(showing ' + filter + ' only)'"></span>
+    </button>
+    <div x-show="diskHealth" x-transition>
     <div class="space-y-4">
         {% for disk in report.disks %}
-        {% include "utils/health/_disk_card.jinja" %}
+        <div x-show="filter === 'all' || filter === '{{ disk.overall_status }}'">
+            {% include "utils/health/_disk_card.jinja" %}
+        </div>
         {% endfor %}
+    </div>
     </div>
 </div>
 {% endif %}
@@ -267,7 +303,13 @@
 <!-- SMART Test Status Section -->
 {% if report.smart_test_status %}
 <div class="mb-8">
-    <h2 class="text-xl font-bold text-text-primary mb-4">SMART Test Status</h2>
+    <button type="button" @click="smartTest = !smartTest" class="flex items-center gap-2 w-full text-left mb-4 group">
+        <svg class="w-5 h-5 text-text-tertiary transition-transform" :class="smartTest ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+        <h2 class="text-xl font-bold text-text-primary group-hover:text-primary-400 transition-colors">SMART Test Status</h2>
+    </button>
+    <div x-show="smartTest" x-transition>
     <div class="card">
         <div class="card-body p-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -327,13 +369,20 @@
             {% endif %}
         </div>
     </div>
+    </div>{# close x-transition smartTest #}
 </div>
 {% endif %}
 
 <!-- Scrub Status Section -->
 {% if report.scrub_status %}
 <div class="mb-8">
-    <h2 class="text-xl font-bold text-text-primary mb-4">Scrub Status</h2>
+    <button type="button" @click="scrubStatus = !scrubStatus" class="flex items-center gap-2 w-full text-left mb-4 group">
+        <svg class="w-5 h-5 text-text-tertiary transition-transform" :class="scrubStatus ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+        <h2 class="text-xl font-bold text-text-primary group-hover:text-primary-400 transition-colors">Scrub Status</h2>
+    </button>
+    <div x-show="scrubStatus" x-transition>
     <div class="card">
         <div class="card-body p-4">
             <div class="flex items-center gap-3 mb-4">
@@ -386,7 +435,9 @@
             {% endif %}
         </div>
     </div>
+    </div>{# close x-transition scrubStatus #}
 </div>
 {% endif %}
 
+</div>{# close x-data #}
 {% endif %}
