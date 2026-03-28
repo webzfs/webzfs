@@ -446,19 +446,27 @@
                     <div class="mt-4">
                         <button type="button" class="btn-success inline-flex items-center gap-2"
 <<<<<<< HEAD
+<<<<<<< HEAD
                                 onclick="validateAndShowAddVdev()">
 =======
                                 onclick="showConfirm('confirm-add-vdev')">
 >>>>>>> 7fb748f (add vdev management)
+=======
+                                onclick="validateAndShowAddVdev()">
+>>>>>>> 67d3b49 (set min size for spare)
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                             </svg>
                             Add Auxiliary VDev
                         </button>
 <<<<<<< HEAD
+<<<<<<< HEAD
                         <div id="add-vdev-validation-error" class="hidden mt-2 p-2 rounded bg-danger-500/10 border border-danger-500/30 text-danger-300 text-sm"></div>
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+                        <div id="add-vdev-validation-error" class="hidden mt-2 p-2 rounded bg-danger-500/10 border border-danger-500/30 text-danger-300 text-sm"></div>
+>>>>>>> 67d3b49 (set min size for spare)
                     </div>
                 </form>
             </div>
@@ -1201,6 +1209,9 @@ function applyPoolTypeConstraints(topology) {
 
 // ==================== Auxiliary VDev Helpers ====================
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 67d3b49 (set min size for spare)
 
 function formatBytesHuman(bytes) {
     if (!bytes || bytes <= 0) return '';
@@ -1315,8 +1326,11 @@ function refreshAddVdevDisks() {
     }
 }
 
+<<<<<<< HEAD
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+>>>>>>> 67d3b49 (set min size for spare)
 function updateAuxLayoutOptions() {
     var typeSelect = document.getElementById('add-vdev-type');
     var layoutSection = document.getElementById('aux-layout-section');
@@ -1382,11 +1396,17 @@ function updateAuxLayoutOptions() {
         hint.textContent = 'Dedup vdevs should match the redundancy of the pool (raidz1/2/3 or mirror depth). ZFS handles device allocation internally. A single disk is allowed but not recommended.';
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 
     // Refresh the Add VDev disk list (filters undersized disks when spare is selected)
     refreshAddVdevDisks();
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+
+    // Refresh the Add VDev disk list (filters undersized disks when spare is selected)
+    refreshAddVdevDisks();
+>>>>>>> 67d3b49 (set min size for spare)
 }
 
 function renderRemovableVdevs(topology) {

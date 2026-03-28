@@ -891,6 +891,7 @@ async def vdev_management_data(request: Request, pool_name: str):
         available_disks = disk_service.get_available_disks()
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         # Build disk size lookup for min-size calculation
         disk_size_lookup = {}
         all_disks = []
@@ -903,14 +904,27 @@ async def vdev_management_data(request: Request, pool_name: str):
         all_disks = []
         for disk in available_disks:
 >>>>>>> 7fb748f (add vdev management)
+=======
+        # Build disk size lookup for min-size calculation
+        disk_size_lookup = {}
+        all_disks = []
+        for disk in available_disks:
+            size_bytes = disk.get('size_bytes', 0)
+            disk_size_lookup[disk.get('name', '')] = size_bytes
+            disk_size_lookup[disk.get('device_path', '')] = size_bytes
+>>>>>>> 67d3b49 (set min size for spare)
             all_disks.append({
                 'name': disk.get('name', ''),
                 'device_path': disk.get('device_path', ''),
                 'size': disk.get('size', ''),
 <<<<<<< HEAD
+<<<<<<< HEAD
                 'size_bytes': size_bytes,
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+                'size_bytes': size_bytes,
+>>>>>>> 67d3b49 (set min size for spare)
                 'model': disk.get('model', 'Unknown'),
                 'type': disk.get('type', 'HDD'),
                 'in_use': disk.get('in_use', False),
@@ -919,11 +933,17 @@ async def vdev_management_data(request: Request, pool_name: str):
             })
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         # Compute minimum data device size for spare validation
         min_data_device_size = _get_min_data_device_size(topology, disk_size_lookup)
 
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+        # Compute minimum data device size for spare validation
+        min_data_device_size = _get_min_data_device_size(topology, disk_size_lookup)
+
+>>>>>>> 67d3b49 (set min size for spare)
         # Build list of devices currently in the pool topology
         pool_devices = []
         for section in ['data_vdevs', 'log_vdevs', 'cache_vdevs',
@@ -951,9 +971,13 @@ async def vdev_management_data(request: Request, pool_name: str):
             "all_disks": all_disks,
             "pool_devices": pool_devices,
 <<<<<<< HEAD
+<<<<<<< HEAD
             "min_data_device_size": min_data_device_size,
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+            "min_data_device_size": min_data_device_size,
+>>>>>>> 67d3b49 (set min size for spare)
         })
     except Exception as e:
         return JSONResponse(
@@ -1007,6 +1031,9 @@ async def add_vdev(
             raise ValueError("No devices specified")
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 67d3b49 (set min size for spare)
         # Spare size validation: spares must be >= smallest data device
         if vdev_type == "spare":
             topology = pool_service.get_pool_topology(pool_name)
@@ -1029,8 +1056,11 @@ async def add_vdev(
                             f"Spares must be the same size or larger than existing data devices."
                         )
 
+<<<<<<< HEAD
 =======
 >>>>>>> 7fb748f (add vdev management)
+=======
+>>>>>>> 67d3b49 (set min size for spare)
         # Always add the vdev type keyword first
         vdevs.append(vdev_type)
 
