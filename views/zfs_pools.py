@@ -20,6 +20,61 @@ dataset_service = ZFSDatasetService()
 disk_service = DiskUtilsService()
 
 
+def _get_min_data_device_size(topology: dict, disk_size_lookup: dict) -> int:
+    """
+    Get the minimum leaf device size in bytes across all data vdevs.
+    Used for spare size validation -- spares must be at least this large.
+    
+    Args:
+        topology: Pool topology dict from get_pool_topology()
+        disk_size_lookup: Dict mapping device name and /dev/name to size_bytes
+        
+    Returns:
+        Minimum device size in bytes, or 0 if unable to determine
+    """
+    min_size = 0
+    for vdev in topology.get('data_vdevs', []):
+        for device in vdev.get('devices', []):
+            dev_name = device.get('name', '')
+            if not dev_name:
+                continue
+            # Try lookup by name and /dev/name
+            size_bytes = disk_size_lookup.get(dev_name)
+            if size_bytes is None:
+                size_bytes = disk_size_lookup.get(f'/dev/{dev_name}')
+            # Resolve disk-by-id or other identifiers to real /dev/ path
+            if size_bytes is None:
+                resolved = disk_service.resolve_device_path(dev_name)
+                if resolved:
+                    # Try lookup by resolved path and its basename
+                    size_bytes = disk_size_lookup.get(resolved)
+                    if size_bytes is None:
+                        import os
+                        base_name = os.path.basename(resolved)
+                        size_bytes = disk_size_lookup.get(base_name)
+                    # Direct query using the resolved path
+                    if size_bytes is None:
+                        size_bytes = disk_service.get_device_size_bytes(resolved)
+            if size_bytes is not None and size_bytes > 0:
+                if min_size == 0 or size_bytes < min_size:
+                    min_size = size_bytes
+    return min_size
+
+
+def _format_bytes_human(size_bytes: int) -> str:
+    """Format a byte count to a human-readable string (e.g., 931.5 GB)"""
+    if size_bytes <= 0:
+        return ''
+    value = float(size_bytes)
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
+        if value < 1024:
+            if unit in ('B', 'KB'):
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} EB"
+
+
 def parse_pool_status(status_output: str) -> dict:
     """Parse zpool status output into structured data."""
     result = {
@@ -725,19 +780,27 @@ async def vdev_management_data(request: Request, pool_name: str):
         topology = pool_service.get_pool_topology(pool_name)
         available_disks = disk_service.get_available_disks()
 
-        # Separate disks by status
+        # Build disk size lookup for min-size calculation
+        disk_size_lookup = {}
         all_disks = []
         for disk in available_disks:
+            size_bytes = disk.get('size_bytes', 0)
+            disk_size_lookup[disk.get('name', '')] = size_bytes
+            disk_size_lookup[disk.get('device_path', '')] = size_bytes
             all_disks.append({
                 'name': disk.get('name', ''),
                 'device_path': disk.get('device_path', ''),
                 'size': disk.get('size', ''),
+                'size_bytes': size_bytes,
                 'model': disk.get('model', 'Unknown'),
                 'type': disk.get('type', 'HDD'),
                 'in_use': disk.get('in_use', False),
                 'is_system_disk': disk.get('is_system_disk', False),
                 'system_usage': disk.get('system_usage', ''),
             })
+
+        # Compute minimum data device size for spare validation
+        min_data_device_size = _get_min_data_device_size(topology, disk_size_lookup)
 
         # Build list of devices currently in the pool topology
         pool_devices = []
@@ -765,6 +828,7 @@ async def vdev_management_data(request: Request, pool_name: str):
             "topology": topology_dict,
             "all_disks": all_disks,
             "pool_devices": pool_devices,
+            "min_data_device_size": min_data_device_size,
         })
     except Exception as e:
         return JSONResponse(
@@ -816,6 +880,28 @@ async def add_vdev(
         device_list = [d.strip() for d in devices.split(',') if d.strip()]
         if not device_list:
             raise ValueError("No devices specified")
+
+        # Spare size validation: spares must be >= smallest data device
+        if vdev_type == "spare":
+            topology = pool_service.get_pool_topology(pool_name)
+            available_disks = disk_service.get_available_disks()
+            disk_size_lookup = {}
+            for d in available_disks:
+                disk_size_lookup[d['name']] = d.get('size_bytes', 0)
+                disk_size_lookup[d['device_path']] = d.get('size_bytes', 0)
+            min_data_size = _get_min_data_device_size(topology, disk_size_lookup)
+            if min_data_size > 0:
+                for dev in device_list:
+                    dev_path = dev if dev.startswith('/') else f'/dev/{dev}'
+                    dev_size = disk_size_lookup.get(dev) or disk_size_lookup.get(dev_path)
+                    if dev_size is None:
+                        dev_size = disk_service.get_device_size_bytes(dev_path)
+                    if dev_size is not None and dev_size < min_data_size:
+                        raise ValueError(
+                            f"Spare device {dev} ({_format_bytes_human(dev_size)}) is smaller than "
+                            f"the smallest data device ({_format_bytes_human(min_data_size)}). "
+                            f"Spares must be the same size or larger than existing data devices."
+                        )
 
         # Always add the vdev type keyword first
         vdevs.append(vdev_type)

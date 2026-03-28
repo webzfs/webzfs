@@ -90,7 +90,7 @@ PRIVILEGED_COMMANDS = {
     # Service management
     'systemctl', 'service',
     # Disk utilities (some operations)
-    'lsblk', 'blkid',
+    'lsblk', 'blkid', 'blockdev',
     # Crontab
     'crontab',
 }
