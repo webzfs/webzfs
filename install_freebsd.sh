@@ -19,7 +19,7 @@ WHEELS_DIR="${INSTALL_DIR}/.wheels"
 WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
 
 # Wheel packages to download (these require compilation without pre-built wheels)
-WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5"
+WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5 bcrypt-4.3.0 cffi-1.17.1 pynacl-1.5.0"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -118,12 +118,19 @@ download_wheels() {
         version=$(echo "$pkg_version" | sed 's/.*-//')
         wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
         
-        # Determine ABI tag - cryptography uses cp37-abi3, others use cp311-cp311
-        if [ "$pkg_name" = "cryptography" ]; then
-            ABI_TAG="cp37-abi3"
-        else
-            ABI_TAG="cp311-cp311"
-        fi
+        # Determine ABI tag based on package
+        # cryptography and bcrypt use stable ABI (abi3) tags
+        case "$pkg_name" in
+            cryptography)
+                ABI_TAG="cp37-abi3"
+                ;;
+            bcrypt)
+                ABI_TAG="cp39-abi3"
+                ;;
+            *)
+                ABI_TAG="cp311-cp311"
+                ;;
+        esac
         
         wheel_filename="${wheel_pkg_name}-${version}-${ABI_TAG}-${WHEEL_PLATFORM}.whl"
         wheel_url="${WHEELS_URL}/${wheel_filename}"
@@ -176,8 +183,9 @@ echo
 # node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
-# Note: rust, libsodium, gmake are NOT needed when using pre-compiled wheels
-pkg install -y python311 py311-pip node npm smartmontools sanoid
+# libsodium - runtime dependency of pynacl (used by paramiko for SSH)
+# Note: rust, gmake are NOT needed when using pre-compiled wheels
+pkg install -y python311 py311-pip node npm smartmontools sanoid libsodium
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -589,7 +597,7 @@ echo
 echo "WebZFS has been installed to: $INSTALL_DIR"
 echo "Note: On FreeBSD, the service runs as root for PAM authentication"
 echo
-echo "Pre-compiled wheels used for: cryptography, markupsafe, psutil, pydantic-core"
+echo "Pre-compiled wheels used for: cryptography, bcrypt, pynacl, cffi, markupsafe, psutil, pydantic-core"
 echo "Wheels cached in: $WHEELS_DIR"
 echo
 echo "To start the application manually:"
