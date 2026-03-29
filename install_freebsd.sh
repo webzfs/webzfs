@@ -119,13 +119,10 @@ download_wheels() {
         wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
         
         # Determine ABI tag based on package
-        # cryptography and bcrypt use stable ABI (abi3) tags
+        # cryptography uses stable ABI (abi3) tag; all others use cp311
         case "$pkg_name" in
             cryptography)
                 ABI_TAG="cp37-abi3"
-                ;;
-            bcrypt)
-                ABI_TAG="cp39-abi3"
                 ;;
             *)
                 ABI_TAG="cp311-cp311"
