@@ -256,6 +256,26 @@ fi
 # Download pre-compiled wheels
 download_wheels
 
+# Adapt wheel platform tags for local system compatibility
+# FreeBSD patch levels (e.g., 14.3-RELEASE-p8 on GhostBSD or patched FreeBSD)
+# produce a different pip platform tag than the base RELEASE the wheels were
+# built on.  The binaries are compatible, so we create renamed copies of the
+# wheel files so pip accepts them on the local system.
+LOCAL_PLATFORM=$($PYTHON_PATH -c "import sysconfig; print(sysconfig.get_platform().replace('.', '_').replace('-', '_'))")
+if [ "$LOCAL_PLATFORM" != "$WHEEL_PLATFORM" ]; then
+    printf "${YELLOW}Note:${NC} Local platform '${LOCAL_PLATFORM}' differs from wheel platform '${WHEEL_PLATFORM}'\n"
+    printf "Adapting wheel filenames for local platform compatibility...\n"
+    for whl in "$WHEELS_DIR"/*"${WHEEL_PLATFORM}.whl"; do
+        if [ -f "$whl" ]; then
+            new_whl=$(echo "$whl" | sed "s/${WHEEL_PLATFORM}/${LOCAL_PLATFORM}/")
+            if [ ! -f "$new_whl" ]; then
+                cp "$whl" "$new_whl"
+            fi
+        fi
+    done
+    printf "${GREEN}✓${NC} Wheel platform tags adapted\n"
+fi
+
 # Copy application files to installation directory
 echo
 echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
@@ -322,7 +342,17 @@ echo "Installing/upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > install_log.txt 2>&1
 
 echo "Installing Python dependencies (using pre-compiled wheels)..."
-.venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1
+if ! .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1; then
+    printf "${RED}Error: Failed to install Python dependencies${NC}\n"
+    echo "Check ${INSTALL_DIR}/install_log.txt for details"
+    echo
+    echo "Common causes:"
+    echo "  - Network connectivity issues (pure-Python packages download from PyPI)"
+    echo "  - Wheel platform tag mismatch (check local platform with:"
+    echo "    $PYTHON_PATH -c \"import sysconfig; print(sysconfig.get_platform())\")"
+    echo "  - Missing Rust compiler for packages that need source compilation"
+    exit 1
+fi
 
 echo "Installing Node.js dependencies..."
 npm install >> install_log.txt 2>&1
