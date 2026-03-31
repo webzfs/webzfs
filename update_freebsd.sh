@@ -139,8 +139,37 @@ fi
 echo "Upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > update_log.txt 2>&1
 
+# Use cached wheels if available (from initial install)
+WHEELS_DIR="${INSTALL_DIR}/.wheels"
+FIND_LINKS_FLAG=""
+if [ -d "$WHEELS_DIR" ]; then
+    # Adapt wheel platform tags for local system (handles FreeBSD patch levels)
+    PYTHON_PATH=$(.venv/bin/python3 -c "import sys; print(sys.executable)")
+    LOCAL_PLATFORM=$(.venv/bin/python3 -c "import sysconfig; print(sysconfig.get_platform().replace('.', '_').replace('-', '_'))")
+    for whl in "$WHEELS_DIR"/*.whl; do
+        if [ -f "$whl" ]; then
+            base_whl=$(basename "$whl")
+            # Check if this wheel needs a platform-adapted copy
+            if echo "$base_whl" | grep -q "freebsd_" && ! echo "$base_whl" | grep -q "$LOCAL_PLATFORM"; then
+                # Extract the wheel's platform tag
+                whl_platform=$(echo "$base_whl" | sed 's/.*-\(freebsd_[^.]*\)\.whl/\1/')
+                new_whl=$(echo "$whl" | sed "s/${whl_platform}/${LOCAL_PLATFORM}/")
+                if [ ! -f "$new_whl" ]; then
+                    cp "$whl" "$new_whl"
+                fi
+            fi
+        fi
+    done
+    FIND_LINKS_FLAG="--find-links=$WHEELS_DIR"
+    printf "${GREEN}✓${NC} Using cached wheels from $WHEELS_DIR\n"
+fi
+
 echo "Updating Python dependencies..."
-.venv/bin/pip install -r requirements.txt >> update_log.txt 2>&1
+if ! .venv/bin/pip install $FIND_LINKS_FLAG -r requirements.txt >> update_log.txt 2>&1; then
+    printf "${RED}Error: Failed to update Python dependencies${NC}\n"
+    echo "Check ${INSTALL_DIR}/update_log.txt for details"
+    exit 1
+fi
 
 echo "Updating Node.js dependencies..."
 npm install >> update_log.txt 2>&1

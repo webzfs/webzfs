@@ -380,6 +380,11 @@ if [ ! -f "${DATA_DIR}/scheduled_tests.json" ]; then
     echo '{}' > "${DATA_DIR}/scheduled_tests.json"
 fi
 
+# Health analysis service files
+if [ ! -f "${DATA_DIR}/health_reports.json" ]; then
+    echo '{"reports": []}' > "${DATA_DIR}/health_reports.json"
+fi
+
 printf "${GREEN}✓${NC} Data directory and files created\n"
 
 # Also create data directory in root's home (since gunicorn runs as root)

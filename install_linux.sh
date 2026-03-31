@@ -187,6 +187,37 @@ rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='
 chown -R "$WEBZFS_USER:$WEBZFS_USER" "$INSTALL_DIR"
 
 echo -e "${GREEN}✓${NC} Application files copied"
+
+# Create application data directory and initialize data files
+DATA_DIR="${INSTALL_DIR}/.config/webzfs"
+mkdir -p "${DATA_DIR}/progress"
+mkdir -p "${DATA_DIR}/logs"
+
+# Pre-create JSON data files to avoid race conditions during worker startup
+if [ ! -f "${DATA_DIR}/replication_history.json" ]; then
+    echo '{"executions": [], "next_id": 1}' > "${DATA_DIR}/replication_history.json"
+fi
+if [ ! -f "${DATA_DIR}/notification_log.json" ]; then
+    echo '{"notifications": []}' > "${DATA_DIR}/notification_log.json"
+fi
+if [ ! -f "${DATA_DIR}/syncoid_jobs.json" ]; then
+    echo '{"jobs": [], "next_id": 1}' > "${DATA_DIR}/syncoid_jobs.json"
+fi
+if [ ! -f "${DATA_DIR}/scrub_schedules.json" ]; then
+    echo '{"schedules": []}' > "${DATA_DIR}/scrub_schedules.json"
+fi
+if [ ! -f "${DATA_DIR}/smart_test_history.json" ]; then
+    echo '{"history": []}' > "${DATA_DIR}/smart_test_history.json"
+fi
+if [ ! -f "${DATA_DIR}/scheduled_tests.json" ]; then
+    echo '{}' > "${DATA_DIR}/scheduled_tests.json"
+fi
+if [ ! -f "${DATA_DIR}/health_reports.json" ]; then
+    echo '{"reports": []}' > "${DATA_DIR}/health_reports.json"
+fi
+
+chown -R "$WEBZFS_USER:$WEBZFS_USER" "$DATA_DIR"
+echo -e "${GREEN}✓${NC} Data directory and files created"
 echo
 
 # Create a temporary install script that runs as the webzfs user

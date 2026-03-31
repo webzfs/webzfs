@@ -19,7 +19,7 @@ WHEELS_DIR="${INSTALL_DIR}/.wheels"
 WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
 
 # Wheel packages to download (these require compilation without pre-built wheels)
-WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5"
+WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5 bcrypt-4.3.0 cffi-1.17.1 pynacl-1.5.0"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -118,12 +118,16 @@ download_wheels() {
         version=$(echo "$pkg_version" | sed 's/.*-//')
         wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
         
-        # Determine ABI tag - cryptography uses cp37-abi3, others use cp311-cp311
-        if [ "$pkg_name" = "cryptography" ]; then
-            ABI_TAG="cp37-abi3"
-        else
-            ABI_TAG="cp311-cp311"
-        fi
+        # Determine ABI tag based on package
+        # cryptography uses stable ABI (abi3) tag; all others use cp311
+        case "$pkg_name" in
+            cryptography)
+                ABI_TAG="cp37-abi3"
+                ;;
+            *)
+                ABI_TAG="cp311-cp311"
+                ;;
+        esac
         
         wheel_filename="${wheel_pkg_name}-${version}-${ABI_TAG}-${WHEEL_PLATFORM}.whl"
         wheel_url="${WHEELS_URL}/${wheel_filename}"
@@ -176,8 +180,9 @@ echo
 # node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
-# Note: rust, libsodium, gmake are NOT needed when using pre-compiled wheels
-pkg install -y python311 py311-pip node npm smartmontools sanoid
+# libsodium - runtime dependency of pynacl (used by paramiko for SSH)
+# Note: rust, gmake are NOT needed when using pre-compiled wheels
+pkg install -y python311 py311-pip node npm smartmontools sanoid libsodium
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -256,6 +261,26 @@ fi
 # Download pre-compiled wheels
 download_wheels
 
+# Adapt wheel platform tags for local system compatibility
+# FreeBSD patch levels (e.g., 14.3-RELEASE-p8 on GhostBSD or patched FreeBSD)
+# produce a different pip platform tag than the base RELEASE the wheels were
+# built on.  The binaries are compatible, so we create renamed copies of the
+# wheel files so pip accepts them on the local system.
+LOCAL_PLATFORM=$($PYTHON_PATH -c "import sysconfig; print(sysconfig.get_platform().replace('.', '_').replace('-', '_'))")
+if [ "$LOCAL_PLATFORM" != "$WHEEL_PLATFORM" ]; then
+    printf "${YELLOW}Note:${NC} Local platform '${LOCAL_PLATFORM}' differs from wheel platform '${WHEEL_PLATFORM}'\n"
+    printf "Adapting wheel filenames for local platform compatibility...\n"
+    for whl in "$WHEELS_DIR"/*"${WHEEL_PLATFORM}.whl"; do
+        if [ -f "$whl" ]; then
+            new_whl=$(echo "$whl" | sed "s/${WHEEL_PLATFORM}/${LOCAL_PLATFORM}/")
+            if [ ! -f "$new_whl" ]; then
+                cp "$whl" "$new_whl"
+            fi
+        fi
+    done
+    printf "${GREEN}✓${NC} Wheel platform tags adapted\n"
+fi
+
 # Copy application files to installation directory
 echo
 echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
@@ -297,6 +322,11 @@ if [ ! -f "${DATA_DIR}/scheduled_tests.json" ]; then
     echo '{}' > "${DATA_DIR}/scheduled_tests.json"
 fi
 
+# Health analysis service files
+if [ ! -f "${DATA_DIR}/health_reports.json" ]; then
+    echo '{"reports": []}' > "${DATA_DIR}/health_reports.json"
+fi
+
 printf "${GREEN}✓${NC} Data directory and files created\n"
 echo
 
@@ -322,7 +352,17 @@ echo "Installing/upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > install_log.txt 2>&1
 
 echo "Installing Python dependencies (using pre-compiled wheels)..."
-.venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1
+if ! .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1; then
+    printf "${RED}Error: Failed to install Python dependencies${NC}\n"
+    echo "Check ${INSTALL_DIR}/install_log.txt for details"
+    echo
+    echo "Common causes:"
+    echo "  - Network connectivity issues (pure-Python packages download from PyPI)"
+    echo "  - Wheel platform tag mismatch (check local platform with:"
+    echo "    $PYTHON_PATH -c \"import sysconfig; print(sysconfig.get_platform())\")"
+    echo "  - Missing Rust compiler for packages that need source compilation"
+    exit 1
+fi
 
 echo "Installing Node.js dependencies..."
 npm install >> install_log.txt 2>&1
@@ -559,7 +599,7 @@ echo
 echo "WebZFS has been installed to: $INSTALL_DIR"
 echo "Note: On FreeBSD, the service runs as root for PAM authentication"
 echo
-echo "Pre-compiled wheels used for: cryptography, markupsafe, psutil, pydantic-core"
+echo "Pre-compiled wheels used for: cryptography, bcrypt, pynacl, cffi, markupsafe, psutil, pydantic-core"
 echo "Wheels cached in: $WHEELS_DIR"
 echo
 echo "To start the application manually:"

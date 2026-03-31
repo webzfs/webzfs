@@ -10,7 +10,7 @@ Due to Reddit Drama... I'm making this clear up front. **_This is not a vibe cod
 
 I get people's disgust at at the number of vibe coded projects coming out these days. They're coming from people who dont have experience and knowledge to know what they are doing, and yet they are promising the world.  **I get it, I too am frustrated by this.**  However not every new project you see has beem vibecoded. 
 
-[For context, I wrote this article advising against people using AI with ZFS, so it'd be retarded for me to vibecode an entire ZFS management engine with AI.](https://klarasystems.com/articles/why-you-cant-trust-ai-to-tune-zfs/)
+[For context, I wrote this article advising against people using AI with ZFS, so it'd be idiotic for me to vibecode an entire ZFS management engine with AI.](https://klarasystems.com/articles/why-you-cant-trust-ai-to-tune-zfs/)
 
 The core of the application was developed over several years, by myself as a hobby project.
 As a former iXsystems employee, I have seen inside the sausage factory of TrueNAS as the saying goes. I wanted to design something different. I started this in the winter of 2022 once I left iXsystems. 

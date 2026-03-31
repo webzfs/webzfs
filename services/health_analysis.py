@@ -66,6 +66,7 @@ class HealthAnalysisService:
             return {}
 
     def _write_json(self, file_path: Path, data: Dict[str, Any]) -> None:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         temp_file = file_path.with_suffix(".tmp")
         with open(temp_file, "w") as f:
             json.dump(data, f, indent=2)
