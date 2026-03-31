@@ -115,6 +115,11 @@ def _get_system_load() -> dict[str, Any]:
         return {"Error": f"Unable to retrieve system load: {str(e)}"}
 
 
+def get_memory_stats() -> dict[str, Any]:
+    """Public function to get memory statistics."""
+    return _get_memory_info()
+
+
 def get_system_load_stats() -> dict[str, Any]:
     """Public function to get system load statistics."""
     return _get_system_load()

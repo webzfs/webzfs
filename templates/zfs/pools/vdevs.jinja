@@ -1,0 +1,1510 @@
+{% extends "layout.jinja" %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center text-sm text-text-secondary">
+        <a href="/zfs/pools" class="hover:text-text-primary transition-colors">Pools</a>
+        <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
+        <a href="/zfs/pools/{{ pool_name }}" class="hover:text-text-primary transition-colors">{{ pool_name }}</a>
+        <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
+        <span class="text-text-primary font-medium">VDev Management</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary">VDev Management</h1>
+            <p class="text-text-secondary mt-1">Pool: <span class="font-semibold text-text-primary">{{ pool_name }}</span></p>
+        </div>
+        <a href="/zfs/pools/{{ pool_name }}" class="btn-secondary inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Back to Pool
+        </a>
+    </div>
+
+    <!-- Data Safety Warning Banner with Acknowledgment Gate -->
+    <div id="vdev-warning-banner" class="bg-danger-900/20 border-2 border-danger-500 rounded-xl p-4">
+        <div class="flex items-start gap-3">
+            <svg class="w-6 h-6 text-danger-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div class="flex-1">
+                <h3 class="text-sm font-semibold text-danger-400 mb-1">Warning: Data Loss Risk</h3>
+                <p class="text-xs text-text-secondary mb-3">Incorrect selection of disks or improper vdev operations may result in <strong class="text-danger-300">irreversible data corruption or loss</strong>. Double check all device names and operation parameters before confirming any changes. Ensure you have verified which disks are in use and have current backups before modifying pool topology.</p>
+                <button type="button" id="btn-acknowledge"
+                        class="btn-danger text-sm inline-flex items-center gap-2"
+                        onclick="acknowledgeWarning()">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    I Understand the Risks -- Proceed
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Greyed out placeholder when not acknowledged -->
+    <div id="vdev-locked-overlay" class="relative">
+        <div class="absolute inset-0 bg-bg-base/70 backdrop-blur-[1px] z-40 rounded-xl cursor-not-allowed"></div>
+        <div class="opacity-30 pointer-events-none select-none">
+            <div class="card p-8 text-center">
+                <svg class="w-16 h-16 mx-auto text-text-tertiary mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+                <p class="text-text-tertiary text-sm">Acknowledge the data safety warning above to access VDev management operations.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- All page content gated behind acknowledgment (hidden until acknowledged) -->
+    <div id="vdev-page-content" style="display: none;">
+
+    <!-- Success/Error Messages -->
+    {% if request.query_params.get('message') %}
+    <div class="alert-success animate-slide-in" role="alert">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <svg class="w-5 h-5 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+            </div>
+            <div class="flex-1 ml-3">
+                <div class="text-sm text-success-300">{{ request.query_params.get('message') }}</div>
+            </div>
+            <button type="button" class="flex-shrink-0 ml-4 inline-flex text-success-400 hover:text-success-300 p-1.5 rounded-lg" onclick="this.closest('.alert-success').remove()">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            </button>
+        </div>
+    </div>
+    {% endif %}
+    {% if request.query_params.get('error') %}
+    <div class="alert-danger animate-slide-in" role="alert">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <svg class="w-5 h-5 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+            </div>
+            <div class="flex-1 ml-3">
+                <pre class="whitespace-pre-wrap font-mono text-xs text-danger-300">{{ request.query_params.get('error') }}</pre>
+            </div>
+            <button type="button" class="flex-shrink-0 ml-4 inline-flex text-danger-400 hover:text-danger-300 p-1.5 rounded-lg" onclick="this.closest('.alert-danger').remove()">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Loading State -->
+    <div id="loading-state" class="card">
+        <div class="flex items-center justify-center py-12">
+            <div class="flex flex-col items-center gap-4">
+                <div class="loading-spinner loading-spinner-lg"></div>
+                <p class="text-text-secondary text-sm">Loading pool topology and disk information...</p>
+                <p class="text-text-tertiary text-xs">This may take a moment on systems with many drives.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error State (hidden by default) -->
+    <div id="error-state" class="card hidden">
+        <div class="flex items-center justify-center py-12">
+            <div class="flex flex-col items-center gap-4 text-center">
+                <svg class="w-12 h-12 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="text-text-primary font-semibold">Failed to load data</p>
+                <p id="error-state-message" class="text-text-secondary text-sm"></p>
+                <button type="button" onclick="loadPageData()" class="btn-primary">Retry</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content (hidden until data loads) -->
+    <div id="main-content" class="space-y-6 hidden">
+
+        <!-- Resilvering Status Banner -->
+        <div id="resilver-banner" class="card bg-info-900/20 border border-info-700/50 hidden">
+            <div class="flex items-start gap-3">
+                <svg class="w-6 h-6 text-info-400 flex-shrink-0 mt-0.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <div>
+                    <h3 class="text-info-400 font-semibold">Resilver In Progress</h3>
+                    <p id="resilver-info" class="text-text-secondary text-sm mt-1"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pool Topology -->
+        <div class="card">
+            <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                </svg>
+                Pool Topology
+            </h2>
+            <div id="topology-container">
+                <p class="text-text-tertiary text-sm">No topology information available.</p>
+            </div>
+        </div>
+
+        <!-- Disk Status Legend + Detect Button -->
+        <div class="card">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-lg font-semibold text-text-primary flex items-center gap-2">
+                    <svg class="w-5 h-5 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                    </svg>
+                    System Disks
+                </h2>
+                <div class="flex flex-col items-end gap-1">
+                    <button type="button"
+                            onclick="showConfirm('confirm-check-disks')"
+                            class="btn-warning text-sm py-2 px-3 inline-flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Detect Disks in Use
+                    </button>
+                    <span class="text-xs text-text-tertiary italic">(Linux Only)</span>
+                </div>
+            </div>
+
+            <!-- Disk Status Legend -->
+            <div class="p-3 bg-bg-elevated rounded-lg border border-border-subtle mb-4">
+                <h3 class="text-xs font-semibold text-text-primary mb-2 uppercase tracking-wider">Disk Status</h3>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 h-5 rounded border-2 flex-shrink-0" style="border-color: #dc2626; background-color: rgba(153, 27, 27, 0.5);"></div>
+                        <span class="text-text-secondary"><strong>OS/System Disk</strong> -- CANNOT be used (contains OS/swap)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 h-5 rounded border-2 flex-shrink-0" style="border-color: #f87171; background-color: rgba(153, 27, 27, 0.3);"></div>
+                        <span class="text-text-secondary">In Active Pool -- Cannot be used for add/attach</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 h-5 rounded border-2 flex-shrink-0" style="border-color: #fbbf24; background-color: rgba(120, 53, 15, 0.3);"></div>
+                        <span class="text-text-secondary">Has ZFS Label -- Use with caution</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 h-5 rounded border-2 flex-shrink-0 bg-success-900/30" style="border-color: #4ade80;"></div>
+                        <span class="text-text-secondary">Available -- Free to use</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Available Disks (populated by JS) -->
+            <div id="available-disks-container">
+                <p class="text-text-tertiary text-sm text-center py-4">Disk data will load with page data.</p>
+            </div>
+        </div>
+
+        <!-- Operations Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Attach Device (Create/Extend Mirror) -->
+            <div id="card-attach" class="card">
+                <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                    </svg>
+                    Attach Device (Mirror)
+                </h2>
+                <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/attach" id="form-attach">
+                    <div class="space-y-3">
+                        <div>
+                            <label for="attach-existing" class="form-label">Existing Device in Pool</label>
+                            <input type="text" id="attach-existing" name="existing_device" required
+                                   placeholder="e.g., /dev/sda or sda"
+                                   class="form-input w-full">
+                            <p class="text-xs text-text-tertiary mt-1">The device already in the pool to mirror with</p>
+                        </div>
+                        <div>
+                            <label class="form-label">Pool Devices</label>
+                            <div id="attach-pool-devices" class="flex flex-wrap gap-1.5">
+                                <span class="text-xs text-text-tertiary">Loading...</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="attach-new" class="form-label">New Device to Attach</label>
+                            <input type="text" id="attach-new" name="new_device" required
+                                   placeholder="e.g., /dev/sdb"
+                                   class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">Available (Unused) ZFS Disks</label>
+                            <p class="text-xs text-warning-400 mb-1">These disks may be in use by another filesystem. Verify before use.</p>
+                            <div id="attach-free-disks" class="flex flex-wrap gap-1.5">
+                                <span class="text-xs text-text-tertiary">Loading...</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="attach-force" name="force" value="true"
+                                   class="rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+                            <label for="attach-force" class="text-sm text-text-secondary">Force</label>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="button" class="btn-primary inline-flex items-center gap-2"
+                                onclick="showConfirm('confirm-attach')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101"></path>
+                            </svg>
+                            Attach Device
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Replace Device -->
+            <div id="card-replace" class="card">
+                <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                    </svg>
+                    Replace Device
+                </h2>
+                <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/replace" id="form-replace">
+                    <div class="space-y-3">
+                        <div>
+                            <label for="replace-old" class="form-label">Device to Replace (in pool)</label>
+                            <input type="text" id="replace-old" name="old_device" required
+                                   placeholder="e.g., /dev/sda or sda"
+                                   class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">Pool Devices</label>
+                            <div id="replace-pool-devices" class="flex flex-wrap gap-1.5">
+                                <span class="text-xs text-text-tertiary">Loading...</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="replace-new" class="form-label">Replacement Device (unused)</label>
+                            <input type="text" id="replace-new" name="new_device" required
+                                   placeholder="e.g., /dev/sdb"
+                                   class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">Available (Unused) ZFS Disks</label>
+                            <p class="text-xs text-warning-400 mb-1">These disks may be in use by another filesystem. Verify before use.</p>
+                            <div id="replace-free-disks" class="flex flex-wrap gap-1.5">
+                                <span class="text-xs text-text-tertiary">Loading...</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="replace-force" name="force" value="true"
+                                   class="rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+                            <label for="replace-force" class="text-sm text-text-secondary">Force</label>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="button" class="btn-info inline-flex items-center gap-2"
+                                onclick="showConfirm('confirm-replace')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                            </svg>
+                            Replace Device
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Detach / Remove / Online / Offline -->
+            <div class="card">
+                <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    Device Operations
+                </h2>
+                <div class="space-y-4">
+                    <!-- Detach -->
+                    <div class="card-nested" id="detach-section">
+                        <h3 class="text-sm font-semibold text-text-primary mb-2">Detach from Mirror</h3>
+                        <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/detach" id="form-detach">
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <input type="text" id="detach-device" name="device" required
+                                       placeholder="Device to detach"
+                                       class="form-input flex-1">
+                                <button type="button" class="btn-danger inline-flex items-center gap-2"
+                                        onclick="showConfirm('confirm-detach')">
+                                    Detach
+                                </button>
+                            </div>
+                            <p class="text-xs text-text-tertiary mt-1">Only works for devices in a mirror vdev.</p>
+                        </form>
+                    </div>
+
+                    <!-- Online -->
+                    <div class="card-nested" id="online-section">
+                        <h3 class="text-sm font-semibold text-text-primary mb-2">Bring Device Online</h3>
+                        <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/online" id="form-online">
+                            <div class="flex flex-col sm:flex-row gap-2 items-end">
+                                <div class="flex-1 w-full">
+                                    <input type="text" id="online-device" name="device" required
+                                           placeholder="Device to bring online"
+                                           class="form-input w-full">
+                                </div>
+                                <button type="button" class="btn-success inline-flex items-center gap-2"
+                                        onclick="showConfirm('confirm-online')">
+                                    Online
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Offline -->
+                    <div class="card-nested">
+                        <h3 class="text-sm font-semibold text-text-primary mb-2">Take Device Offline</h3>
+                        <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/offline" id="form-offline">
+                            <div class="flex flex-col sm:flex-row gap-2 items-end">
+                                <div class="flex-1 w-full">
+                                    <input type="text" id="offline-device" name="device" required
+                                           placeholder="Device to take offline"
+                                           class="form-input w-full">
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" id="offline-temp" name="temporary" value="true"
+                                           class="rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+                                    <label for="offline-temp" class="text-sm text-text-secondary whitespace-nowrap">Temporary</label>
+                                </div>
+                                <button type="button" class="btn-warning inline-flex items-center gap-2"
+                                        onclick="showConfirm('confirm-offline')">
+                                    Offline
+                                </button>
+                            </div>
+                            <p class="text-xs text-text-tertiary mt-1">Temporary: device will auto-online on reboot.</p>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auxiliary VDev Management -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Add Auxiliary VDev -->
+            <div id="card-add-aux" class="card">
+                <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Add Auxiliary VDev
+                </h2>
+                <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/add" id="form-add-vdev">
+                    <div class="space-y-3">
+                        <div>
+                            <label for="add-vdev-type" class="form-label">VDev Type</label>
+                            <select id="add-vdev-type" name="vdev_type" class="form-input w-full" onchange="updateAuxLayoutOptions()">
+                                <optgroup label="Removable (can be added and removed)">
+                                    <option value="spare">Hot Spare</option>
+                                    <option value="cache">Cache (L2ARC)</option>
+                                    <option value="log">Log (SLOG)</option>
+                                </optgroup>
+                                <optgroup label="Permanent (cannot be removed once added)">
+                                    <option value="special">Special Metadata VDev</option>
+                                    <option value="dedup">Dedup VDev</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div id="aux-layout-section">
+                            <label for="add-vdev-layout" class="form-label">Layout</label>
+                            <select id="add-vdev-layout" name="vdev_layout" class="form-input w-full">
+                                <option value="stripe">Stripe (single disk or multiple disks striped)</option>
+                                <option value="mirror">Mirror</option>
+                            </select>
+                            <p id="aux-layout-hint" class="text-xs text-text-tertiary mt-1">For spares, layout is ignored (spares are always individual disks).</p>
+                        </div>
+                        <div>
+                            <label for="add-devices" class="form-label">Devices</label>
+                            <input type="text" id="add-devices" name="devices" required
+                                   placeholder="e.g., /dev/sdb,/dev/sdc"
+                                   class="form-input w-full">
+                            <p class="text-xs text-text-tertiary mt-1">Comma-separated list of device paths. For mirrors, provide 2+ devices.</p>
+                        </div>
+                        <div>
+                            <label class="form-label">Available (Unused) ZFS Disks</label>
+                            <p class="text-xs text-warning-400 mb-1">These disks may be in use by another filesystem. Verify before use.</p>
+                            <div id="add-vdev-disks" class="flex flex-wrap gap-1.5">
+                                <span class="text-xs text-text-tertiary">Loading...</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="add-force" name="force" value="true"
+                                   class="rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+                            <label for="add-force" class="text-sm text-text-secondary">Force (use devices even if they appear in use)</label>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="button" class="btn-success inline-flex items-center gap-2"
+                                onclick="validateAndShowAddVdev()">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            Add Auxiliary VDev
+                        </button>
+                        <div id="add-vdev-validation-error" class="hidden mt-2 p-2 rounded bg-danger-500/10 border border-danger-500/30 text-danger-300 text-sm"></div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Remove Auxiliary VDev -->
+            <div class="card">
+                <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                    Remove Auxiliary VDev
+                </h2>
+                <div id="remove-aux-container">
+                    <p class="text-text-tertiary text-sm">Loading removable vdevs...</p>
+                </div>
+                <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/remove" id="form-remove-aux" class="hidden">
+                    <div class="space-y-3">
+                        <div>
+                            <label for="remove-device" class="form-label">VDev / Device to Remove</label>
+                            <input type="text" id="remove-device" name="device" required
+                                   placeholder="Select from the list above"
+                                   class="form-input w-full" readonly>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="button" class="btn-danger inline-flex items-center gap-2"
+                                onclick="showConfirm('confirm-remove-aux')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                            Remove VDev
+                        </button>
+                    </div>
+                </form>
+                <div class="mt-4 p-3 bg-bg-elevated rounded-lg border border-border-subtle">
+                    <p class="text-xs text-text-tertiary">
+                        <strong class="text-text-secondary">Removable:</strong> Hot Spares, Cache (L2ARC), Log (SLOG) vdevs.<br>
+                        <strong class="text-warning-400">Not removable:</strong> Special Metadata, Dedup, and BRT vdevs cannot be removed once added.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Safety Notes -->
+        <div class="card-nested">
+            <h3 class="text-sm font-semibold text-text-primary mb-2">Operation Notes</h3>
+            <ul class="text-xs text-text-tertiary space-y-1 list-disc list-inside">
+                <li><strong class="text-text-secondary">Add Auxiliary VDev:</strong> Adds spare, cache, log, special, or dedup vdevs. Spares, cache, and log can be removed later. Special and dedup vdevs are permanent.</li>
+                <li><strong class="text-text-secondary">Remove Auxiliary VDev:</strong> Removes spare, cache, or log vdevs from the pool.</li>
+                <li><strong class="text-text-secondary">Attach:</strong> Attaches a disk to an existing device, creating or extending a mirror. Triggers a resilver.</li>
+                <li><strong class="text-text-secondary">Detach:</strong> Removes a device from a mirror. The mirror continues with remaining devices.</li>
+                <li><strong class="text-text-secondary">Replace:</strong> Replaces a disk with a new one. The pool will resilver data onto the replacement.</li>
+                <li><strong class="text-text-secondary">Online/Offline:</strong> Controls device availability within the pool without removing it from the topology.</li>
+            </ul>
+        </div>
+
+        <!-- Back -->
+        <div>
+            <a href="/zfs/pools/{{ pool_name }}" class="text-text-secondary hover:text-text-primary inline-flex items-center gap-2 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                </svg>
+                Back to Pool Detail
+            </a>
+        </div>
+    </div>
+</div>
+
+</div> <!-- end #vdev-page-content -->
+
+<!-- Confirmation Modals -->
+
+<!-- Custom Disk Check Modal with loading/success states -->
+<div
+  id="confirm-check-disks"
+  class="modal-overlay"
+  x-data="{ open: false, state: 'confirm', errorMsg: '' }"
+  x-show="open"
+  x-on:keydown.escape.window="if (state !== 'checking') open = false"
+  style="display: none;"
+  x-transition:enter="transition ease-out duration-200"
+  x-transition:enter-start="opacity-0"
+  x-transition:enter-end="opacity-100"
+  x-transition:leave="transition ease-in duration-150"
+  x-transition:leave-start="opacity-100"
+  x-transition:leave-end="opacity-0"
+>
+  <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
+  <div class="fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex min-h-full items-center justify-center p-4">
+      <div class="modal modal-sm">
+
+        <!-- Confirm State -->
+        <template x-if="state === 'confirm'">
+          <div>
+            <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-warning-900/50 border-2 border-warning-500">
+              <svg class="w-6 h-6 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-text-primary text-center mb-2">Check for In-Use Disks</h3>
+            <div class="text-text-secondary text-center mb-6">
+              This will check all disks for active pool usage and ZFS labels. Using disks that are in active pools or have ZFS labels may result in DATA LOSS if not handled carefully.<br><br><strong>Note:</strong> This automated check is not perfect. As an administrator, you should independently verify that disks are not in use before adding them to a pool.
+            </div>
+            <div class="flex space-x-3">
+              <button type="button" class="btn-secondary flex-1" x-on:click="open = false">Cancel</button>
+              <button type="button" class="btn-warning flex-1" x-on:click="state = 'checking'; runDiskCheck()">Check Disks</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Checking State -->
+        <template x-if="state === 'checking'">
+          <div>
+            <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4">
+              <div class="loading-spinner loading-spinner-lg"></div>
+            </div>
+            <h3 class="text-xl font-semibold text-text-primary text-center mb-2">Checking Disks...</h3>
+            <div class="text-text-secondary text-center mb-6 text-sm">
+              Scanning all disks for active pool usage and ZFS labels. This may take a moment on systems with many drives.
+            </div>
+          </div>
+        </template>
+
+        <!-- Complete State -->
+        <template x-if="state === 'complete'">
+          <div>
+            <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-success-900/50 border-2 border-success-500">
+              <svg class="w-6 h-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-text-primary text-center mb-2">Disk Check Complete</h3>
+            <div class="text-text-secondary text-center mb-6 text-sm">
+              Disk statuses have been updated. Review the disk listings below for any changes in status.
+            </div>
+            <button type="button" class="btn-success w-full" x-on:click="open = false; state = 'confirm'">Close</button>
+          </div>
+        </template>
+
+        <!-- Error State -->
+        <template x-if="state === 'error'">
+          <div>
+            <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-danger-900/50 border-2 border-danger-500">
+              <svg class="w-6 h-6 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-text-primary text-center mb-2">Disk Check Failed</h3>
+            <div class="text-text-secondary text-center mb-6 text-sm" x-text="errorMsg"></div>
+            <button type="button" class="btn-secondary w-full" x-on:click="open = false; state = 'confirm'">Close</button>
+          </div>
+        </template>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+{% set id = 'confirm-add-vdev' %}
+{% set title = 'Add Auxiliary VDev' %}
+{% set message = 'Add an auxiliary vdev to pool <strong>' ~ pool_name ~ '</strong>?<br><br><strong class="text-warning-400">Warning:</strong> Special Metadata, Dedup, and BRT vdevs cannot be removed once added. Spares, Cache, and Log vdevs can be removed later.' %}
+{% set confirm_text = 'Add Auxiliary VDev' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-add-vdev").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-remove-aux' %}
+{% set title = 'Remove Auxiliary VDev' %}
+{% set message = 'Remove this auxiliary vdev from pool <strong>' ~ pool_name ~ '</strong>?<br><br>For cache and log vdevs, removal is immediate. For spares, the spare device will be released.' %}
+{% set confirm_text = 'Remove VDev' %}
+{% set confirm_class = 'danger' %}
+{% set confirm_action = 'document.getElementById("form-remove-aux").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-attach' %}
+{% set title = 'Attach Device' %}
+{% set message = 'Attach a new device to create or extend a mirror in pool <strong>' ~ pool_name ~ '</strong>?<br><br>This will trigger a resilver operation.' %}
+{% set confirm_text = 'Attach Device' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-attach").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-detach' %}
+{% set title = 'Detach Device from Mirror' %}
+{% set message = 'Detach this device from its mirror in pool <strong>' ~ pool_name ~ '</strong>?<br><br>The mirror will continue operating with the remaining devices.' %}
+{% set confirm_text = 'Detach' %}
+{% set confirm_class = 'danger' %}
+{% set confirm_action = 'document.getElementById("form-detach").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-replace' %}
+{% set title = 'Replace Device' %}
+{% set message = 'Replace a device in pool <strong>' ~ pool_name ~ '</strong>?<br><br>The pool will resilver data onto the new device. This may take a significant amount of time.' %}
+{% set confirm_text = 'Replace Device' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-replace").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-online' %}
+{% set title = 'Bring Device Online' %}
+{% set message = 'Bring this device online in pool <strong>' ~ pool_name ~ '</strong>?' %}
+{% set confirm_text = 'Bring Online' %}
+{% set confirm_class = 'primary' %}
+{% set confirm_action = 'document.getElementById("form-online").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-offline' %}
+{% set title = 'Take Device Offline' %}
+{% set message = 'Take this device offline in pool <strong>' ~ pool_name ~ '</strong>?<br><br>The pool must have sufficient redundancy to operate without this device.' %}
+{% set confirm_text = 'Take Offline' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-offline").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+<style>
+.disk-btn { transition: all 0.15s ease; }
+.disk-btn:hover { transform: translateY(-1px); }
+.disk-btn-system { border-color: #dc2626 !important; background-color: rgba(153,27,27,0.4) !important; cursor: not-allowed !important; opacity: 0.6; }
+.disk-btn-active { border-color: #f87171 !important; background-color: rgba(153,27,27,0.2) !important; cursor: not-allowed !important; opacity: 0.7; }
+.disk-btn-labeled { border-color: #fbbf24 !important; background-color: rgba(120,53,15,0.2) !important; }
+</style>
+
+<script>
+var pageData = null;
+var poolName = '{{ pool_name }}';
+var disksChecked = false;
+
+// ==================== Modal Helper ====================
+window.showConfirm = function(dialogId) {
+    var dialog = document.getElementById(dialogId);
+    if (!dialog) { console.error('Dialog not found:', dialogId); return; }
+    if (window.Alpine) {
+        var component = window.Alpine.$data(dialog);
+        if (component) { component.open = true; return; }
+    }
+    if (dialog.__x) { dialog.__x.$data.open = true; return; }
+    dialog.dispatchEvent(new CustomEvent('open-modal'));
+};
+
+// ==================== Async Page Load ====================
+async function loadPageData() {
+    document.getElementById('loading-state').classList.remove('hidden');
+    document.getElementById('error-state').classList.add('hidden');
+    document.getElementById('main-content').classList.add('hidden');
+
+    try {
+        var response = await fetch('/zfs/pools/' + poolName + '/vdevs/data');
+        var data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Unknown error');
+        }
+
+        pageData = data;
+        renderTopology(data.topology);
+        renderDiskButtons(data.all_disks, data.pool_devices);
+        renderResilverBanner(data.topology);
+        applyPoolTypeConstraints(data.topology);
+        renderRemovableVdevs(data.topology);
+        updateAuxLayoutOptions();
+
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('main-content').classList.remove('hidden');
+
+        // Lock operation cards until disk check is completed
+        lockOperationCards();
+    } catch (err) {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('error-state').classList.remove('hidden');
+        document.getElementById('error-state-message').textContent = err.message || 'Failed to fetch data';
+    }
+}
+
+// ==================== Resilver Banner ====================
+function renderResilverBanner(topology) {
+    var banner = document.getElementById('resilver-banner');
+    var info = topology.scan_info || '';
+    if (info.toLowerCase().indexOf('resilver') !== -1) {
+        document.getElementById('resilver-info').textContent = info;
+        banner.classList.remove('hidden');
+    } else {
+        banner.classList.add('hidden');
+    }
+}
+
+// ==================== Topology Rendering ====================
+function renderTopology(topology) {
+    var container = document.getElementById('topology-container');
+    var html = '';
+
+    var sections = [
+        { key: 'data_vdevs', label: 'Data VDevs', color: 'primary' },
+        { key: 'log_vdevs', label: 'Log (SLOG) VDevs', color: 'info' },
+        { key: 'cache_vdevs', label: 'Cache (L2ARC) VDevs', color: 'success' },
+        { key: 'spare_vdevs', label: 'Hot Spares', color: 'warning' },
+        { key: 'special_vdevs', label: 'Special VDevs', color: 'purple' },
+        { key: 'dedup_vdevs', label: 'Dedup VDevs', color: 'indigo' }
+    ];
+
+    var hasAny = false;
+    sections.forEach(function(sec) {
+        var vdevs = topology[sec.key] || [];
+        if (vdevs.length === 0) return;
+        hasAny = true;
+
+        html += '<div class="mb-6 last:mb-0">';
+        html += '<h3 class="text-sm font-semibold text-' + sec.color + '-400 uppercase tracking-wider mb-3">' + sec.label + '</h3>';
+
+        vdevs.forEach(function(vdev) {
+            var typeBadge = '';
+            if (vdev.type === 'mirror') {
+                typeBadge = '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-primary-900/50 text-primary-400 border border-primary-900">MIRROR</span>';
+            } else if (vdev.type && vdev.type.indexOf('raidz') === 0) {
+                typeBadge = '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-purple-900/50 text-purple-400 border border-purple-900">' + vdev.type.toUpperCase() + '</span>';
+            } else {
+                typeBadge = '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-bg-elevated-2 text-text-secondary border border-border-subtle">SINGLE</span>';
+            }
+
+            var stateBadge = stateHtml(vdev.state);
+
+            html += '<div class="card-nested mb-3">';
+            html += '<div class="flex items-center justify-between mb-2"><div class="flex items-center gap-2">' + typeBadge + '<span class="text-text-primary font-mono text-sm">' + escHtml(vdev.name) + '</span></div><div>' + stateBadge + '</div></div>';
+
+            // Device table
+            html += '<div class="overflow-x-auto"><table class="min-w-full text-sm"><thead><tr class="border-b border-border-subtle">';
+            html += '<th class="text-left py-1.5 px-2 text-text-tertiary font-medium text-xs">Device</th>';
+            html += '<th class="text-left py-1.5 px-2 text-text-tertiary font-medium text-xs">State</th>';
+            html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Read</th>';
+            html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Write</th>';
+            html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Cksum</th>';
+            html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Actions</th>';
+            html += '</tr></thead><tbody>';
+
+            (vdev.devices || []).forEach(function(dev) {
+                var errClass = function(v) { return v > 0 ? 'text-danger-400' : 'text-text-tertiary'; };
+                html += '<tr class="border-b border-border-subtle/30">';
+                html += '<td class="py-1.5 px-2 font-mono text-text-primary text-xs">' + escHtml(dev.name);
+                if (dev.notes) html += ' <span class="text-info-400">(' + escHtml(dev.notes) + ')</span>';
+                html += '</td>';
+                html += '<td class="py-1.5 px-2">' + stateHtml(dev.state) + '</td>';
+                html += '<td class="py-1.5 px-2 text-right font-mono text-xs ' + errClass(dev.read_errors) + '">' + dev.read_errors + '</td>';
+                html += '<td class="py-1.5 px-2 text-right font-mono text-xs ' + errClass(dev.write_errors) + '">' + dev.write_errors + '</td>';
+                html += '<td class="py-1.5 px-2 text-right font-mono text-xs ' + errClass(dev.cksum_errors) + '">' + dev.cksum_errors + '</td>';
+                html += '<td class="py-1.5 px-2 text-right"><div class="flex items-center justify-end gap-1">';
+
+                // Action buttons
+                if (dev.state === 'ONLINE') {
+                    html += '<button type="button" class="text-text-tertiary hover:text-warning-400 transition-colors p-0.5" title="Take Offline" onclick="prepareDeviceAction(\'offline\', \'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg></button>';
+                } else if (dev.state === 'OFFLINE') {
+                    html += '<button type="button" class="text-text-tertiary hover:text-success-400 transition-colors p-0.5" title="Bring Online" onclick="prepareDeviceAction(\'online\', \'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>';
+                }
+                html += '<button type="button" class="text-text-tertiary hover:text-info-400 transition-colors p-0.5" title="Replace Device" onclick="prepareReplace(\'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>';
+                if (vdev.type === 'mirror') {
+                    html += '<button type="button" class="text-text-tertiary hover:text-danger-400 transition-colors p-0.5" title="Detach from Mirror" onclick="prepareDetach(\'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg></button>';
+                }
+                html += '</div></td></tr>';
+            });
+            html += '</tbody></table></div>';
+
+            // Quick attach link for single/mirror data vdevs
+            if (sec.key === 'data' && (vdev.type === 'single' || vdev.type === 'mirror')) {
+                var firstDev = (vdev.devices && vdev.devices.length > 0) ? vdev.devices[0].name : '';
+                var attachLabel = vdev.type === 'single' ? 'Attach disk to create mirror' : 'Attach disk to extend mirror';
+                html += '<div class="mt-2 pt-2 border-t border-border-subtle/30"><button type="button" class="text-xs text-primary-400 hover:text-primary-300 transition-colors inline-flex items-center gap-1" onclick="prepareAttach(\'' + escAttr(firstDev) + '\')"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>' + attachLabel + '</button></div>';
+            }
+
+            html += '</div>';
+        });
+        html += '</div>';
+    });
+
+    if (!hasAny) {
+        html = '<p class="text-text-tertiary text-sm">No topology information available.</p>';
+    }
+    container.innerHTML = html;
+}
+
+function stateHtml(state) {
+    if (state === 'ONLINE') return '<span class="text-success-400 text-xs font-medium">ONLINE</span>';
+    if (state === 'DEGRADED') return '<span class="text-warning-400 text-xs font-semibold">DEGRADED</span>';
+    if (state === 'FAULTED' || state === 'UNAVAIL' || state === 'REMOVED') return '<span class="text-danger-400 text-xs font-semibold">' + state + '</span>';
+    if (state === 'OFFLINE') return '<span class="text-text-tertiary text-xs font-medium">OFFLINE</span>';
+    return '<span class="text-text-tertiary text-xs">' + (state || '') + '</span>';
+}
+
+// ==================== Disk Button Rendering ====================
+function renderDiskButtons(allDisks, poolDevices) {
+    // Categorize disks
+    var freeDisksList = [];
+    var systemDisksList = [];
+    var inUseDisksList = [];
+
+    allDisks.forEach(function(disk) {
+        if (disk.is_system_disk) {
+            systemDisksList.push(disk);
+        } else if (disk.in_use) {
+            inUseDisksList.push(disk);
+        } else {
+            freeDisksList.push(disk);
+        }
+    });
+
+    // Render the system disks summary area
+    renderAvailableDisksSection(allDisks, freeDisksList, systemDisksList, inUseDisksList);
+
+    // Render free disk buttons for Add VDev
+    renderDiskButtonsInto('add-vdev-disks', freeDisksList, function(disk) {
+        appendDevice('add-devices', disk.device_path);
+    });
+
+    // Render free disk buttons for Attach (new device)
+    renderDiskButtonsInto('attach-free-disks', freeDisksList, function(disk) {
+        document.getElementById('attach-new').value = disk.device_path;
+    });
+
+    // Render pool device buttons for Attach (existing device)
+    renderPoolDeviceButtonsInto('attach-pool-devices', poolDevices, function(devName) {
+        document.getElementById('attach-existing').value = devName;
+    });
+
+    // Render pool device buttons for Replace (old device)
+    renderPoolDeviceButtonsInto('replace-pool-devices', poolDevices, function(devName) {
+        document.getElementById('replace-old').value = devName;
+    });
+
+    // Render free disk buttons for Replace (new device)
+    renderDiskButtonsInto('replace-free-disks', freeDisksList, function(disk) {
+        document.getElementById('replace-new').value = disk.device_path;
+    });
+}
+
+function renderAvailableDisksSection(allDisks, freeDisksList, systemDisksList, inUseDisksList) {
+    var container = document.getElementById('available-disks-container');
+    var html = '';
+
+    // Free disks
+    if (freeDisksList.length > 0) {
+        html += '<div class="mb-4"><h3 class="text-sm font-semibold text-success-400 mb-1">Available (Unused) ZFS Disks (' + freeDisksList.length + ')</h3>';
+        html += '<p class="text-xs text-warning-400 mb-2">These disks may be in use by another filesystem. Verify before use.</p>';
+        html += '<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">';
+        freeDisksList.forEach(function(disk) {
+            html += '<div class="disk-btn px-3 py-2 text-xs font-mono rounded-lg bg-bg-elevated-2 text-text-primary border-2 border-success-900/50">';
+            html += '<div class="font-semibold">' + escHtml(disk.name) + '</div>';
+            html += '<div class="text-text-tertiary">' + escHtml(disk.size) + ' ' + escHtml(disk.type) + '</div>';
+            if (disk.model && disk.model !== 'Unknown') html += '<div class="text-text-tertiary truncate" title="' + escAttr(disk.model) + '">' + escHtml(disk.model) + '</div>';
+            html += '</div>';
+        });
+        html += '</div></div>';
+    }
+
+    // In-use disks
+    if (inUseDisksList.length > 0) {
+        html += '<div class="mb-4"><h3 class="text-sm font-semibold text-danger-400 mb-2">In-Use Disks (' + inUseDisksList.length + ')</h3>';
+        html += '<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">';
+        inUseDisksList.forEach(function(disk) {
+            html += '<div class="disk-btn disk-btn-active px-3 py-2 text-xs font-mono rounded-lg border-2">';
+            html += '<div class="font-semibold">' + escHtml(disk.name) + '</div>';
+            html += '<div class="text-text-tertiary">' + escHtml(disk.size) + ' ' + escHtml(disk.type) + '</div>';
+            html += '</div>';
+        });
+        html += '</div></div>';
+    }
+
+    // System disks
+    if (systemDisksList.length > 0) {
+        html += '<div><h3 class="text-sm font-semibold text-danger-400 mb-2">System Disks (' + systemDisksList.length + ')</h3>';
+        html += '<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">';
+        systemDisksList.forEach(function(disk) {
+            html += '<div class="disk-btn disk-btn-system px-3 py-2 text-xs font-mono rounded-lg border-2">';
+            html += '<div class="font-semibold">' + escHtml(disk.name) + '</div>';
+            html += '<div class="text-text-tertiary">' + escHtml(disk.size) + '</div>';
+            if (disk.system_usage) html += '<div class="text-danger-300 text-xs mt-1">' + escHtml(disk.system_usage) + '</div>';
+            html += '</div>';
+        });
+        html += '</div></div>';
+    }
+
+    if (allDisks.length === 0) {
+        html = '<p class="text-text-tertiary text-sm text-center py-4">No disks detected on this system.</p>';
+    }
+
+    container.innerHTML = html;
+}
+
+function renderDiskButtonsInto(containerId, disksList, onClick) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (disksList.length === 0) {
+        container.innerHTML = '<span class="text-xs text-text-tertiary italic">No unused disks available</span>';
+        return;
+    }
+
+    var html = '';
+    disksList.forEach(function(disk) {
+        var btnId = containerId + '-' + disk.name;
+        html += '<button type="button" id="' + btnId + '" class="disk-btn px-2 py-1 text-xs font-mono rounded bg-bg-elevated-2 text-text-secondary border border-success-900/50 hover:border-primary-500 hover:text-primary-400 transition-colors" title="' + escAttr(disk.model) + ' - ' + escAttr(disk.size) + ' ' + escAttr(disk.type) + '" data-device="' + escAttr(disk.device_path) + '">';
+        html += escHtml(disk.name) + ' (' + escHtml(disk.size) + ')';
+        html += '</button>';
+    });
+    container.innerHTML = html;
+
+    // Attach click handlers
+    disksList.forEach(function(disk) {
+        var btnId = containerId + '-' + disk.name;
+        var btn = document.getElementById(btnId);
+        if (btn) {
+            btn.addEventListener('click', function() { onClick(disk); });
+        }
+    });
+}
+
+function renderPoolDeviceButtonsInto(containerId, poolDevices, onClick) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (!poolDevices || poolDevices.length === 0) {
+        container.innerHTML = '<span class="text-xs text-text-tertiary italic">No pool devices found</span>';
+        return;
+    }
+
+    var html = '';
+    poolDevices.forEach(function(devName, idx) {
+        var btnId = containerId + '-' + idx;
+        html += '<button type="button" id="' + btnId + '" class="disk-btn px-2 py-1 text-xs font-mono rounded bg-bg-elevated-2 text-text-secondary border border-info-900/50 hover:border-info-500 hover:text-info-400 transition-colors" data-device="' + escAttr(devName) + '">';
+        html += escHtml(devName);
+        html += '</button>';
+    });
+    container.innerHTML = html;
+
+    poolDevices.forEach(function(devName, idx) {
+        var btnId = containerId + '-' + idx;
+        var btn = document.getElementById(btnId);
+        if (btn) {
+            btn.addEventListener('click', function() { onClick(devName); });
+        }
+    });
+}
+
+// ==================== Disk-in-Use Check ====================
+async function runDiskCheck() {
+    // Get the modal's Alpine component to control state
+    var modalEl = document.getElementById('confirm-check-disks');
+    var modalData = null;
+    if (window.Alpine) {
+        modalData = window.Alpine.$data(modalEl);
+    } else if (modalEl.__x) {
+        modalData = modalEl.__x.$data;
+    }
+
+    try {
+        var response = await fetch('/zfs/pools/' + poolName + '/vdevs/check-disk-usage');
+        var data = await response.json();
+
+        if (data.success && data.disk_status && pageData) {
+            // Update disk statuses in our cached page data
+            pageData.all_disks.forEach(function(disk) {
+                var status = data.disk_status[disk.device_path];
+                if (status) {
+                    if (status.in_active_pool) {
+                        disk.in_use = true;
+                        disk.status_detail = 'active';
+                        disk.pool_name = status.pool_name;
+                    } else if (status.has_zfs_label) {
+                        disk.status_detail = 'labeled';
+                        disk.label_pool = status.pool_name;
+                    }
+                }
+            });
+
+            // Re-render disk buttons with updated status
+            renderDiskButtons(pageData.all_disks, pageData.pool_devices);
+        }
+
+        // Unlock operation cards now that disks have been checked
+        unlockOperationCards();
+
+        // Transition modal to complete state
+        if (modalData) {
+            modalData.state = 'complete';
+        }
+    } catch (err) {
+        console.error('Error checking disk usage:', err);
+        // Transition modal to error state
+        if (modalData) {
+            modalData.errorMsg = 'Error checking disk usage: ' + (err.message || 'Unknown error');
+            modalData.state = 'error';
+        }
+    }
+}
+
+// ==================== Device Action Helpers ====================
+function appendDevice(inputId, devicePath) {
+    var input = document.getElementById(inputId);
+    if (input.value && input.value.trim() !== '') {
+        input.value = input.value.trim() + ',' + devicePath;
+    } else {
+        input.value = devicePath;
+    }
+}
+
+function prepareDeviceAction(action, deviceName) {
+    if (action === 'offline') {
+        document.getElementById('offline-device').value = deviceName;
+        showConfirm('confirm-offline');
+    } else if (action === 'online') {
+        document.getElementById('online-device').value = deviceName;
+        showConfirm('confirm-online');
+    }
+}
+
+function prepareReplace(deviceName) {
+    document.getElementById('replace-old').value = deviceName;
+    document.getElementById('replace-new').focus();
+    document.getElementById('form-replace').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function prepareDetach(deviceName) {
+    document.getElementById('detach-device').value = deviceName;
+    showConfirm('confirm-detach');
+}
+
+function prepareAttach(deviceName) {
+    document.getElementById('attach-existing').value = deviceName;
+    document.getElementById('attach-new').focus();
+    document.getElementById('form-attach').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ==================== Operation Card Gating ====================
+// Cards are locked until disk check is completed
+function lockOperationCards() {
+    if (disksChecked) return;
+    var cardIds = ['card-attach', 'card-replace', 'card-add-aux'];
+    cardIds.forEach(function(id) {
+        var card = document.getElementById(id);
+        if (!card) return;
+        // Only lock if not already disabled by pool type constraints
+        if (card.style.opacity === '0.4') return;
+        card.style.position = 'relative';
+        // Add overlay
+        var overlay = document.createElement('div');
+        overlay.id = id + '-lock-overlay';
+        overlay.className = 'absolute inset-0 bg-bg-base/70 backdrop-blur-[3px] z-30 rounded-xl flex items-center justify-center cursor-not-allowed';
+        overlay.innerHTML = '<div class="text-center p-6"><svg class="w-12 h-12 mx-auto text-info-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg><p class="text-info-400 text-sm font-semibold">Run "Detect Disks in Use" first</p></div>';
+        card.appendChild(overlay);
+    });
+}
+
+function unlockOperationCards() {
+    disksChecked = true;
+    var cardIds = ['card-attach', 'card-replace', 'card-add-aux'];
+    cardIds.forEach(function(id) {
+        var overlay = document.getElementById(id + '-lock-overlay');
+        if (overlay) overlay.remove();
+    });
+    // Re-apply pool type constraints (attach may still be disabled for raidz)
+    if (pageData && pageData.topology) {
+        // Attach constraint is already applied; nothing extra needed here
+    }
+}
+
+// ==================== Pool Type Constraints ====================
+function applyPoolTypeConstraints(topology) {
+    // Determine the primary data vdev type from the pool topology
+    var dataVdevs = topology.data_vdevs || [];
+    var poolDataType = null;
+    var hasMirrorOrSingle = false;
+    var hasRaidz = false;
+
+    dataVdevs.forEach(function(vdev) {
+        var vtype = (vdev.type || '').toLowerCase();
+        if (vtype === 'mirror' || vtype === 'single' || vtype === '') {
+            hasMirrorOrSingle = true;
+            if (!poolDataType) poolDataType = vtype || 'single';
+        } else if (vtype.indexOf('raidz') === 0) {
+            hasRaidz = true;
+            if (!poolDataType) poolDataType = vtype;
+        }
+    });
+
+    // Check if pool has any mirror vdevs
+    var hasMirror = false;
+    dataVdevs.forEach(function(vdev) {
+        if ((vdev.type || '').toLowerCase() === 'mirror') hasMirror = true;
+    });
+
+    // 1. Grey out "Attach Device (Mirror)" card if pool uses raidz vdevs
+    //    Attach only works for single/mirror vdevs
+    var attachCard = document.getElementById('form-attach');
+    if (attachCard) {
+        var attachCardParent = attachCard.closest('.card');
+        if (hasRaidz && !hasMirrorOrSingle) {
+            // All data vdevs are raidz - disable attach
+            attachCardParent.style.opacity = '0.4';
+            attachCardParent.style.pointerEvents = 'none';
+            // Add explanation banner
+            var notice = document.createElement('div');
+            notice.className = 'bg-bg-elevated rounded-lg border border-border-subtle p-3 text-xs text-text-tertiary mb-4';
+            notice.innerHTML = '<strong class="text-text-secondary">Not available:</strong> This pool uses RAIDZ vdevs. Attach (mirror) is only available for single-disk or mirror vdevs.';
+            attachCard.parentElement.insertBefore(notice, attachCard);
+        }
+    }
+
+    // 2. Grey out "Bring Device Online" section if no devices are offline
+    var hasOfflineDevice = false;
+    var allSections = ['data_vdevs', 'log_vdevs', 'cache_vdevs', 'spare_vdevs', 'special_vdevs', 'dedup_vdevs'];
+    allSections.forEach(function(secKey) {
+        var vdevs = topology[secKey] || [];
+        vdevs.forEach(function(vdev) {
+            (vdev.devices || []).forEach(function(dev) {
+                if (dev.state === 'OFFLINE') hasOfflineDevice = true;
+            });
+        });
+    });
+
+    var onlineSection = document.getElementById('online-section');
+    if (onlineSection && !hasOfflineDevice) {
+        onlineSection.style.opacity = '0.4';
+        onlineSection.style.pointerEvents = 'none';
+        var onlineNotice = document.createElement('div');
+        onlineNotice.className = 'bg-bg-elevated rounded-lg border border-border-subtle p-2 text-xs text-text-tertiary mb-2';
+        onlineNotice.innerHTML = '<strong class="text-text-secondary">Not available:</strong> No devices are currently offline in this pool.';
+        onlineSection.parentElement.insertBefore(onlineNotice, onlineSection);
+    }
+
+    // 3. Grey out "Detach from Mirror" section if pool has no mirror vdevs
+    var detachSection = document.getElementById('detach-section');
+    if (detachSection && !hasMirror) {
+        detachSection.style.opacity = '0.4';
+        detachSection.style.pointerEvents = 'none';
+        // Add explanation notice
+        var detachNotice = document.createElement('div');
+        detachNotice.className = 'bg-bg-elevated rounded-lg border border-border-subtle p-2 text-xs text-text-tertiary mb-2';
+        detachNotice.innerHTML = '<strong class="text-text-secondary">Not available:</strong> This pool has no mirror vdevs. Detach only applies to devices in a mirror.';
+        detachSection.parentElement.insertBefore(detachNotice, detachSection);
+    }
+
+}
+
+// ==================== Auxiliary VDev Helpers ====================
+
+function formatBytesHuman(bytes) {
+    if (!bytes || bytes <= 0) return '';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    var i = 0;
+    var val = bytes;
+    while (val >= 1024 && i < units.length - 1) { val /= 1024; i++; }
+    if (i <= 1) return Math.round(val) + ' ' + units[i];
+    return val.toFixed(1) + ' ' + units[i];
+}
+
+function validateAndShowAddVdev() {
+    // Client-side validation: block submission if spare devices are too small
+    var errorEl = document.getElementById('add-vdev-validation-error');
+    if (errorEl) { errorEl.classList.add('hidden'); errorEl.innerHTML = ''; }
+
+    var typeSelect = document.getElementById('add-vdev-type');
+    var vdevType = typeSelect ? typeSelect.value : '';
+    var devicesInput = document.getElementById('add-devices');
+    var devicesStr = devicesInput ? devicesInput.value.trim() : '';
+
+    if (!devicesStr) {
+        showConfirm('confirm-add-vdev');
+        return;
+    }
+
+    if (vdevType === 'spare' && pageData && pageData.min_data_device_size > 0) {
+        var minSize = pageData.min_data_device_size;
+        // Build a lookup from device_path and name to size_bytes
+        var sizeLookup = {};
+        (pageData.all_disks || []).forEach(function(disk) {
+            sizeLookup[disk.device_path] = disk.size_bytes || 0;
+            sizeLookup[disk.name] = disk.size_bytes || 0;
+        });
+
+        var deviceList = devicesStr.split(',').map(function(d) { return d.trim(); }).filter(function(d) { return d.length > 0; });
+        var tooSmall = [];
+        deviceList.forEach(function(dev) {
+            var size = sizeLookup[dev];
+            if (size === undefined) {
+                // Try basename of the path
+                var base = dev.split('/').pop();
+                size = sizeLookup[base];
+            }
+            if (size !== undefined && size > 0 && size < minSize) {
+                tooSmall.push(dev + ' (' + formatBytesHuman(size) + ')');
+            }
+        });
+
+        if (tooSmall.length > 0) {
+            if (errorEl) {
+                errorEl.innerHTML = 'Cannot add spare: ' + escHtml(tooSmall.join(', ')) +
+                    ' is smaller than the smallest data device (' + formatBytesHuman(minSize) +
+                    '). Spares must be the same size or larger.';
+                errorEl.classList.remove('hidden');
+            }
+            return;
+        }
+    }
+
+    // Validation passed
+    showConfirm('confirm-add-vdev');
+}
+
+function refreshAddVdevDisks() {
+    // Re-render the Add VDev disk buttons, filtering for spare size when applicable
+    if (!pageData) return;
+    var typeSelect = document.getElementById('add-vdev-type');
+    var vdevType = typeSelect ? typeSelect.value : '';
+    var minSize = pageData.min_data_device_size || 0;
+
+    // Build free disks list (same logic as renderDiskButtons)
+    var freeDisksList = [];
+    var tooSmallDisks = [];
+    (pageData.all_disks || []).forEach(function(disk) {
+        if (disk.is_system_disk || disk.in_use) return;
+        if (vdevType === 'spare' && minSize > 0 && (disk.size_bytes || 0) < minSize) {
+            tooSmallDisks.push(disk);
+            return;
+        }
+        freeDisksList.push(disk);
+    });
+
+    renderDiskButtonsInto('add-vdev-disks', freeDisksList, function(disk) {
+        appendDevice('add-devices', disk.device_path);
+    });
+
+    // Show a warning message if disks were filtered out for spares
+    var warningEl = document.getElementById('spare-size-warning');
+    if (!warningEl) {
+        // Create the warning element if it does not exist
+        var container = document.getElementById('add-vdev-disks');
+        if (container) {
+            var div = document.createElement('div');
+            div.id = 'spare-size-warning';
+            div.className = 'mt-2 text-xs';
+            container.parentNode.insertBefore(div, container.nextSibling);
+            warningEl = div;
+        }
+    }
+    if (warningEl) {
+        if (vdevType === 'spare' && tooSmallDisks.length > 0) {
+            var names = tooSmallDisks.map(function(d) { return d.name + ' (' + d.size + ')'; }).join(', ');
+            warningEl.innerHTML = '<span class="text-warning-400">Disks too small for spare (min ' +
+                formatBytesHuman(minSize) + '): </span><span class="text-text-tertiary">' +
+                escHtml(names) + '</span>';
+            warningEl.classList.remove('hidden');
+        } else {
+            warningEl.innerHTML = '';
+            warningEl.classList.add('hidden');
+        }
+    }
+}
+
+function updateAuxLayoutOptions() {
+    var typeSelect = document.getElementById('add-vdev-type');
+    var layoutSection = document.getElementById('aux-layout-section');
+    var layoutSelect = document.getElementById('add-vdev-layout');
+    var hint = document.getElementById('aux-layout-hint');
+    if (!typeSelect || !layoutSection) return;
+
+    var vdevType = typeSelect.value;
+
+    // Clear and rebuild options based on type
+    layoutSelect.innerHTML = '';
+
+    if (vdevType === 'spare') {
+        // Spares: individual disks only, no layout concept
+        layoutSection.style.opacity = '0.4';
+        layoutSection.style.pointerEvents = 'none';
+        var opt = document.createElement('option');
+        opt.value = 'individual'; opt.textContent = 'Individual Disks (each disk is a separate spare)';
+        layoutSelect.appendChild(opt);
+        hint.textContent = 'Spares are always added as individual disks. Each device becomes a separate hot spare.';
+    } else if (vdevType === 'cache') {
+        // L2ARC: single disk or stripe only, cannot be mirrored
+        layoutSection.style.opacity = '1';
+        layoutSection.style.pointerEvents = 'auto';
+        var optSingle = document.createElement('option');
+        optSingle.value = 'single'; optSingle.textContent = 'Single Disk';
+        var optStripe = document.createElement('option');
+        optStripe.value = 'stripe'; optStripe.textContent = 'Stripe (multiple disks)';
+        layoutSelect.appendChild(optSingle);
+        layoutSelect.appendChild(optStripe);
+        hint.textContent = 'L2ARC cache cannot be mirrored. Use a single disk or stripe multiple disks.';
+    } else if (vdevType === 'log') {
+        // SLOG: single disk or mirror only, cannot be striped
+        layoutSection.style.opacity = '1';
+        layoutSection.style.pointerEvents = 'auto';
+        var optSingle = document.createElement('option');
+        optSingle.value = 'single'; optSingle.textContent = 'Single Disk';
+        var optMirror = document.createElement('option');
+        optMirror.value = 'mirror'; optMirror.textContent = 'Mirror (recommended)';
+        layoutSelect.appendChild(optSingle);
+        layoutSelect.appendChild(optMirror);
+        optMirror.selected = true;
+        hint.textContent = 'SLOG should be mirrored for data safety. A lost SLOG can result in data loss for pending synchronous writes.';
+    } else if (vdevType === 'special') {
+        // Special metadata: single disk (not recommended) or mirror matching pool redundancy
+        layoutSection.style.opacity = '1';
+        layoutSection.style.pointerEvents = 'auto';
+        var optSingle = document.createElement('option');
+        optSingle.value = 'single'; optSingle.textContent = 'Single Disk (NOT recommended)';
+        var optMirror = document.createElement('option');
+        optMirror.value = 'mirror'; optMirror.textContent = 'Mirror (must match pool redundancy)';
+        layoutSelect.appendChild(optSingle);
+        layoutSelect.appendChild(optMirror);
+        optMirror.selected = true;
+        hint.textContent = 'Special metadata vdevs MUST be mirrored to match the redundancy of the pool (mirror depth, raidz1/2/3). Losing a special vdev without redundancy will corrupt the pool.';
+    } else if (vdevType === 'dedup') {
+        // Dedup: individual disks, ZFS handles allocation. Should match pool redundancy.
+        layoutSection.style.opacity = '0.4';
+        layoutSection.style.pointerEvents = 'none';
+        var opt = document.createElement('option');
+        opt.value = 'individual'; opt.textContent = 'Individual Disks (ZFS manages allocation)';
+        layoutSelect.appendChild(opt);
+        hint.textContent = 'Dedup vdevs should match the redundancy of the pool (raidz1/2/3 or mirror depth). ZFS handles device allocation internally. A single disk is allowed but not recommended.';
+    }
+
+    // Refresh the Add VDev disk list (filters undersized disks when spare is selected)
+    refreshAddVdevDisks();
+}
+
+function renderRemovableVdevs(topology) {
+    var container = document.getElementById('remove-aux-container');
+    var form = document.getElementById('form-remove-aux');
+    var removable = [];
+
+    // Collect removable auxiliary vdevs: spare, cache, log
+    var removableSections = [
+        { key: 'spare_vdevs', label: 'Spare', color: 'warning' },
+        { key: 'cache_vdevs', label: 'Cache (L2ARC)', color: 'success' },
+        { key: 'log_vdevs', label: 'Log (SLOG)', color: 'info' }
+    ];
+
+    removableSections.forEach(function(sec) {
+        var vdevs = topology[sec.key] || [];
+        vdevs.forEach(function(vdev) {
+            // For single-device vdevs (like spares), list each device
+            if (vdev.devices && vdev.devices.length === 1 && (!vdev.type || vdev.type === 'single' || vdev.type === '')) {
+                removable.push({
+                    name: vdev.devices[0].name,
+                    label: sec.label,
+                    color: sec.color
+                });
+            } else {
+                // For mirror/multi-device vdevs, use the vdev name
+                removable.push({
+                    name: vdev.name,
+                    label: sec.label + (vdev.type === 'mirror' ? ' (mirror)' : ''),
+                    color: sec.color
+                });
+            }
+        });
+    });
+
+    if (removable.length === 0) {
+        container.innerHTML = '<p class="text-text-tertiary text-sm mb-4">No removable auxiliary vdevs found in this pool. Only Spare, Cache, and Log vdevs can be removed.</p>';
+        form.classList.add('hidden');
+        return;
+    }
+
+    var html = '<div class="mb-4">';
+    html += '<p class="text-xs text-text-tertiary mb-2">Click a vdev to select it for removal:</p>';
+    html += '<div class="flex flex-wrap gap-2">';
+    removable.forEach(function(item, idx) {
+        var btnId = 'remove-aux-btn-' + idx;
+        html += '<button type="button" id="' + btnId + '" class="disk-btn px-3 py-1.5 text-xs font-mono rounded bg-bg-elevated-2 text-text-secondary border border-' + item.color + '-900/50 hover:border-danger-500 hover:text-danger-400 transition-colors" data-device="' + escAttr(item.name) + '">';
+        html += '<span class="text-' + item.color + '-400 font-semibold">' + escHtml(item.label) + '</span> ';
+        html += escHtml(item.name);
+        html += '</button>';
+    });
+    html += '</div></div>';
+    container.innerHTML = html;
+
+    // Show the form
+    form.classList.remove('hidden');
+
+    // Attach click handlers
+    removable.forEach(function(item, idx) {
+        var btnId = 'remove-aux-btn-' + idx;
+        var btn = document.getElementById(btnId);
+        if (btn) {
+            btn.addEventListener('click', function() {
+                document.getElementById('remove-device').value = item.name;
+            });
+        }
+    });
+}
+
+function selectRemoveVdev(deviceName) {
+    document.getElementById('remove-device').value = deviceName;
+}
+
+// ==================== Utility ====================
+function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ==================== Warning Acknowledgment ====================
+var ACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+var ACK_STORAGE_KEY = 'vdev-warning-ack-' + poolName;
+
+function isAckValid() {
+    try {
+        var stored = sessionStorage.getItem(ACK_STORAGE_KEY);
+        if (!stored) return false;
+        var ackTime = parseInt(stored, 10);
+        if (isNaN(ackTime)) return false;
+        return (Date.now() - ackTime) < ACK_TIMEOUT_MS;
+    } catch (e) {
+        return false;
+    }
+}
+
+function dismissWarningAndLoad() {
+    document.getElementById('vdev-warning-banner').style.display = 'none';
+    document.getElementById('vdev-locked-overlay').style.display = 'none';
+    document.getElementById('vdev-page-content').style.display = 'block';
+    loadPageData();
+}
+
+async function acknowledgeWarning() {
+    var btn = document.getElementById('btn-acknowledge');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="loading-spinner loading-spinner-sm"></div> Logging acknowledgment...';
+
+    try {
+        await fetch('/zfs/pools/' + poolName + '/vdevs/acknowledge', { method: 'POST' });
+    } catch (err) {
+        console.error('Failed to log acknowledgment:', err);
+    }
+
+    // Store acknowledgment timestamp (5-minute timeout)
+    try {
+        sessionStorage.setItem(ACK_STORAGE_KEY, String(Date.now()));
+    } catch (e) {
+        // sessionStorage may be unavailable; proceed anyway
+    }
+
+    dismissWarningAndLoad();
+}
+
+// ==================== Init ====================
+// If the user acknowledged within the last 5 minutes, skip the warning
+if (isAckValid()) {
+    dismissWarningAndLoad();
+}
+</script>
+{% endblock %}
