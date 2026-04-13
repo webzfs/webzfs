@@ -73,12 +73,13 @@ def memory_data(request: Request):
 
 @router.get("/system-load-data", response_class=HTMLResponse)
 def system_load_data(request: Request):
-    """HTMX endpoint: system load + tasks card."""
+    """HTMX endpoint: system load + tasks card (includes CPU specs)."""
     try:
+        specs = get_system_specs()
         realtime = get_realtime_system_data()
-        context = {'realtime': realtime}
+        context = {'specs': specs, 'realtime': realtime}
     except Exception as exc:
-        context = {'error': str(exc), 'realtime': {}}
+        context = {'error': str(exc), 'specs': {}, 'realtime': {}}
 
     return templates.TemplateResponse(
         request, name="dashboard/system_load_data.jinja", context=context,
@@ -138,12 +139,13 @@ def memory_refresh(request: Request):
 
 @router.get("/system-load-refresh", response_class=HTMLResponse)
 def system_load_refresh(request: Request):
-    """Return refreshed system load information."""
+    """Return refreshed system load information (includes CPU specs)."""
     try:
+        specs = get_system_specs()
         realtime = get_realtime_system_data()
-        context = {"realtime": realtime}
+        context = {"specs": specs, "realtime": realtime}
     except Exception as exc:
-        context = {"error": str(exc), "realtime": {}}
+        context = {"error": str(exc), "specs": {}, "realtime": {}}
 
     return templates.TemplateResponse(
         request, name="dashboard/system_load_data.jinja", context=context,
@@ -155,14 +157,14 @@ def system_stats_refresh(request: Request):
     """
     HTMX endpoint polled every 60 seconds (+ manual refresh button).
 
-    Returns OOB-swap elements for uptime, tasks, system load, and
-    CPU time distribution.
+    Returns OOB-swap elements for uptime, tasks, and system load.
     """
     try:
+        specs = get_system_specs()
         realtime = get_realtime_system_data()
-        context = {'realtime': realtime}
+        context = {'specs': specs, 'realtime': realtime}
     except Exception as exc:
-        context = {'error': str(exc), 'realtime': {}}
+        context = {'error': str(exc), 'specs': {}, 'realtime': {}}
 
     return templates.TemplateResponse(
         request, name="dashboard/system_stats_data.jinja", context=context,

@@ -26,7 +26,7 @@
             <div class="flex gap-4 text-xs text-text-secondary whitespace-nowrap">
                 <span>Size: <span class="text-text-primary font-medium">{{ pool.size|default('?') }}</span></span>
                 <span>Alloc: <span class="text-text-primary font-medium">{{ pool.alloc|default('?') }}</span></span>
-                <span>Free: <span class="text-text-primary font-medium">{{ pool.free|default('?') }}</span></span>
+                <span>Avail: <span class="text-text-primary font-medium">{{ pool.avail|default(pool.free)|default('?') }}</span></span>
                 <span>Cap: <span class="font-medium {% if cap_pct >= 90 %}text-danger-400{% elif cap_pct >= 80 %}text-warning-400{% else %}text-text-primary{% endif %}">{{ pool.cap|default('?') }}</span></span>
             </div>
 
@@ -51,6 +51,20 @@
                 {% endif %}">
                 {{ health }}
             </span>
+
+            {% if health in ('FAULTED', 'SUSPENDED') %}
+            <!-- Collect Diagnostics button -->
+            <a href="/zfs/pools/{{ pool.name }}/diagnostics/download"
+               download
+               hx-boost="false"
+               class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger-500/20 text-danger-400 border border-danger-500/30 hover:bg-danger-500/30 transition-colors whitespace-nowrap"
+               title="Download diagnostic zip for troubleshooting">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Diagnostics
+            </a>
+            {% endif %}
         </div>
 
         {# Line 2: Extended details - datasets, snapshots, vdevs, disks, errors #}

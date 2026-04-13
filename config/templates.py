@@ -25,10 +25,5 @@ NAV_TABS = [
 templates = Jinja2Templates(BASE_DIR / "templates")
 templates.env.globals["settings"] = settings
 templates.env.globals["NAV_TABS"] = NAV_TABS
-<<<<<<< HEAD
 templates.env.globals["get_theme_css_path"] = get_theme_css_path
 templates.env.globals["get_active_theme"] = get_active_theme
-=======
-templates.env.globals["get_active_theme"] = get_active_theme
-templates.env.globals["get_theme_css_path"] = get_theme_css_path
->>>>>>> d750e2f (some small health report improvements)

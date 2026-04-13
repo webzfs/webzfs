@@ -46,14 +46,11 @@
     <div class="space-y-6">
         <!-- Page Header -->
         <div class="flex items-center justify-between">
-            <div>
-                <h1 class="text-3xl font-bold text-text-primary">System Dashboard</h1>
-                <p class="text-text-secondary mt-1">Holistic overview of system resources and ZFS status</p>
-            </div>
+            <h1 class="text-3xl font-bold text-text-primary">System Dashboard</h1>
         </div>
 
         <!-- ================================================================
-             ROW 1: System Info | Memory + Load | CPU Time  (3 columns)
+             ROW 1: System Info | Memory Usage | System Load  (3 columns)
              ================================================================ -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -84,121 +81,35 @@
                 </div>
             </div>
 
-            <!-- Column 2: Memory Usage (top) + System Load (bottom) stacked -->
-            <div class="space-y-6">
-                <!-- Memory Usage -->
-                <div class="card animate-fade-in" style="animation-delay: 0.1s;">
-                    <div class="card-body">
-                        <div class="flex items-center gap-3 mb-3">
-                            <div class="p-2 bg-success-500/10 border border-success-500/20 rounded-lg">
-                                <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
-                                </svg>
-                            </div>
-                            <h2 class="text-xl font-semibold text-text-primary">Memory Information</h2>
-                            <button type="button"
-                                    class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
-                                    hx-get="/memory-refresh"
-                                    hx-target="#memory-content"
-                                    hx-swap="innerHTML"
-                                    hx-indicator="#memory-spinner"
-                                    title="Refresh memory information">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                </svg>
-                            </button>
-                            <svg id="memory-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        </div>
-                        <!-- Async load: memory info -->
-                        <div id="memory-content"
-                             hx-get="/memory-data"
-                             hx-trigger="load"
-                             hx-swap="innerHTML">
-                            <div class="flex items-center justify-center py-4">
-                                <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span class="ml-2 text-sm text-text-tertiary">Loading memory info...</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- System Load -->
-                <div class="card animate-fade-in" style="animation-delay: 0.15s;">
-                    <div class="card-body">
-                        <div class="flex items-center gap-3 mb-3">
-                            <div class="p-2 bg-info-500/10 border border-info-500/20 rounded-lg">
-                                <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                                </svg>
-                            </div>
-                            <h2 class="text-xl font-semibold text-text-primary">System Load</h2>
-                            <button type="button"
-                                    class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
-                                    hx-get="/system-load-refresh"
-                                    hx-target="#system-load-content"
-                                    hx-swap="innerHTML"
-                                    hx-indicator="#system-load-spinner"
-                                    title="Refresh system load">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                </svg>
-                            </button>
-                            <svg id="system-load-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        </div>
-                        <!-- Async load: system load -->
-                        <div id="system-load-content"
-                             hx-get="/system-load-data"
-                             hx-trigger="load"
-                             hx-swap="innerHTML">
-                            <div class="flex items-center justify-center py-4">
-                                <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span class="ml-2 text-sm text-text-tertiary">Loading system load...</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Column 3: CPU Time Distribution -->
-            <div class="card animate-fade-in" style="animation-delay: 0.2s;">
+            <!-- Column 2: Memory Usage -->
+            <div class="card animate-fade-in" style="animation-delay: 0.1s;">
                 <div class="card-body">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                            <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="p-2 bg-success-500/10 border border-success-500/20 rounded-lg">
+                            <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
                             </svg>
                         </div>
-                        <h2 class="text-lg font-semibold text-text-primary">CPU Time</h2>
+                        <h2 class="text-lg font-semibold text-text-primary">Memory Usage</h2>
                         <button type="button"
                                 class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
-                                hx-get="/system-stats-refresh"
-                                hx-swap="none"
-                                hx-indicator="#cpu-spinner"
-                                title="Refresh system stats">
+                                hx-get="/memory-refresh"
+                                hx-target="#memory-content"
+                                hx-swap="innerHTML"
+                                hx-indicator="#memory-spinner"
+                                title="Refresh memory information">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                             </svg>
                         </button>
-                        <svg id="cpu-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg id="memory-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
                     </div>
-
-                    <!-- Async load: CPU time -->
-                    <div hx-get="/cpu-time-data"
+                    <!-- Async load: memory info -->
+                    <div id="memory-content"
+                         hx-get="/memory-data"
                          hx-trigger="load"
                          hx-swap="innerHTML">
                         <div class="flex items-center justify-center py-8">
@@ -206,7 +117,49 @@
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            <span class="ml-2 text-sm text-text-tertiary">Loading CPU stats...</span>
+                            <span class="ml-2 text-sm text-text-tertiary">Loading memory info...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 3: System Load -->
+            <div class="card animate-fade-in" style="animation-delay: 0.15s;">
+                <div class="card-body">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="p-2 bg-info-500/10 border border-info-500/20 rounded-lg">
+                            <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-lg font-semibold text-text-primary">System Load</h2>
+                        <button type="button"
+                                class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
+                                hx-get="/system-load-refresh"
+                                hx-target="#system-load-content"
+                                hx-swap="innerHTML"
+                                hx-indicator="#system-load-spinner"
+                                title="Refresh system load">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                        </button>
+                        <svg id="system-load-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                    <!-- Async load: system load -->
+                    <div id="system-load-content"
+                         hx-get="/system-load-data"
+                         hx-trigger="load"
+                         hx-swap="innerHTML">
+                        <div class="flex items-center justify-center py-8">
+                            <svg class="w-5 h-5 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="ml-2 text-sm text-text-tertiary">Loading system load...</span>
                         </div>
                     </div>
                 </div>
@@ -351,6 +304,6 @@
     {# Memory refreshes every 15 seconds via OOB swap #}
     <div hx-get="/realtime-data" hx-trigger="every 15s" hx-swap="none"></div>
 
-    {# System stats (uptime, tasks, load, CPU) refresh every 60 seconds via OOB swap #}
+    {# System stats (uptime, tasks, load) refresh every 60 seconds via OOB swap #}
     <div hx-get="/system-stats-refresh" hx-trigger="every 60s" hx-swap="none"></div>
 {% endblock %}

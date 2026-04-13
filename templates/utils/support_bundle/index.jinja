@@ -1,0 +1,164 @@
+{% extends "layout.jinja" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Breadcrumb Navigation -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Support Bundle</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary">Support Bundle</h1>
+            <p class="text-text-secondary mt-1">
+                Collect diagnostic data for troubleshooting and sharing with community or support.
+            </p>
+        </div>
+    </div>
+
+    <!-- Error Message -->
+    {% if error %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- About Support Bundles -->
+    <div class="card-nested bg-info-900/30 border-info-900 mb-4">
+        <div class="flex items-start gap-3">
+            <svg class="w-6 h-6 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div>
+                <h3 class="text-lg font-semibold text-info-400 mb-2">About Support Bundles</h3>
+                <p class="text-text-secondary text-sm">
+                    A support bundle collects the selected diagnostic information from your system and
+                    packages it into a single zip file. This file can then be shared with the community,
+                    forum posts, or support channels to help diagnose issues with your ZFS configuration.
+                    Select the items you want to include below, then click Generate.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Privacy Warning -->
+    <div class="bg-warning-900/30 border-2 border-warning-500/50 rounded-lg px-4 py-3 mb-6">
+        <div class="flex items-start gap-3">
+            <svg class="w-6 h-6 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div>
+                <h3 class="text-base font-semibold text-warning-400 mb-1">Privacy Notice</h3>
+                <p class="text-warning-400/90 text-sm">
+                    The generated bundle will contain real data from this system, including hostnames,
+                    IP addresses, pool names, dataset names, mount paths, and system configuration details.
+                    <strong>Always review the contents of the zip file before sharing it publicly.</strong>
+                    Deselect any categories below that may contain information you do not want to disclose.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Form -->
+    <form method="post" action="/utils/support-bundle/generate" id="bundle-form" hx-disable>
+        <!-- Category Sections -->
+        {% for category_name, items in categories.items() %}
+        <div class="card mb-4 animate-fade-in" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
+            <div class="card-body">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-text-primary">{{ category_name }}</h2>
+                    <button type="button"
+                            class="text-xs text-primary-400 hover:text-primary-300 transition-colors"
+                            onclick="toggleCategory(this, '{{ category_name | replace(' ', '_') | replace('/', '_') }}')">
+                        Select All
+                    </button>
+                </div>
+                <div class="space-y-3">
+                    {% for item in items %}
+                    <label class="flex items-start gap-3 cursor-pointer group">
+                        <input type="checkbox"
+                               name="item_{{ item.key }}"
+                               class="form-checkbox mt-0.5 category-{{ category_name | replace(' ', '_') | replace('/', '_') }}"
+                               checked>
+                        <div class="flex-1 min-w-0">
+                            <span class="text-text-primary text-sm font-medium group-hover:text-primary-400 transition-colors">
+                                {{ item.label }}
+                            </span>
+                            <p class="text-text-tertiary text-xs mt-0.5">{{ item.description }}</p>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Action Buttons -->
+        <div class="flex flex-col sm:flex-row items-center gap-3 mt-6">
+            <button type="submit"
+                    id="generate-btn"
+                    class="btn-primary px-6 py-3 inline-flex items-center gap-2 text-base font-medium w-full sm:w-auto justify-center">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Generate Support Bundle
+            </button>
+
+            <div class="flex gap-2">
+                <button type="button"
+                        class="btn-secondary px-4 py-2 text-sm"
+                        onclick="selectAll(true)">
+                    Select All
+                </button>
+                <button type="button"
+                        class="btn-secondary px-4 py-2 text-sm"
+                        onclick="selectAll(false)">
+                    Deselect All
+                </button>
+            </div>
+        </div>
+    </form>
+
+</div>
+
+<script>
+    function selectAll(checked) {
+        var checkboxes = document.querySelectorAll('#bundle-form input[type="checkbox"]');
+        checkboxes.forEach(function(cb) {
+            cb.checked = checked;
+        });
+    }
+
+    function toggleCategory(button, categoryClass) {
+        var checkboxes = document.querySelectorAll('.category-' + categoryClass);
+        // Determine if we should check or uncheck based on current state
+        var allChecked = true;
+        checkboxes.forEach(function(cb) {
+            if (!cb.checked) allChecked = false;
+        });
+        var newState = !allChecked;
+        checkboxes.forEach(function(cb) {
+            cb.checked = newState;
+        });
+        button.textContent = newState ? 'Deselect All' : 'Select All';
+    }
+
+    // Show a generating indicator when the form is submitted
+    document.getElementById('bundle-form').addEventListener('submit', function() {
+        var btn = document.getElementById('generate-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...';
+        // Re-enable after a timeout so the user can retry if the download fails
+        setTimeout(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Generate Support Bundle';
+        }, 15000);
+    });
+</script>
+{% endblock %}

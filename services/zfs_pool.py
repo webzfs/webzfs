@@ -53,9 +53,96 @@ class ZFSPoolService:
                 "periods, or colons."
             )
     
+    @staticmethod
+    def _format_bytes_zfs(size_bytes: int) -> str:
+        """
+        Format bytes to ZFS-style human-readable string.
+        Mimics the output format of zpool/zfs list (e.g., 1.82T, 844G, 512M).
+        """
+        if size_bytes == 0:
+            return "0B"
+        units = ['B', 'K', 'M', 'G', 'T', 'P', 'E']
+        value = float(size_bytes)
+        for unit in units:
+            if abs(value) < 1024:
+                if value >= 100:
+                    return f"{int(value)}{unit}"
+                elif value >= 10:
+                    return f"{value:.1f}{unit}"
+                else:
+                    return f"{value:.2f}{unit}"
+            value /= 1024
+        return f"{value:.2f}E"
+
+    def _get_pool_avail_map(self, timeout: int = 15) -> Dict[str, int]:
+        """
+        Get available space (from ZFS dataset layer) for each pool's root dataset.
+        
+        ZFS 'avail' accounts for metadata overhead, reservations, and other
+        ZFS-level space consumption that zpool 'free' does not. This is the
+        actual usable space available to users.
+        
+        Returns:
+            Dictionary mapping pool name to available bytes.
+        """
+        avail_map: Dict[str, int] = {}
+        try:
+            result = run_zfs_command(
+                ['zfs', 'list', '-H', '-p', '-o', 'name,avail', '-d', '0'],
+                timeout=timeout,
+                check=False,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if not line:
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 2:
+                        try:
+                            avail_map[parts[0]] = int(parts[1])
+                        except (ValueError, TypeError):
+                            pass
+        except Exception:
+            pass
+        return avail_map
+
+    def _get_pool_size_bytes_map(self, timeout: int = 15) -> Dict[str, int]:
+        """
+        Get pool total size in bytes from zpool list (parsable mode).
+        
+        Returns:
+            Dictionary mapping pool name to size in bytes.
+        """
+        size_map: Dict[str, int] = {}
+        try:
+            result = run_zfs_command(
+                ['zpool', 'list', '-H', '-p', '-o', 'name,size'],
+                timeout=timeout,
+                check=False,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if not line:
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 2:
+                        try:
+                            size_map[parts[0]] = int(parts[1])
+                        except (ValueError, TypeError):
+                            pass
+        except Exception:
+            pass
+        return size_map
+
     def list_pools(self) -> List[Dict[str, Any]]:
         """
-        List all ZFS pools with their key properties
+        List all ZFS pools with their key properties.
+        
+        Includes 'avail' from ZFS dataset layer which represents the actual
+        usable space for users (accounts for metadata, reservations, etc.).
+        The 'free' field from zpool list is kept as raw pool free space,
+        while 'avail' should be displayed to users as available space.
+        The 'cap' field is recalculated based on ZFS available space.
         
         Returns:
             List of dictionaries containing pool information
@@ -85,6 +172,30 @@ class ZFSPoolService:
                         'health': parts[7],
                         'altroot': parts[8] if parts[8] != '-' else None
                     })
+            
+            # Enrich with ZFS available space (actual usable space for users)
+            avail_map = self._get_pool_avail_map(timeout=timeout)
+            size_map = self._get_pool_size_bytes_map(timeout=timeout)
+            for pool in pools:
+                name = pool['name']
+                avail_bytes = avail_map.get(name)
+                size_bytes = size_map.get(name)
+                if avail_bytes is not None:
+                    pool['avail'] = self._format_bytes_zfs(avail_bytes)
+                    pool['avail_bytes'] = avail_bytes
+                else:
+                    pool['avail'] = pool['free']
+                    pool['avail_bytes'] = 0
+                if size_bytes is not None:
+                    pool['size_bytes'] = size_bytes
+                else:
+                    pool['size_bytes'] = 0
+                # Recalculate capacity based on ZFS available space
+                if avail_bytes is not None and size_bytes and size_bytes > 0:
+                    used_pct = round(
+                        ((size_bytes - avail_bytes) / size_bytes) * 100
+                    )
+                    pool['cap'] = f"{used_pct}%"
             
             return pools
         

@@ -1,0 +1,138 @@
+{# ARC Statistics summary partial - matches the ARC page visual layout #}
+
+{% if arc_stats and not arc_stats.get('error') %}
+<div class="space-y-6">
+    {# Row 1: ARC Size | Hit Rate | Cache Hits | Cache Misses #}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {# ARC Size #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg p-4">
+            <div class="text-xs text-text-tertiary uppercase tracking-wide mb-2">ARC Size</div>
+            <div class="text-3xl font-bold text-text-primary mb-1">{{ arc_stats.arc_size_human|default('--') }}</div>
+            <div class="text-sm text-text-secondary mb-3">of {{ arc_stats.arc_max_human|default('--') }} max</div>
+            {% set size_pct = arc_stats.arc_size_pct|default(0) %}
+            <div class="w-full bg-bg-elevated-3 rounded-full h-2.5 mb-1">
+                <div class="h-2.5 rounded-full bg-primary-500 transition-all duration-300" style="width: {{ size_pct }}%"></div>
+            </div>
+            <div class="text-xs text-text-tertiary">{{ size_pct }}% utilized</div>
+        </div>
+
+        {# Hit Rate #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg p-4">
+            <div class="text-xs text-text-tertiary uppercase tracking-wide mb-2">Hit Rate</div>
+            <div class="text-3xl font-bold text-success-400 mb-1">{{ arc_stats.hit_rate|default('--') }}%</div>
+            <div class="text-sm text-text-secondary mb-3">cache efficiency</div>
+            {% set hit_pct = arc_stats.hit_rate|default(0) %}
+            <div class="w-full bg-bg-elevated-3 rounded-full h-2.5">
+                <div class="h-2.5 rounded-full bg-success-500 transition-all duration-300" style="width: {{ hit_pct }}%"></div>
+            </div>
+        </div>
+
+        {# Cache Hits #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg p-4">
+            <div class="text-xs text-text-tertiary uppercase tracking-wide mb-2">Cache Hits</div>
+            <div class="text-3xl font-bold text-success-400 mb-1">{{ arc_stats.hits_human|default('--') }}</div>
+            <div class="text-sm text-text-secondary">successful reads</div>
+        </div>
+
+        {# Cache Misses #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg p-4">
+            <div class="text-xs text-text-tertiary uppercase tracking-wide mb-2">Cache Misses</div>
+            <div class="text-3xl font-bold text-danger-400 mb-1">{{ arc_stats.misses_human|default('--') }}</div>
+            <div class="text-sm text-text-secondary">disk reads required</div>
+        </div>
+    </div>
+
+    {# Row 2: Cache Distribution (MRU vs MFU) | Access Type Breakdown #}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {# Cache Distribution (MRU vs MFU) #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg p-5">
+            <h4 class="text-base font-semibold text-text-primary mb-4">Cache Distribution (MRU vs MFU)</h4>
+
+            {# MRU bar #}
+            <div class="mb-4">
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-sm text-text-secondary">MRU (Most Recently Used)</span>
+                    <span class="text-sm text-text-primary font-medium">{{ arc_stats.mru_hits_human|default('0') }} ({{ arc_stats.mru_pct|default(0) }}%)</span>
+                </div>
+                <div class="w-full bg-bg-elevated-3 rounded-full h-6 relative">
+                    <div class="h-6 rounded-full bg-warning-500 transition-all duration-300 flex items-center" style="width: {{ [arc_stats.mru_pct|default(0), 2]|max }}%">
+                        {% if arc_stats.mru_pct|default(0) > 8 %}
+                        <span class="text-xs font-semibold text-white pl-3">{{ arc_stats.mru_pct|default(0) }}%</span>
+                        {% endif %}
+                    </div>
+                    {% if arc_stats.mru_pct|default(0) <= 8 and arc_stats.mru_pct|default(0) > 0 %}
+                    <span class="absolute left-1 top-1/2 -translate-y-1/2 text-xs font-semibold text-warning-400 ml-1">{{ arc_stats.mru_pct|default(0) }}%</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {# MFU bar #}
+            <div>
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-sm text-text-secondary">MFU (Most Frequently Used)</span>
+                    <span class="text-sm text-text-primary font-medium">{{ arc_stats.mfu_hits_human|default('0') }} ({{ arc_stats.mfu_pct|default(0) }}%)</span>
+                </div>
+                <div class="w-full bg-bg-elevated-3 rounded-full h-6 relative">
+                    <div class="h-6 rounded-full bg-purple-500 transition-all duration-300 flex items-center" style="width: {{ [arc_stats.mfu_pct|default(0), 2]|max }}%">
+                        {% if arc_stats.mfu_pct|default(0) > 8 %}
+                        <span class="text-xs font-semibold text-white pl-3">{{ arc_stats.mfu_pct|default(0) }}%</span>
+                        {% endif %}
+                    </div>
+                    {% if arc_stats.mfu_pct|default(0) <= 8 and arc_stats.mfu_pct|default(0) > 0 %}
+                    <span class="absolute left-1 top-1/2 -translate-y-1/2 text-xs font-semibold text-purple-400 ml-1">{{ arc_stats.mfu_pct|default(0) }}%</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# Access Type Breakdown (Demand vs Prefetch) #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg p-5">
+            <h4 class="text-base font-semibold text-text-primary mb-4">Access Type Breakdown</h4>
+
+            {# Demand bar #}
+            <div class="mb-4">
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-sm text-text-secondary">Demand (On-Request)</span>
+                    <span class="text-sm text-text-primary font-medium">{{ arc_stats.demand_total_human|default('0') }} ({{ arc_stats.demand_pct|default(0) }}%)</span>
+                </div>
+                <div class="w-full bg-bg-elevated-3 rounded-full h-6 relative">
+                    <div class="h-6 rounded-full bg-success-500 transition-all duration-300 flex items-center" style="width: {{ [arc_stats.demand_pct|default(0), 2]|max }}%">
+                        {% if arc_stats.demand_pct|default(0) > 8 %}
+                        <span class="text-xs font-semibold text-white pl-3">{{ arc_stats.demand_pct|default(0) }}%</span>
+                        {% endif %}
+                    </div>
+                    {% if arc_stats.demand_pct|default(0) <= 8 and arc_stats.demand_pct|default(0) > 0 %}
+                    <span class="absolute left-1 top-1/2 -translate-y-1/2 text-xs font-semibold text-success-400 ml-1">{{ arc_stats.demand_pct|default(0) }}%</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {# Prefetch bar #}
+            <div>
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-sm text-text-secondary">Prefetch (Predictive)</span>
+                    <span class="text-sm text-text-primary font-medium">{{ arc_stats.prefetch_total_human|default('0') }} ({{ arc_stats.prefetch_pct|default(0) }}%)</span>
+                </div>
+                <div class="w-full bg-bg-elevated-3 rounded-full h-6 relative">
+                    <div class="h-6 rounded-full bg-warning-500 transition-all duration-300 flex items-center" style="width: {{ [arc_stats.prefetch_pct|default(0), 2]|max }}%">
+                        {% if arc_stats.prefetch_pct|default(0) > 8 %}
+                        <span class="text-xs font-semibold text-white pl-3">{{ arc_stats.prefetch_pct|default(0) }}%</span>
+                        {% endif %}
+                    </div>
+                    {% if arc_stats.prefetch_pct|default(0) <= 8 and arc_stats.prefetch_pct|default(0) > 0 %}
+                    <span class="absolute left-1 top-1/2 -translate-y-1/2 text-xs font-semibold text-warning-400 ml-1">{{ arc_stats.prefetch_pct|default(0) }}%</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% elif arc_stats and arc_stats.get('error') %}
+<div class="bg-bg-elevated-2 rounded-lg p-4 text-center">
+    <p class="text-text-tertiary text-sm">Unable to read ARC statistics: {{ arc_stats.error }}</p>
+</div>
+{% else %}
+<div class="bg-bg-elevated-2 rounded-lg p-4 text-center">
+    <p class="text-text-tertiary text-sm">ARC statistics not available</p>
+</div>
+{% endif %}

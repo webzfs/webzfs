@@ -3,12 +3,12 @@
 {% block body %}
     {% include "partials/navbar.jinja" %}
     <main class="min-h-screen">
-        <div id="error" class="container-page py-4">
-            {% if error %}
-                {% include "partials/error.jinja" %}
-            {% endif %}
-        </div>
-        <div class="container-page py-page">
+        <div class="container-page pt-6 pb-page">
+            <div id="error" {% if error %}class="mb-4"{% endif %}>
+                {% if error %}
+                    {% include "partials/error.jinja" %}
+                {% endif %}
+            </div>
             {% block content %}{% endblock %}
         </div>
     </main>

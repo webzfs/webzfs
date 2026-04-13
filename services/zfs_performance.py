@@ -317,7 +317,11 @@ class ZFSPerformanceService:
         pool_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Get detailed capacity statistics for pools
+        Get detailed capacity statistics for pools.
+        
+        Includes 'available' from ZFS dataset layer which represents the actual
+        usable space for users. The 'free' field from zpool list is kept as raw
+        pool free space. Capacity is recalculated based on ZFS available space.
         
         Args:
             pool_name: Optional pool name to filter
@@ -359,12 +363,92 @@ class ZFSPerformanceService:
                         'health': parts[7]
                     })
             
+            # Enrich with ZFS available space (actual usable space for users)
+            avail_map = {}
+            size_map = {}
+            try:
+                avail_cmd = ['zfs', 'list', '-H', '-p', '-o', 'name,avail', '-d', '0']
+                if pool_name:
+                    avail_cmd.append(pool_name)
+                avail_result = subprocess.run(
+                    avail_cmd,
+                    capture_output=True, text=True, check=False,
+                    timeout=timeout,
+                )
+                if avail_result.returncode == 0:
+                    for line in avail_result.stdout.strip().split('\n'):
+                        if not line:
+                            continue
+                        av_parts = line.split('\t')
+                        if len(av_parts) >= 2:
+                            try:
+                                avail_map[av_parts[0]] = int(av_parts[1])
+                            except (ValueError, TypeError):
+                                pass
+
+                size_cmd = ['zpool', 'list', '-H', '-p', '-o', 'name,size']
+                if pool_name:
+                    size_cmd.append(pool_name)
+                size_result = subprocess.run(
+                    size_cmd,
+                    capture_output=True, text=True, check=False,
+                    timeout=timeout,
+                )
+                if size_result.returncode == 0:
+                    for line in size_result.stdout.strip().split('\n'):
+                        if not line:
+                            continue
+                        sz_parts = line.split('\t')
+                        if len(sz_parts) >= 2:
+                            try:
+                                size_map[sz_parts[0]] = int(sz_parts[1])
+                            except (ValueError, TypeError):
+                                pass
+            except Exception:
+                pass
+
+            for pool in pools:
+                name = pool['name']
+                avail_bytes = avail_map.get(name)
+                size_bytes = size_map.get(name)
+                if avail_bytes is not None:
+                    pool['available'] = self._format_bytes_zfs(avail_bytes)
+                else:
+                    pool['available'] = pool['free']
+                # Recalculate capacity based on ZFS available space
+                if avail_bytes is not None and size_bytes and size_bytes > 0:
+                    used_pct = round(
+                        ((size_bytes - avail_bytes) / size_bytes) * 100
+                    )
+                    pool['capacity'] = f"{used_pct}%"
+            
             return {'pools': pools}
         
         except subprocess.TimeoutExpired:
             raise Exception(f"ZPool list command timed out after {timeout} seconds. The system may be unresponsive.")
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get capacity stats: {e.stderr}")
+
+    @staticmethod
+    def _format_bytes_zfs(size_bytes: int) -> str:
+        """
+        Format bytes to ZFS-style human-readable string.
+        Mimics the output format of zpool/zfs list (e.g., 1.82T, 844G, 512M).
+        """
+        if size_bytes == 0:
+            return "0B"
+        units = ['B', 'K', 'M', 'G', 'T', 'P', 'E']
+        value = float(size_bytes)
+        for unit in units:
+            if abs(value) < 1024:
+                if value >= 100:
+                    return f"{int(value)}{unit}"
+                elif value >= 10:
+                    return f"{value:.1f}{unit}"
+                else:
+                    return f"{value:.2f}{unit}"
+            value /= 1024
+        return f"{value:.2f}E"
     
     def get_dataset_space_usage(
         self,

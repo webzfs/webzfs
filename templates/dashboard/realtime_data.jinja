@@ -1,0 +1,54 @@
+{# OOB swap response for the 15-second memory poll.
+   Only memory is updated at this frequency. #}
+
+{% if realtime %}
+
+{# --- Memory bars --- #}
+<div id="dash-memory" hx-swap-oob="true">
+    {% if realtime.memory %}
+    {% set mem = realtime.memory %}
+    <div class="space-y-2">
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-text-secondary">Used</span>
+                <span class="text-text-primary font-medium">{{ mem.used_human }} ({{ mem.used_percent }}%)</span>
+            </div>
+            <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                <div class="bg-primary-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.used_percent }}%"></div>
+            </div>
+        </div>
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-text-secondary">Buff/Cache</span>
+                <span class="text-text-primary font-medium">{{ mem.buff_cache_human }} ({{ mem.buff_cache_percent }}%)</span>
+            </div>
+            <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                <div class="bg-warning-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.buff_cache_percent }}%"></div>
+            </div>
+        </div>
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-text-secondary">Available</span>
+                <span class="text-text-primary font-medium">{{ mem.available_human }} ({{ mem.available_percent }}%)</span>
+            </div>
+            <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                <div class="bg-success-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.available_percent }}%"></div>
+            </div>
+        </div>
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-text-secondary">Swap</span>
+                <span class="text-text-primary font-medium">{{ mem.swap_used_human }} / {{ mem.swap_total_human }} ({{ mem.swap_percent }}%)</span>
+            </div>
+            <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                <div class="bg-purple-500 h-full rounded-full transition-all duration-500" style="width: {{ mem.swap_percent }}%"></div>
+            </div>
+        </div>
+    </div>
+    <div class="mt-1 text-xs text-text-tertiary text-center">
+        Total RAM: {{ mem.total_human }}
+    </div>
+    {% endif %}
+</div>
+
+{% endif %}

@@ -21,7 +21,6 @@
     <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
         <div>
             <h1 class="text-3xl font-bold text-text-primary">ZFS Performance Monitor</h1>
-            <p class="text-text-secondary mt-1">Real-time monitoring of ZFS performance and resource usage</p>
         </div>
         <div class="flex items-center gap-3">
             <span class="text-sm text-text-secondary" id="last-update">Last updated: just now</span>
@@ -175,8 +174,8 @@
                             <p class="font-medium text-text-primary">{{ pool.allocated }}</p>
                         </div>
                         <div>
-                            <p class="text-text-secondary">Free</p>
-                            <p class="font-medium text-text-primary">{{ pool.free }}</p>
+                            <p class="text-text-secondary">Available</p>
+                            <p class="font-medium text-text-primary">{{ pool.available|default(pool.free) }}</p>
                         </div>
                         <div>
                             <p class="text-text-secondary">Fragmentation</p>

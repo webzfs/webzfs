@@ -205,6 +205,16 @@ def get_realtime_system_data() -> dict[str, Any]:
         memory['buff_cache_percent'] = 0
         memory['available_percent'] = round((mem.available / mem.total) * 100, 1) if mem.total else 0
 
+    # --- Swap ---
+    swap = psutil.swap_memory()
+    memory['swap_total'] = swap.total
+    memory['swap_used'] = swap.used
+    memory['swap_free'] = swap.free
+    memory['swap_percent'] = swap.percent
+    memory['swap_total_human'] = humanize.naturalsize(swap.total)
+    memory['swap_used_human'] = humanize.naturalsize(swap.used)
+    memory['swap_free_human'] = humanize.naturalsize(swap.free)
+
     # --- System load ---
     load_avg = psutil.getloadavg()
     cpu_count = psutil.cpu_count() or 1
