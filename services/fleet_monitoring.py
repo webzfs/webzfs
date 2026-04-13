@@ -310,6 +310,23 @@ class FleetMonitoringService:
                     self.update_server(server_id, status="error", last_checked=datetime.now().isoformat())
                     return []
                 
+                # Get ZFS available space (actual usable space for users)
+                avail_map = {}
+                try:
+                    avail_command = self._build_zfs_command(server, "zfs list -H -p -o name,avail -d 0")
+                    a_stdin, a_stdout, a_stderr = client.exec_command(avail_command)
+                    avail_output = a_stdout.read().decode('utf-8')
+                    for avail_line in avail_output.strip().split('\n'):
+                        if avail_line:
+                            av_parts = avail_line.split('\t')
+                            if len(av_parts) >= 2:
+                                try:
+                                    avail_map[av_parts[0]] = int(av_parts[1])
+                                except (ValueError, TypeError):
+                                    pass
+                except Exception:
+                    pass
+                
                 # Parse the output
                 pools = []
                 for line in output.strip().split('\n'):
@@ -317,12 +334,25 @@ class FleetMonitoringService:
                         parts = line.split('\t')
                         if len(parts) >= 6:
                             name, size, alloc, free, cap, health = parts[:6]
+                            size_int = int(size)
+                            avail_bytes = avail_map.get(name)
+                            if avail_bytes is not None:
+                                available_str = self._format_bytes(avail_bytes)
+                                # Recalculate capacity based on ZFS avail
+                                if size_int > 0:
+                                    used_pct = round(((size_int - avail_bytes) / size_int) * 100)
+                                    cap_str = f"{used_pct}%"
+                                else:
+                                    cap_str = f"{cap}%"
+                            else:
+                                available_str = self._format_bytes(int(free))
+                                cap_str = f"{cap}%"
                             pools.append({
                                 "name": name,
-                                "size": self._format_bytes(int(size)),
+                                "size": self._format_bytes(size_int),
                                 "allocated": self._format_bytes(int(alloc)),
-                                "free": self._format_bytes(int(free)),
-                                "capacity": f"{cap}%",
+                                "free": available_str,
+                                "capacity": cap_str,
                                 "health": health
                             })
                 

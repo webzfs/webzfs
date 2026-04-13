@@ -69,11 +69,11 @@
     {% endif %}
 
     <!-- Capacity Bar -->
-    {% set cap_val = props.get('capacity', {}).get('value', '0%')|replace('%', '')|int %}
+    {% set cap_val = (zfs_cap if zfs_cap else props.get('capacity', {}).get('value', '0%'))|replace('%', '')|int %}
     <div class="card">
         <div class="flex items-center justify-between mb-2">
             <span class="text-text-secondary text-sm font-medium">Pool Capacity</span>
-            <span class="text-text-primary font-semibold">{{ props.get('capacity', {}).get('value', '-') }}</span>
+            <span class="text-text-primary font-semibold">{{ zfs_cap if zfs_cap else props.get('capacity', {}).get('value', '-') }}</span>
         </div>
         <div class="w-full bg-bg-elevated-2 rounded-full h-3 overflow-hidden">
             <div class="h-3 rounded-full transition-all {% if cap_val > 90 %}bg-danger-500{% elif cap_val >= 80 %}bg-warning-500{% else %}bg-success-500{% endif %}"
@@ -81,7 +81,7 @@
         </div>
         <div class="flex justify-between mt-2 text-xs text-text-tertiary">
             <span>{{ props.get('allocated', {}).get('value', '-') }} allocated</span>
-            <span>{{ props.get('free', {}).get('value', '-') }} free of {{ props.get('size', {}).get('value', '-') }}</span>
+            <span>{{ zfs_avail if zfs_avail else props.get('free', {}).get('value', '-') }} available of {{ props.get('size', {}).get('value', '-') }}</span>
         </div>
     </div>
 
@@ -98,8 +98,8 @@
             <div class="text-text-primary text-xl font-bold">{{ props.get('allocated', {}).get('value', '-') }}</div>
         </div>
         <div class="card text-center">
-            <div class="text-text-tertiary text-xs uppercase mb-1">Free</div>
-            <div class="text-text-primary text-xl font-bold">{{ props.get('free', {}).get('value', '-') }}</div>
+            <div class="text-text-tertiary text-xs uppercase mb-1">Available</div>
+            <div class="text-text-primary text-xl font-bold">{{ zfs_avail if zfs_avail else props.get('free', {}).get('value', '-') }}</div>
         </div>
         <div class="card text-center">
             <div class="text-text-tertiary text-xs uppercase mb-1">Fragmentation</div>

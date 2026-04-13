@@ -616,7 +616,13 @@ class HealthAnalysisService:
                 name_lower = name.lower()
                 base_name = re.sub(r"-\d+$", "", name_lower)
 
-                if base_name in vdev_types:
+                # dRAID vdev names contain colons (e.g., draid2:8d:32c:2s-0)
+                # so prefix matching is needed instead of exact set membership.
+                # dRAID spares (e.g., draid2-0-0) do NOT contain colons and
+                # should be treated as disks, not vdev groups.
+                is_vdev = base_name in vdev_types or (name_lower.startswith("draid") and ":" in name_lower)
+
+                if is_vdev:
                     current_vdev = {
                         "type": name,
                         "state": state,

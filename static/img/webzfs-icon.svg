@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="48 10 264 300"
+     fill="none"
+     role="img"
+     aria-label="webzfs icon">
+    <defs>
+        <style>
+            .ink       { fill: #253041; }
+            .accent    { fill: #2F81F7; }
+            .accent-dk { fill: #255FCC; }
+            .hex-stroke {
+                stroke: #253041;
+                stroke-width: 14;
+                stroke-linejoin: round;
+                stroke-linecap: round;
+            }
+        </style>
+    </defs>
+    <!-- Hexagon outline -->
+    <path class="hex-stroke" fill="none"
+          d="M 180.000 20.000
+          L 301.244 90.000
+          L 301.244 230.000
+          L 180.000 300.000
+          L 58.756 230.000
+          L 58.756 90.000
+          Z"/>
+    <!-- Disk stack -->
+    <rect x="102" y="97"  width="156" height="34" rx="6" class="ink"/>
+    <rect x="102" y="143" width="156" height="34" rx="6" class="accent-dk"/>
+    <rect x="102" y="189" width="156" height="34" rx="6" class="accent"/>
+    <!-- Indicator dots -->
+    <circle cx="118" cy="114" r="4" fill="#E6EEF9"/>
+    <circle cx="118" cy="160" r="4" fill="#E6EEF9"/>
+    <circle cx="118" cy="206" r="4" fill="#E6EEF9"/>
+</svg>

@@ -2,18 +2,18 @@
 
 {% block content %}
 <div class="space-y-6">
+    <!-- Breadcrumb Navigation -->
+    <nav class="flex items-center text-sm text-text-secondary">
+        <a href="/zfs/pools" class="hover:text-text-primary transition-colors">Pools</a>
+        <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
+        <span class="text-text-primary font-medium">Datasets</span>
+    </nav>
+
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-            <h1 class="text-3xl font-bold text-text-primary">ZFS Datasets Management</h1>
-            <nav class="flex items-center text-sm text-text-secondary mt-1">
-                <a href="/zfs/pools" class="hover:text-text-primary transition-colors">Pools</a>
-                <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-                <span class="text-text-primary font-medium">Datasets</span>
-            </nav>
-        </div>
+        <h1 class="text-3xl font-bold text-text-primary">ZFS Datasets Management</h1>
     </div>
 
     <!-- Success/Error Messages -->

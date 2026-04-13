@@ -53,9 +53,96 @@ class ZFSPoolService:
                 "periods, or colons."
             )
     
+    @staticmethod
+    def _format_bytes_zfs(size_bytes: int) -> str:
+        """
+        Format bytes to ZFS-style human-readable string.
+        Mimics the output format of zpool/zfs list (e.g., 1.82T, 844G, 512M).
+        """
+        if size_bytes == 0:
+            return "0B"
+        units = ['B', 'K', 'M', 'G', 'T', 'P', 'E']
+        value = float(size_bytes)
+        for unit in units:
+            if abs(value) < 1024:
+                if value >= 100:
+                    return f"{int(value)}{unit}"
+                elif value >= 10:
+                    return f"{value:.1f}{unit}"
+                else:
+                    return f"{value:.2f}{unit}"
+            value /= 1024
+        return f"{value:.2f}E"
+
+    def _get_pool_avail_map(self, timeout: int = 15) -> Dict[str, int]:
+        """
+        Get available space (from ZFS dataset layer) for each pool's root dataset.
+        
+        ZFS 'avail' accounts for metadata overhead, reservations, and other
+        ZFS-level space consumption that zpool 'free' does not. This is the
+        actual usable space available to users.
+        
+        Returns:
+            Dictionary mapping pool name to available bytes.
+        """
+        avail_map: Dict[str, int] = {}
+        try:
+            result = run_zfs_command(
+                ['zfs', 'list', '-H', '-p', '-o', 'name,avail', '-d', '0'],
+                timeout=timeout,
+                check=False,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if not line:
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 2:
+                        try:
+                            avail_map[parts[0]] = int(parts[1])
+                        except (ValueError, TypeError):
+                            pass
+        except Exception:
+            pass
+        return avail_map
+
+    def _get_pool_size_bytes_map(self, timeout: int = 15) -> Dict[str, int]:
+        """
+        Get pool total size in bytes from zpool list (parsable mode).
+        
+        Returns:
+            Dictionary mapping pool name to size in bytes.
+        """
+        size_map: Dict[str, int] = {}
+        try:
+            result = run_zfs_command(
+                ['zpool', 'list', '-H', '-p', '-o', 'name,size'],
+                timeout=timeout,
+                check=False,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if not line:
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 2:
+                        try:
+                            size_map[parts[0]] = int(parts[1])
+                        except (ValueError, TypeError):
+                            pass
+        except Exception:
+            pass
+        return size_map
+
     def list_pools(self) -> List[Dict[str, Any]]:
         """
-        List all ZFS pools with their key properties
+        List all ZFS pools with their key properties.
+        
+        Includes 'avail' from ZFS dataset layer which represents the actual
+        usable space for users (accounts for metadata, reservations, etc.).
+        The 'free' field from zpool list is kept as raw pool free space,
+        while 'avail' should be displayed to users as available space.
+        The 'cap' field is recalculated based on ZFS available space.
         
         Returns:
             List of dictionaries containing pool information
@@ -85,6 +172,30 @@ class ZFSPoolService:
                         'health': parts[7],
                         'altroot': parts[8] if parts[8] != '-' else None
                     })
+            
+            # Enrich with ZFS available space (actual usable space for users)
+            avail_map = self._get_pool_avail_map(timeout=timeout)
+            size_map = self._get_pool_size_bytes_map(timeout=timeout)
+            for pool in pools:
+                name = pool['name']
+                avail_bytes = avail_map.get(name)
+                size_bytes = size_map.get(name)
+                if avail_bytes is not None:
+                    pool['avail'] = self._format_bytes_zfs(avail_bytes)
+                    pool['avail_bytes'] = avail_bytes
+                else:
+                    pool['avail'] = pool['free']
+                    pool['avail_bytes'] = 0
+                if size_bytes is not None:
+                    pool['size_bytes'] = size_bytes
+                else:
+                    pool['size_bytes'] = 0
+                # Recalculate capacity based on ZFS available space
+                if avail_bytes is not None and size_bytes and size_bytes > 0:
+                    used_pct = round(
+                        ((size_bytes - avail_bytes) / size_bytes) * 100
+                    )
+                    pool['cap'] = f"{used_pct}%"
             
             return pools
         
@@ -529,6 +640,387 @@ class ZFSPoolService:
             if 'already has a checkpoint' in error_msg.lower():
                 raise Exception(f"Pool '{pool_name}' already has a checkpoint. Remove the existing checkpoint first.")
             raise Exception(f"Failed to create checkpoint: {error_msg}")
+    
+    def add_vdev(self, pool_name: str, vdevs: List[str],
+                 force: bool = False) -> None:
+        """
+        Add a new vdev to an existing pool.
+        
+        Args:
+            pool_name: Name of the pool
+            vdevs: List of vdev specifications (e.g., ['mirror', '/dev/sdb', '/dev/sdc'])
+            force: Force adding even if devices appear in use
+            
+        Raises:
+            Exception: If the add operation fails
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            cmd = ['zpool', 'add']
+            if force:
+                cmd.append('-f')
+            cmd.append(pool_name)
+            cmd.extend(vdevs)
+            
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool add vdev command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to add vdev: {e.stderr}")
+    
+    def attach_device(self, pool_name: str, existing_device: str,
+                      new_device: str, force: bool = False) -> None:
+        """
+        Attach a new device to an existing device to create or extend a mirror.
+        
+        Args:
+            pool_name: Name of the pool
+            existing_device: The device already in the pool
+            new_device: The new device to attach (creates/extends mirror)
+            force: Force attach even if the new device appears in use
+            
+        Raises:
+            Exception: If the attach operation fails
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            cmd = ['zpool', 'attach']
+            if force:
+                cmd.append('-f')
+            cmd.extend([pool_name, existing_device, new_device])
+            
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool attach command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to attach device: {e.stderr}")
+    
+    def detach_device(self, pool_name: str, device: str) -> None:
+        """
+        Detach a device from a mirror.
+        
+        The device must be part of a mirror vdev. After detach, the mirror
+        continues with the remaining devices.
+        
+        Args:
+            pool_name: Name of the pool
+            device: The device to detach from the mirror
+            
+        Raises:
+            Exception: If the detach operation fails
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            cmd = ['zpool', 'detach', pool_name, device]
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool detach command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to detach device: {e.stderr}")
+    
+    def replace_device(self, pool_name: str, old_device: str,
+                       new_device: str, force: bool = False) -> None:
+        """
+        Replace a device in a pool with a new device.
+        
+        The pool will resilver data onto the new device. Progress can be
+        monitored via zpool status.
+        
+        Args:
+            pool_name: Name of the pool
+            old_device: The device to replace
+            new_device: The replacement device
+            force: Force replace even if the new device appears in use
+            
+        Raises:
+            Exception: If the replace operation fails
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            cmd = ['zpool', 'replace']
+            if force:
+                cmd.append('-f')
+            cmd.extend([pool_name, old_device, new_device])
+            
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool replace command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to replace device: {e.stderr}")
+    
+    def remove_vdev(self, pool_name: str, device: str) -> None:
+        """
+        Remove a top-level vdev from a pool.
+        
+        Only certain vdev types can be removed (spare, cache, log, and
+        on supported platforms, top-level data vdevs via evacuation).
+        
+        Args:
+            pool_name: Name of the pool
+            device: The vdev or device to remove
+            
+        Raises:
+            Exception: If the remove operation fails
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            cmd = ['zpool', 'remove', pool_name, device]
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool remove command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to remove vdev: {e.stderr}")
+    
+    def online_device(self, pool_name: str, device: str,
+                      expand: bool = False) -> None:
+        """
+        Bring a device online in a pool.
+        
+        Args:
+            pool_name: Name of the pool
+            device: The device to bring online
+            expand: If True, expand the device to use all available space
+            
+        Raises:
+            Exception: If the online operation fails
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            cmd = ['zpool', 'online']
+            if expand:
+                cmd.append('-e')
+            cmd.extend([pool_name, device])
+            
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool online command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to online device: {e.stderr}")
+    
+    def offline_device(self, pool_name: str, device: str,
+                       temporary: bool = False) -> None:
+        """
+        Take a device offline in a pool.
+        
+        Args:
+            pool_name: Name of the pool
+            device: The device to take offline
+            temporary: If True, the device is offlined temporarily and will
+                      be automatically onlined on reboot
+            
+        Raises:
+            Exception: If the offline operation fails
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('default', 60)
+        
+        try:
+            cmd = ['zpool', 'offline']
+            if temporary:
+                cmd.append('-t')
+            cmd.extend([pool_name, device])
+            
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool offline command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to offline device: {e.stderr}")
+    
+    def get_pool_topology(self, pool_name: str) -> Dict[str, Any]:
+        """
+        Parse pool status into a structured topology tree.
+        
+        Returns a dictionary with:
+        - data_vdevs: list of data vdev groups
+        - log_vdevs: list of log vdev groups
+        - cache_vdevs: list of cache devices
+        - spare_vdevs: list of spare devices
+        - special_vdevs: list of special vdev groups
+        - dedup_vdevs: list of dedup vdev groups
+        
+        Each vdev group contains:
+        - name: vdev name (e.g., 'mirror-0')
+        - type: 'mirror', 'raidz1', 'raidz2', 'raidz3', 'single', etc.
+        - state: vdev state
+        - devices: list of leaf device dicts
+        
+        Each leaf device contains:
+        - name: device name
+        - state: device state
+        - read_errors: int
+        - write_errors: int
+        - cksum_errors: int
+        - notes: extra status info (e.g., resilvering progress)
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('status', self.timeouts['default'])
+        
+        try:
+            result = run_zfs_command(
+                ['zpool', 'status', pool_name],
+                timeout=timeout
+            )
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool status command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to get pool topology: {e.stderr}")
+        
+        topology = {
+            'data_vdevs': [],
+            'log_vdevs': [],
+            'cache_vdevs': [],
+            'spare_vdevs': [],
+            'special_vdevs': [],
+            'dedup_vdevs': [],
+            'scan_info': '',
+        }
+        
+        lines = result.stdout.split('\n')
+        in_config = False
+        config_lines = []
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith('scan:'):
+                topology['scan_info'] = stripped.split(':', 1)[1].strip()
+            elif 'NAME' in stripped and 'STATE' in stripped and 'READ' in stripped:
+                in_config = True
+                continue
+            elif in_config:
+                if stripped == '' or stripped.startswith('errors:'):
+                    in_config = False
+                else:
+                    config_lines.append(line)
+        
+        # Parse config lines into topology tree
+        # Indent levels determine hierarchy:
+        # ~2 spaces (or 1 tab): pool root
+        # ~4 spaces: top-level vdev or section keyword (logs, cache, spares, etc.)
+        # ~6 spaces: leaf device or sub-vdev
+        # ~8 spaces: leaf under mirror within section
+        
+        current_section = 'data'  # data, logs, cache, spares, special, dedup
+        current_vdev = None
+        pool_root_indent = None
+        
+        section_keywords = {
+            'logs': 'log',
+            'cache': 'cache',
+            'spares': 'spare',
+            'special': 'special',
+            'dedup': 'dedup',
+        }
+        
+        vdev_type_keywords = {
+            'mirror', 'raidz1', 'raidz2', 'raidz3', 'raidz', 'draid',
+        }
+        
+        for line in config_lines:
+            stripped = line.lstrip()
+            if not stripped:
+                continue
+            indent = len(line) - len(stripped)
+            parts = stripped.split()
+            if not parts:
+                continue
+            
+            name = parts[0]
+            state = parts[1] if len(parts) > 1 else 'UNKNOWN'
+            read_err = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+            write_err = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+            cksum_err = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+            notes = ' '.join(parts[5:]) if len(parts) > 5 else ''
+            
+            # Determine pool root indent (first line is pool name)
+            if pool_root_indent is None:
+                pool_root_indent = indent
+                continue  # Skip pool root line
+            
+            # Check if this is a section keyword
+            if name.lower() in section_keywords:
+                current_section = section_keywords[name.lower()]
+                current_vdev = None
+                continue
+            
+            # Determine if this is a vdev group or leaf device
+            is_vdev_type = False
+            for vt in vdev_type_keywords:
+                if name.lower().startswith(vt):
+                    is_vdev_type = True
+                    break
+            
+            device_entry = {
+                'name': name,
+                'state': state,
+                'read_errors': read_err,
+                'write_errors': write_err,
+                'cksum_errors': cksum_err,
+                'notes': notes,
+            }
+            
+            section_key = current_section + '_vdevs'
+            if section_key not in topology:
+                section_key = 'data_vdevs'
+            
+            if is_vdev_type:
+                # This is a vdev group (mirror-0, raidz1-0, etc.)
+                vdev_type = name.split('-')[0] if '-' in name else name
+                current_vdev = {
+                    'name': name,
+                    'type': vdev_type,
+                    'state': state,
+                    'read_errors': read_err,
+                    'write_errors': write_err,
+                    'cksum_errors': cksum_err,
+                    'devices': [],
+                }
+                topology[section_key].append(current_vdev)
+            elif current_vdev is not None:
+                # This is a leaf device under the current vdev
+                current_vdev['devices'].append(device_entry)
+            else:
+                # This is a standalone device (no mirror/raidz group)
+                # Wrap it in a single-device vdev group
+                standalone_vdev = {
+                    'name': name,
+                    'type': 'single',
+                    'state': state,
+                    'read_errors': read_err,
+                    'write_errors': write_err,
+                    'cksum_errors': cksum_err,
+                    'devices': [device_entry],
+                }
+                topology[section_key].append(standalone_vdev)
+        
+        return topology
     
     def discard_checkpoint(self, pool_name: str) -> None:
         """
