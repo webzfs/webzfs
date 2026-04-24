@@ -214,18 +214,20 @@ async def pool_detail(request: Request, pool_name: str):
         except Exception:
             pass
 
-        # Compute user-facing available space and capacity from ZFS dataset layer.
-        # ZFS 'available' accounts for metadata overhead, reservations, etc.
-        # and is the actual usable space for users.
+        # Compute user-facing used, available, total, and capacity from ZFS
+        # dataset layer. ZFS 'used' and 'available' account for metadata
+        # overhead, reservations, etc. total = used + avail gives a
+        # consistent set of numbers that match the capacity bar.
+        zfs_used = None
         zfs_avail = None
+        zfs_total = None
         zfs_cap = None
+        if dataset_props.get('used', {}).get('value'):
+            zfs_used = dataset_props['used']['value']
         if dataset_props.get('available', {}).get('value'):
             zfs_avail = dataset_props['available']['value']
-        pool_props = pool_status.get('properties', {})
-        size_raw = pool_props.get('size', {}).get('value', '')
-        if zfs_avail and size_raw:
+        if zfs_used and zfs_avail:
             try:
-                # Parse ZFS human-readable size strings to bytes for calculation
                 def _parse_zfs_size(s: str) -> int:
                     s = s.strip()
                     multipliers = {
@@ -239,10 +241,26 @@ async def pool_detail(request: Request, pool_name: str):
                         return int(float(s[:-1]) * multipliers[suffix])
                     return int(s)
 
+                used_bytes = _parse_zfs_size(zfs_used)
                 avail_bytes = _parse_zfs_size(zfs_avail)
-                size_bytes = _parse_zfs_size(size_raw)
-                if size_bytes > 0:
-                    zfs_cap = f"{round(((size_bytes - avail_bytes) / size_bytes) * 100)}%"
+                total_bytes = used_bytes + avail_bytes
+                # Format total back to human-readable
+                units = ['B', 'K', 'M', 'G', 'T', 'P', 'E']
+                val = float(total_bytes)
+                for unit in units:
+                    if abs(val) < 1024:
+                        if val >= 100:
+                            zfs_total = f"{int(val)}{unit}"
+                        elif val >= 10:
+                            zfs_total = f"{val:.1f}{unit}"
+                        else:
+                            zfs_total = f"{val:.2f}{unit}"
+                        break
+                    val /= 1024
+                else:
+                    zfs_total = f"{val:.2f}E"
+                if total_bytes > 0:
+                    zfs_cap = f"{round((used_bytes / total_bytes) * 100)}%"
             except (ValueError, TypeError):
                 pass
 
@@ -263,7 +281,9 @@ async def pool_detail(request: Request, pool_name: str):
                 "parsed": parsed,
                 "reservation_value": reservation_value,
                 "dataset_props": dataset_props,
+                "zfs_used": zfs_used,
                 "zfs_avail": zfs_avail,
+                "zfs_total": zfs_total,
                 "zfs_cap": zfs_cap,
                 "checkpoint_info": checkpoint_info,
                 "checkpoint_supported": checkpoint_supported,

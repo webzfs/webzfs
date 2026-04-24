@@ -76,16 +76,16 @@
                 <!-- Main Capacity Info -->
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                     <div class="text-center p-4 bg-bg-elevated-2 rounded-lg">
-                        <p class="text-sm text-text-secondary mb-1">Total Size</p>
-                        <p class="text-2xl font-bold text-text-primary">{{ pool.size }}</p>
+                        <p class="text-sm text-text-secondary mb-1">Used</p>
+                        <p class="text-2xl font-bold text-text-primary">{{ pool.used|default(pool.allocated) }}</p>
                     </div>
-                    <div class="text-center p-4 bg-primary-900/30 rounded-lg">
-                        <p class="text-sm text-text-secondary mb-1">Allocated</p>
-                        <p class="text-2xl font-bold text-primary-400">{{ pool.allocated }}</p>
-                    </div>
-                    <div class="text-center p-4 bg-success-900/30 rounded-lg">
+                    <div>
                         <p class="text-sm text-text-secondary mb-1">Available</p>
-                        <p class="text-2xl font-bold text-success-400">{{ pool.available|default(pool.free) }}</p>
+                        <p class="text-2xl font-bold text-primary-400">{{ pool.available|default(pool.free) }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-text-secondary mb-1">Total</p>
+                        <p class="text-2xl font-bold text-success-400">{{ pool.total|default(pool.size) }}</p>
                     </div>
                     <div class="text-center p-4 bg-purple-900/30 rounded-lg">
                         <p class="text-sm text-text-secondary mb-1">Capacity Used</p>

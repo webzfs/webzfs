@@ -214,9 +214,9 @@
               <thead>
                 <tr class="bg-bg-elevated-2">
                   <th class="px-4 py-1.5 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Pool</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Size</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Alloc</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Used</th>
                   <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Available</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Total</th>
                   <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Capacity</th>
                   <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Health</th>
                 </tr>
@@ -226,9 +226,9 @@
                   {% set cap_val = pool.capacity.rstrip('%') | int %}
                   <tr class="{% if pool.health == 'SUSPENDED' or pool.health == 'FAULTED' or pool.health == 'UNAVAIL' %}bg-danger-500/10{% elif pool.health == 'DEGRADED' %}bg-warning-500/10{% endif %}">
                     <td class="px-4 py-1.5 font-semibold text-purple-400 whitespace-nowrap">{{ pool.name }}</td>
-                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.size }}</td>
-                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.allocated }}</td>
+                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.used }}</td>
                     <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.free }}</td>
+                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.total }}</td>
                     <td class="px-3 py-1.5 text-center whitespace-nowrap">
                       <div class="flex items-center justify-center gap-2">
                         <span class="text-text-primary">{{ pool.capacity }}</span>

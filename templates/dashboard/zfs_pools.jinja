@@ -22,11 +22,11 @@
                 {{ pool.name }}
             </a>
 
-            <!-- Size / Alloc / Free / Cap -->
-            <div class="flex gap-4 text-xs text-text-secondary whitespace-nowrap">
-                <span>Size: <span class="text-text-primary font-medium">{{ pool.size|default('?') }}</span></span>
-                <span>Alloc: <span class="text-text-primary font-medium">{{ pool.alloc|default('?') }}</span></span>
+            <!-- Used / Avail / Total / Cap -->
+            <div class="flex gap-4 text-xs text-text-secondary">
+                <span>Used: <span class="text-text-primary font-medium">{{ pool.used|default(pool.alloc)|default('?') }}</span></span>
                 <span>Avail: <span class="text-text-primary font-medium">{{ pool.avail|default(pool.free)|default('?') }}</span></span>
+                <span>Total: <span class="text-text-primary font-medium">{{ pool.total|default(pool.size)|default('?') }}</span></span>
                 <span>Cap: <span class="font-medium {% if cap_pct >= 90 %}text-danger-400{% elif cap_pct >= 80 %}text-warning-400{% else %}text-text-primary{% endif %}">{{ pool.cap|default('?') }}</span></span>
             </div>
 

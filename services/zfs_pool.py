@@ -74,21 +74,23 @@ class ZFSPoolService:
             value /= 1024
         return f"{value:.2f}E"
 
-    def _get_pool_avail_map(self, timeout: int = 15) -> Dict[str, int]:
+    def _get_pool_zfs_space_map(self, timeout: int = 15) -> Dict[str, Dict[str, int]]:
         """
-        Get available space (from ZFS dataset layer) for each pool's root dataset.
+        Get used and available space (from ZFS dataset layer) for each pool's
+        root dataset.
         
-        ZFS 'avail' accounts for metadata overhead, reservations, and other
-        ZFS-level space consumption that zpool 'free' does not. This is the
-        actual usable space available to users.
+        ZFS 'used' and 'avail' account for metadata overhead, reservations, and
+        other ZFS-level space consumption. Together they form a consistent pair:
+        total = used + avail, which can be used to calculate a meaningful
+        capacity percentage.
         
         Returns:
-            Dictionary mapping pool name to available bytes.
+            Dictionary mapping pool name to {'used': bytes, 'avail': bytes}.
         """
-        avail_map: Dict[str, int] = {}
+        space_map: Dict[str, Dict[str, int]] = {}
         try:
             result = run_zfs_command(
-                ['zfs', 'list', '-H', '-p', '-o', 'name,avail', '-d', '0'],
+                ['zfs', 'list', '-H', '-p', '-o', 'name,used,avail', '-d', '0'],
                 timeout=timeout,
                 check=False,
             )
@@ -97,14 +99,17 @@ class ZFSPoolService:
                     if not line:
                         continue
                     parts = line.split('\t')
-                    if len(parts) >= 2:
+                    if len(parts) >= 3:
                         try:
-                            avail_map[parts[0]] = int(parts[1])
+                            space_map[parts[0]] = {
+                                'used': int(parts[1]),
+                                'avail': int(parts[2]),
+                            }
                         except (ValueError, TypeError):
                             pass
         except Exception:
             pass
-        return avail_map
+        return space_map
 
     def _get_pool_size_bytes_map(self, timeout: int = 15) -> Dict[str, int]:
         """
@@ -173,29 +178,36 @@ class ZFSPoolService:
                         'altroot': parts[8] if parts[8] != '-' else None
                     })
             
-            # Enrich with ZFS available space (actual usable space for users)
-            avail_map = self._get_pool_avail_map(timeout=timeout)
-            size_map = self._get_pool_size_bytes_map(timeout=timeout)
+            # Enrich with ZFS used/available space from the dataset layer.
+            # used + avail form a consistent pair: total = used + avail,
+            # so the capacity bar percentage matches the displayed numbers.
+            space_map = self._get_pool_zfs_space_map(timeout=timeout)
             for pool in pools:
                 name = pool['name']
-                avail_bytes = avail_map.get(name)
-                size_bytes = size_map.get(name)
-                if avail_bytes is not None:
+                space = space_map.get(name)
+                if space is not None:
+                    used_bytes = space['used']
+                    avail_bytes = space['avail']
+                    total_bytes = used_bytes + avail_bytes
+                    pool['used'] = self._format_bytes_zfs(used_bytes)
+                    pool['used_bytes'] = used_bytes
                     pool['avail'] = self._format_bytes_zfs(avail_bytes)
                     pool['avail_bytes'] = avail_bytes
+                    pool['total'] = self._format_bytes_zfs(total_bytes)
+                    pool['total_bytes'] = total_bytes
+                    # Capacity based on used / total
+                    if total_bytes > 0:
+                        used_pct = round(
+                            (used_bytes / total_bytes) * 100
+                        )
+                        pool['cap'] = f"{used_pct}%"
                 else:
+                    pool['used'] = pool['alloc']
+                    pool['used_bytes'] = 0
                     pool['avail'] = pool['free']
                     pool['avail_bytes'] = 0
-                if size_bytes is not None:
-                    pool['size_bytes'] = size_bytes
-                else:
-                    pool['size_bytes'] = 0
-                # Recalculate capacity based on ZFS available space
-                if avail_bytes is not None and size_bytes and size_bytes > 0:
-                    used_pct = round(
-                        ((size_bytes - avail_bytes) / size_bytes) * 100
-                    )
-                    pool['cap'] = f"{used_pct}%"
+                    pool['total'] = pool['size']
+                    pool['total_bytes'] = 0
             
             return pools
         

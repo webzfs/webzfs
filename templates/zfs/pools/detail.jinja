@@ -80,8 +80,8 @@
                  style="width: {{ cap_val }}%"></div>
         </div>
         <div class="flex justify-between mt-2 text-xs text-text-tertiary">
-            <span>{{ props.get('allocated', {}).get('value', '-') }} allocated</span>
-            <span>{{ zfs_avail if zfs_avail else props.get('free', {}).get('value', '-') }} available of {{ props.get('size', {}).get('value', '-') }}</span>
+            <span>{{ zfs_used if zfs_used else props.get('allocated', {}).get('value', '-') }} used</span>
+            <span>{{ zfs_avail if zfs_avail else props.get('free', {}).get('value', '-') }} available of {{ zfs_total if zfs_total else props.get('size', {}).get('value', '-') }}</span>
         </div>
     </div>
 
@@ -90,16 +90,16 @@
     {% set compress_ratio = ds_props.get('compressratio', {}).get('value', '-') %}
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <div class="card text-center">
-            <div class="text-text-tertiary text-xs uppercase mb-1">Size</div>
-            <div class="text-text-primary text-xl font-bold">{{ props.get('size', {}).get('value', '-') }}</div>
-        </div>
-        <div class="card text-center">
-            <div class="text-text-tertiary text-xs uppercase mb-1">Allocated</div>
-            <div class="text-text-primary text-xl font-bold">{{ props.get('allocated', {}).get('value', '-') }}</div>
+            <div class="text-text-tertiary text-xs uppercase mb-1">Used</div>
+            <div class="text-text-primary text-xl font-bold">{{ zfs_used if zfs_used else props.get('allocated', {}).get('value', '-') }}</div>
         </div>
         <div class="card text-center">
             <div class="text-text-tertiary text-xs uppercase mb-1">Available</div>
             <div class="text-text-primary text-xl font-bold">{{ zfs_avail if zfs_avail else props.get('free', {}).get('value', '-') }}</div>
+        </div>
+        <div class="card text-center">
+            <div class="text-text-tertiary text-xs uppercase mb-1">Total</div>
+            <div class="text-text-primary text-xl font-bold">{{ zfs_total if zfs_total else props.get('size', {}).get('value', '-') }}</div>
         </div>
         <div class="card text-center">
             <div class="text-text-tertiary text-xs uppercase mb-1">Fragmentation</div>

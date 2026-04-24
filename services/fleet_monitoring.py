@@ -310,18 +310,21 @@ class FleetMonitoringService:
                     self.update_server(server_id, status="error", last_checked=datetime.now().isoformat())
                     return []
                 
-                # Get ZFS available space (actual usable space for users)
-                avail_map = {}
+                # Get ZFS used/available space (actual usable space for users)
+                space_map = {}
                 try:
-                    avail_command = self._build_zfs_command(server, "zfs list -H -p -o name,avail -d 0")
-                    a_stdin, a_stdout, a_stderr = client.exec_command(avail_command)
-                    avail_output = a_stdout.read().decode('utf-8')
-                    for avail_line in avail_output.strip().split('\n'):
-                        if avail_line:
-                            av_parts = avail_line.split('\t')
-                            if len(av_parts) >= 2:
+                    space_command = self._build_zfs_command(server, "zfs list -H -p -o name,used,avail -d 0")
+                    s_stdin, s_stdout, s_stderr = client.exec_command(space_command)
+                    space_output = s_stdout.read().decode('utf-8')
+                    for space_line in space_output.strip().split('\n'):
+                        if space_line:
+                            sp_parts = space_line.split('\t')
+                            if len(sp_parts) >= 3:
                                 try:
-                                    avail_map[av_parts[0]] = int(av_parts[1])
+                                    space_map[sp_parts[0]] = {
+                                        'used': int(sp_parts[1]),
+                                        'avail': int(sp_parts[2]),
+                                    }
                                 except (ValueError, TypeError):
                                     pass
                 except Exception:
@@ -334,24 +337,29 @@ class FleetMonitoringService:
                         parts = line.split('\t')
                         if len(parts) >= 6:
                             name, size, alloc, free, cap, health = parts[:6]
-                            size_int = int(size)
-                            avail_bytes = avail_map.get(name)
-                            if avail_bytes is not None:
-                                available_str = self._format_bytes(avail_bytes)
-                                # Recalculate capacity based on ZFS avail
-                                if size_int > 0:
-                                    used_pct = round(((size_int - avail_bytes) / size_int) * 100)
+                            space = space_map.get(name)
+                            if space is not None:
+                                used_bytes = space['used']
+                                avail_bytes = space['avail']
+                                total_bytes = used_bytes + avail_bytes
+                                used_str = self._format_bytes(used_bytes)
+                                avail_str = self._format_bytes(avail_bytes)
+                                total_str = self._format_bytes(total_bytes)
+                                if total_bytes > 0:
+                                    used_pct = round((used_bytes / total_bytes) * 100)
                                     cap_str = f"{used_pct}%"
                                 else:
                                     cap_str = f"{cap}%"
                             else:
-                                available_str = self._format_bytes(int(free))
+                                used_str = self._format_bytes(int(alloc))
+                                avail_str = self._format_bytes(int(free))
+                                total_str = self._format_bytes(int(size))
                                 cap_str = f"{cap}%"
                             pools.append({
                                 "name": name,
-                                "size": self._format_bytes(size_int),
-                                "allocated": self._format_bytes(int(alloc)),
-                                "free": available_str,
+                                "used": used_str,
+                                "free": avail_str,
+                                "total": total_str,
                                 "capacity": cap_str,
                                 "health": health
                             })
