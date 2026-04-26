@@ -521,6 +521,125 @@ class ZFSDatasetService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get space usage: {e.stderr}")
     
+    def get_space_tree(self, pool_name: str, max_depth: int = 4) -> Dict[str, Any]:
+        """
+        Build a nested space-usage tree for the given pool.
+
+        Uses 'zfs list -Hp' (raw byte values, machine-parseable) and the
+        slash-delimited dataset names to reconstruct the hierarchy. Snapshot
+        counts are gathered with a second 'zfs list -t snapshot' call so the
+        visualizer can show how many snapshots each dataset holds.
+
+        Args:
+            pool_name: The pool to inspect.
+            max_depth: Maximum depth (including the pool root) to include in
+                the returned tree. Children deeper than this are still summed
+                via the existing 'usedbychildren' values, but are not added as
+                explicit nodes.
+
+        Returns:
+            A nested dict of the form::
+
+                {
+                    "name": "pool",
+                    "used": int,
+                    "available": int,
+                    "referenced": int,
+                    "used_by_dataset": int,
+                    "used_by_snapshots": int,
+                    "used_by_children": int,
+                    "compressratio": str,
+                    "snapshot_count": int,
+                    "children": [ ... same shape ... ],
+                }
+        """
+        self.validate_dataset_name(pool_name)
+
+        properties = (
+            'name,used,referenced,available,'
+            'usedbysnapshots,usedbychildren,usedbydataset,compressratio'
+        )
+
+        try:
+            result = run_zfs_command(
+                ['zfs', 'list', '-Hp', '-t', 'filesystem,volume',
+                 '-o', properties, '-r', pool_name]
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to list datasets for {pool_name}: {e.stderr}")
+
+        # Snapshot counts: one entry per dataset.
+        snapshot_counts: Dict[str, int] = {}
+        try:
+            snap_result = run_zfs_command(
+                ['zfs', 'list', '-Hp', '-t', 'snapshot',
+                 '-o', 'name', '-r', pool_name]
+            )
+            for line in snap_result.stdout.strip().split('\n'):
+                if not line or '@' not in line:
+                    continue
+                parent = line.split('@', 1)[0]
+                snapshot_counts[parent] = snapshot_counts.get(parent, 0) + 1
+        except subprocess.CalledProcessError:
+            # Snapshot count is non-essential, leave the dict empty
+            snapshot_counts = {}
+
+        def _to_int(token: str) -> int:
+            token = (token or '').strip()
+            if not token or token == '-':
+                return 0
+            try:
+                return int(token)
+            except ValueError:
+                return 0
+
+        nodes: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            parts = line.split('\t')
+            if len(parts) < 8:
+                continue
+            name = parts[0]
+            nodes[name] = {
+                'name': name,
+                'used': _to_int(parts[1]),
+                'referenced': _to_int(parts[2]),
+                'available': _to_int(parts[3]),
+                'used_by_snapshots': _to_int(parts[4]),
+                'used_by_children': _to_int(parts[5]),
+                'used_by_dataset': _to_int(parts[6]),
+                'compressratio': parts[7],
+                'snapshot_count': snapshot_counts.get(name, 0),
+                'children': [],
+            }
+            order.append(name)
+
+        if pool_name not in nodes:
+            raise Exception(f"Pool {pool_name} not found in zfs list output")
+
+        # Wire children to parents using slash-delimited names.
+        # 'zfs list -r' returns the parent before its children, so we can
+        # rely on insertion order to build the tree in one pass.
+        root_depth = pool_name.count('/')
+        for name in order:
+            if name == pool_name:
+                continue
+            parent_name = name.rsplit('/', 1)[0]
+            parent = nodes.get(parent_name)
+            if parent is None:
+                continue
+            depth_from_root = name.count('/') - root_depth
+            if depth_from_root >= max_depth:
+                # Skip nodes deeper than the visualization can show.
+                # Their 'used' is still reflected in their ancestor's
+                # 'used_by_children' value.
+                continue
+            parent['children'].append(nodes[name])
+
+        return nodes[pool_name]
+
     def list_children(self, dataset_name: str) -> List[str]:
         """
         List immediate children of a dataset

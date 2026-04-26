@@ -85,6 +85,49 @@
         </div>
     </div>
 
+    <!-- Dataset Space Visualizer -->
+    <div class="card">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <h2 class="text-lg font-semibold text-text-primary flex items-center gap-2">
+                <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                </svg>
+                Dataset Space Usage
+            </h2>
+            <div class="flex flex-wrap items-center gap-3 text-sm">
+                <div id="space-viz-breadcrumb" class="text-text-secondary"></div>
+                <label class="inline-flex items-center gap-2 text-text-secondary cursor-pointer select-none">
+                    <input type="checkbox" id="space-viz-show-snapshots" checked
+                           class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+                    <span>Show snapshot bands</span>
+                </label>
+                <button type="button" id="space-viz-back"
+                        class="btn-secondary text-sm inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                    Back
+                </button>
+            </div>
+        </div>
+        <div id="space-viz-container"
+             class="relative w-full bg-bg-base border border-border-subtle rounded-lg overflow-hidden">
+            <div id="space-viz-loading" class="flex items-center justify-center text-text-tertiary text-sm py-12">
+                Loading dataset usage...
+            </div>
+            <svg id="space-viz-svg" class="block w-full" style="display:none;" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="space-viz-tooltip"
+             class="hidden absolute z-30 bg-bg-elevated-2 border border-border-subtle rounded-lg shadow-lg px-3 py-2 text-xs text-text-primary pointer-events-none"
+             style="position: fixed; max-width: 320px;">
+        </div>
+        <p class="text-xs text-text-tertiary mt-3">
+            Each row is one level of dataset depth. Segment width is proportional to space used relative to the parent.
+            Click a segment to drill in. The visualization shows up to four levels.
+        </p>
+    </div>
+
     <!-- Key Metrics Row -->
     {% set compress_val = ds_props.get('compression', {}).get('value', 'off') %}
     {% set compress_ratio = ds_props.get('compressratio', {}).get('value', '-') %}
@@ -504,5 +547,441 @@ window.showConfirm = function(dialogId) {
     if (dialog.__x) { dialog.__x.$data.open = true; return; }
     dialog.dispatchEvent(new CustomEvent('open-modal'));
 };
+</script>
+
+<script>
+(function() {
+    "use strict";
+
+    var POOL_NAME = {{ pool.name|tojson }};
+    var MAX_VISIBLE_DEPTH = 4;
+    var ROW_HEIGHT = 56;
+    var ROW_GAP = 4;
+    var SVG_NS = "http://www.w3.org/2000/svg";
+
+    // Theme-aware palette: derive hue/saturation/lightness from the
+    // currently active --primary-500 CSS variable so the visualizer
+    // matches whichever theme the user has selected. Falls back to a
+    // sensible default if reading the variable fails.
+    var THEME = (function() {
+        var defaults = { hue: 217, sat: 65, base: 50 };
+        try {
+            var rootStyle = getComputedStyle(document.documentElement);
+            var hex = (rootStyle.getPropertyValue("--primary-500") || "").trim();
+            if (!hex) return defaults;
+            var rgb = hexToRgb(hex);
+            if (!rgb) return defaults;
+            var hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+            return {
+                hue: Math.round(hsl.h),
+                sat: Math.max(35, Math.min(75, Math.round(hsl.s))),
+                base: Math.max(35, Math.min(60, Math.round(hsl.l)))
+            };
+        } catch (e) {
+            return defaults;
+        }
+    })();
+
+    function hexToRgb(hex) {
+        var h = hex.replace("#", "").trim();
+        if (h.length === 3) {
+            h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+        }
+        if (h.length !== 6) return null;
+        return {
+            r: parseInt(h.substring(0, 2), 16),
+            g: parseInt(h.substring(2, 4), 16),
+            b: parseInt(h.substring(4, 6), 16)
+        };
+    }
+
+    function rgbToHsl(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        var max = Math.max(r, g, b), min = Math.min(r, g, b);
+        var h, s, l = (max + min) / 2;
+        if (max === min) {
+            h = s = 0;
+        } else {
+            var d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                default: h = (r - g) / d + 4;
+            }
+            h *= 60;
+        }
+        return { h: h, s: s * 100, l: l * 100 };
+    }
+
+
+    var container = document.getElementById("space-viz-container");
+    var loadingEl = document.getElementById("space-viz-loading");
+    var svg = document.getElementById("space-viz-svg");
+    var tooltip = document.getElementById("space-viz-tooltip");
+    var breadcrumb = document.getElementById("space-viz-breadcrumb");
+    var backButton = document.getElementById("space-viz-back");
+    var snapshotToggle = document.getElementById("space-viz-show-snapshots");
+
+    if (!container || !svg) return;
+
+    var rootTree = null;
+    var viewStack = [];
+    var showSnapshotBands = true;
+
+    function formatBytes(bytes) {
+        if (bytes === null || bytes === undefined || isNaN(bytes)) return "-";
+        var b = Number(bytes);
+        if (b < 1024) return b + " B";
+        var units = ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+        var v = b / 1024;
+        var i = 0;
+        while (v >= 1024 && i < units.length - 1) {
+            v = v / 1024;
+            i++;
+        }
+        return (v >= 100 ? v.toFixed(0) : v.toFixed(2)) + " " + units[i];
+    }
+
+    function shortName(fullName) {
+        var idx = fullName.lastIndexOf("/");
+        return idx === -1 ? fullName : fullName.substring(idx + 1);
+    }
+
+    function hashString(s) {
+        var h = 0;
+        for (var i = 0; i < s.length; i++) {
+            h = ((h << 5) - h) + s.charCodeAt(i);
+            h |= 0;
+        }
+        return Math.abs(h);
+    }
+
+    function colorForName(name, depth) {
+        // Restrict the hue to a window centered on the theme's primary
+        // colour so all segments feel like they belong to the same
+        // palette. The window is +/- 80 degrees around the theme hue,
+        // which gives enough variation between siblings without
+        // wandering into unrelated colours. Lightness steps up per
+        // depth so deeper rows are visually distinct from the pool.
+        var spread = 160;
+        var offset = (hashString(name) % spread) - (spread / 2);
+        var hue = (THEME.hue + offset + 360) % 360;
+        var sat = THEME.sat - 5 + (hashString(name + ":sat") % 12);
+        if (sat < 30) sat = 30;
+        if (sat > 70) sat = 70;
+        var lightness = THEME.base - 6 + (depth * 5);
+        if (lightness < 32) lightness = 32;
+        if (lightness > 62) lightness = 62;
+        return "hsl(" + hue + ", " + sat + "%, " + lightness + "%)";
+    }
+
+    function findNode(tree, name) {
+        if (tree.name === name) return tree;
+        if (!tree.children) return null;
+        for (var i = 0; i < tree.children.length; i++) {
+            var found = findNode(tree.children[i], name);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function setBackEnabled(enabled) {
+        if (enabled) {
+            backButton.removeAttribute("disabled");
+        } else {
+            backButton.setAttribute("disabled", "disabled");
+        }
+    }
+
+    function renderBreadcrumb() {
+        breadcrumb.innerHTML = "";
+        if (viewStack.length === 0) return;
+        var parts = viewStack.map(function(name, idx) {
+            var label = idx === 0 ? name : shortName(name);
+            return '<button type="button" class="hover:text-text-primary underline-offset-2 hover:underline" data-stack-index="' + idx + '">' + label + '</button>';
+        });
+        breadcrumb.innerHTML = "Viewing: " + parts.join(' <span class="text-text-tertiary">/</span> ');
+        var buttons = breadcrumb.querySelectorAll("button[data-stack-index]");
+        buttons.forEach(function(btn) {
+            btn.addEventListener("click", function() {
+                var idx = parseInt(btn.getAttribute("data-stack-index"), 10);
+                viewStack = viewStack.slice(0, idx + 1);
+                draw();
+            });
+        });
+    }
+
+    function showTooltip(node, event) {
+        var lines = [];
+        lines.push('<div class="font-semibold text-text-primary mb-1">' + node.name + "</div>");
+        lines.push('<div class="grid grid-cols-2 gap-x-3 gap-y-0.5">');
+        lines.push('<span class="text-text-tertiary">Used:</span><span>' + formatBytes(node.used) + "</span>");
+        lines.push('<span class="text-text-tertiary">Referenced:</span><span>' + formatBytes(node.referenced) + "</span>");
+        if (node.available > 0) {
+            lines.push('<span class="text-text-tertiary">Available:</span><span>' + formatBytes(node.available) + "</span>");
+        }
+        lines.push('<span class="text-text-tertiary">By dataset:</span><span>' + formatBytes(node.used_by_dataset) + "</span>");
+        lines.push('<span class="text-text-tertiary">By snapshots:</span><span>' + formatBytes(node.used_by_snapshots) + "</span>");
+        lines.push('<span class="text-text-tertiary">By children:</span><span>' + formatBytes(node.used_by_children) + "</span>");
+        lines.push('<span class="text-text-tertiary">Compress:</span><span>' + (node.compressratio || "-") + "</span>");
+        lines.push('<span class="text-text-tertiary">Snapshots:</span><span>' + (node.snapshot_count || 0) + "</span>");
+        lines.push("</div>");
+        tooltip.innerHTML = lines.join("");
+        tooltip.classList.remove("hidden");
+        positionTooltip(event);
+    }
+
+    function positionTooltip(event) {
+        var pad = 12;
+        var x = event.clientX + pad;
+        var y = event.clientY + pad;
+        var rect = tooltip.getBoundingClientRect();
+        if (x + rect.width > window.innerWidth - pad) {
+            x = event.clientX - rect.width - pad;
+        }
+        if (y + rect.height > window.innerHeight - pad) {
+            y = event.clientY - rect.height - pad;
+        }
+        tooltip.style.left = x + "px";
+        tooltip.style.top = y + "px";
+    }
+
+    function hideTooltip() {
+        tooltip.classList.add("hidden");
+    }
+
+    function makeRect(x, y, w, h, fill, opts) {
+        var rect = document.createElementNS(SVG_NS, "rect");
+        rect.setAttribute("x", x);
+        rect.setAttribute("y", y);
+        rect.setAttribute("width", Math.max(0, w));
+        rect.setAttribute("height", h);
+        rect.setAttribute("fill", fill);
+        if (opts && opts.stroke) rect.setAttribute("stroke", opts.stroke);
+        if (opts && opts.strokeWidth) rect.setAttribute("stroke-width", opts.strokeWidth);
+        if (opts && opts.opacity !== undefined) rect.setAttribute("opacity", opts.opacity);
+        return rect;
+    }
+
+    function makeText(x, y, content, opts) {
+        var t = document.createElementNS(SVG_NS, "text");
+        t.setAttribute("x", x);
+        t.setAttribute("y", y);
+        t.setAttribute("fill", (opts && opts.fill) || "#fff");
+        t.setAttribute("font-size", (opts && opts.fontSize) || 12);
+        t.setAttribute("font-family", "ui-sans-serif, system-ui, sans-serif");
+        t.setAttribute("dominant-baseline", "middle");
+        t.setAttribute("pointer-events", "none");
+        if (opts && opts.weight) t.setAttribute("font-weight", opts.weight);
+        t.textContent = content;
+        return t;
+    }
+
+    function drawSegment(parent, node, x, y, width, depth, isFreeSpace) {
+        if (width < 1) return;
+        var fill = isFreeSpace ? "rgba(120,120,120,0.35)" : colorForName(node.name, depth);
+        var group = document.createElementNS(SVG_NS, "g");
+        group.style.cursor = isFreeSpace ? "default" : "pointer";
+
+        var rect = makeRect(x, y, width, ROW_HEIGHT, fill, {
+            stroke: "rgba(0,0,0,0.45)",
+            strokeWidth: 1
+        });
+        group.appendChild(rect);
+
+        if (!isFreeSpace) {
+            var totalUsed = Math.max(1, node.used);
+            var bands = [];
+            if (showSnapshotBands && node.used_by_snapshots > 0) {
+                bands.push({
+                    width: width * (node.used_by_snapshots / totalUsed),
+                    fill: "rgba(255,255,255,0.18)",
+                    pattern: true
+                });
+            }
+            var bandX = x;
+            for (var i = 0; i < bands.length; i++) {
+                var band = bands[i];
+                if (band.width < 0.5) continue;
+                var bandRect = makeRect(
+                    bandX + width - band.width,
+                    y,
+                    band.width,
+                    ROW_HEIGHT,
+                    band.fill,
+                    { opacity: 0.85 }
+                );
+                group.appendChild(bandRect);
+            }
+        }
+
+        var label = isFreeSpace
+            ? "free " + formatBytes(node.used)
+            : shortName(node.name);
+        if (width > 50) {
+            var textColor = isFreeSpace ? "#cbd5e1" : "#ffffff";
+            var t = makeText(x + 6, y + ROW_HEIGHT / 2, label, {
+                fontSize: 12,
+                fill: textColor,
+                weight: depth === 0 ? "600" : "500"
+            });
+            group.appendChild(t);
+        }
+
+        if (!isFreeSpace) {
+            group.addEventListener("mouseenter", function(ev) { showTooltip(node, ev); });
+            group.addEventListener("mousemove", function(ev) { positionTooltip(ev); });
+            group.addEventListener("mouseleave", hideTooltip);
+            group.addEventListener("click", function() {
+                if (depth === 0) return;
+                viewStack.push(node.name);
+                draw();
+            });
+        }
+
+        parent.appendChild(group);
+    }
+
+    function layoutLevel(parentSvg, node, x, y, width, depth, maxDepth) {
+        // Bottom row is the pool/root: split into used vs free if available.
+        if (depth === 0 && node.available > 0) {
+            var totalCapacity = node.used + node.available;
+            if (totalCapacity > 0) {
+                var usedWidth = width * (node.used / totalCapacity);
+                drawSegment(parentSvg, node, x, y, usedWidth, depth, false);
+                drawSegment(
+                    parentSvg,
+                    { name: "free", used: node.available },
+                    x + usedWidth,
+                    y,
+                    width - usedWidth,
+                    depth,
+                    true
+                );
+                if (depth + 1 < maxDepth) {
+                    layoutChildren(parentSvg, node, x, y, usedWidth, depth + 1, maxDepth);
+                }
+                return;
+            }
+        }
+
+        drawSegment(parentSvg, node, x, y, width, depth, false);
+        if (depth + 1 < maxDepth) {
+            layoutChildren(parentSvg, node, x, y, width, depth + 1, maxDepth);
+        }
+    }
+
+    function layoutChildren(parentSvg, node, parentX, parentY, parentWidth, depth, maxDepth) {
+        if (!node.children || node.children.length === 0) return;
+        var totalChildUsed = 0;
+        for (var i = 0; i < node.children.length; i++) {
+            totalChildUsed += Math.max(0, node.children[i].used);
+        }
+        if (totalChildUsed <= 0) return;
+
+        // Each row is drawn above the previous one (icicle layout).
+        var rowY = parentY - (ROW_HEIGHT + ROW_GAP);
+        // Children only occupy the share of the parent's width that they
+        // actually consume; the remainder is "owned by the dataset itself".
+        var consumedFraction = totalChildUsed / Math.max(1, node.used);
+        if (consumedFraction > 1) consumedFraction = 1;
+        var childAreaWidth = parentWidth * consumedFraction;
+        var cursorX = parentX;
+        for (var j = 0; j < node.children.length; j++) {
+            var child = node.children[j];
+            var childWidth = childAreaWidth * (Math.max(0, child.used) / totalChildUsed);
+            drawSegment(parentSvg, child, cursorX, rowY, childWidth, depth, false);
+            if (depth + 1 < maxDepth) {
+                layoutChildren(parentSvg, child, cursorX, rowY, childWidth, depth + 1, maxDepth);
+            }
+            cursorX += childWidth;
+        }
+    }
+
+    function computeMaxDepth(node, current) {
+        var d = current || 0;
+        if (!node.children || node.children.length === 0) return d;
+        var deepest = d;
+        for (var i = 0; i < node.children.length; i++) {
+            var sub = computeMaxDepth(node.children[i], d + 1);
+            if (sub > deepest) deepest = sub;
+        }
+        return deepest;
+    }
+
+    function draw() {
+        if (!rootTree) return;
+        var currentName = viewStack[viewStack.length - 1];
+        var node = findNode(rootTree, currentName);
+        if (!node) {
+            viewStack = [rootTree.name];
+            node = rootTree;
+        }
+        setBackEnabled(viewStack.length > 1);
+        renderBreadcrumb();
+
+        // Clear any prior render.
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+        var width = container.clientWidth || 800;
+        var depthCap = Math.min(MAX_VISIBLE_DEPTH, computeMaxDepth(node, 1));
+        var rows = depthCap;
+        var totalHeight = rows * ROW_HEIGHT + (rows - 1) * ROW_GAP;
+        if (totalHeight < 80) totalHeight = 80;
+
+        svg.setAttribute("viewBox", "0 0 " + width + " " + totalHeight);
+        svg.setAttribute("width", width);
+        svg.setAttribute("height", totalHeight);
+        svg.style.height = totalHeight + "px";
+
+        var rootY = totalHeight - ROW_HEIGHT;
+        layoutLevel(svg, node, 0, rootY, width, 0, depthCap);
+
+        loadingEl.style.display = "none";
+        svg.style.display = "block";
+    }
+
+    function loadTree() {
+        var url = "/zfs/pools/" + encodeURIComponent(POOL_NAME) + "/space-tree";
+        fetch(url, { credentials: "same-origin" })
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                if (!data || !data.success) {
+                    loadingEl.textContent = "Failed to load dataset usage" +
+                        (data && data.error ? ": " + data.error : "");
+                    return;
+                }
+                rootTree = data.tree;
+                viewStack = [rootTree.name];
+                draw();
+            })
+            .catch(function(err) {
+                loadingEl.textContent = "Failed to load dataset usage: " + err;
+            });
+    }
+
+    backButton.addEventListener("click", function() {
+        if (viewStack.length > 1) {
+            viewStack.pop();
+            draw();
+        }
+    });
+
+    snapshotToggle.addEventListener("change", function() {
+        showSnapshotBands = !!snapshotToggle.checked;
+        draw();
+    });
+
+    var resizeTimer = null;
+    window.addEventListener("resize", function() {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function() {
+            if (rootTree) draw();
+        }, 150);
+    });
+
+    loadTree();
+})();
 </script>
 {% endblock %}

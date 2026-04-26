@@ -301,6 +301,24 @@ async def pool_detail(request: Request, pool_name: str):
         )
 
 
+@router.get("/{pool_name}/space-tree", response_class=JSONResponse)
+async def pool_space_tree(request: Request, pool_name: str):
+    """
+    Return a nested dataset space-usage tree for the visualizer.
+
+    The tree is capped at four levels (pool plus three child levels) to
+    match what the front-end visualization is willing to render.
+    """
+    try:
+        tree = dataset_service.get_space_tree(pool_name, max_depth=4)
+        return JSONResponse(content={"success": True, "tree": tree})
+    except Exception as e:
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
 @router.get("/{pool_name}/history", response_class=HTMLResponse)
 async def pool_history(request: Request, pool_name: str):
     """Display pool command history"""

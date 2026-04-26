@@ -290,12 +290,18 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Ignore generated static assets (Tailwind CSS output) but keep theme CSS and image files
+# Ignore generated static assets (Tailwind CSS output) but keep theme CSS,
+# theme assets, image files, and explicitly listed hand-written JS modules.
+# The static/js/ directory itself stays ignored; add specific files below
+# as they are introduced.
 static/*
 !static/css/
 static/css/*
 !static/css/themes/
 !static/img/
+!static/js/
+static/js/*
+!static/js/space_visualizer.js
 
 # WebZFS runtime data
 .ssh/

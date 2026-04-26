@@ -3,7 +3,7 @@ Fleet Monitoring Views
 Web interface for monitoring remote ZFS servers
 """
 from fastapi import APIRouter, Request, Form, HTTPException, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from config.templates import templates
 from auth.dependencies import get_current_user
 from services.fleet_monitoring import FleetMonitoringService
@@ -211,3 +211,30 @@ async def get_server_pools_partial(request: Request, server_id: str):
         raise HTTPException(status_code=404, detail="Server not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/servers/{server_id}/pools/{pool_name}/space-tree")
+async def get_pool_space_tree(request: Request, server_id: str, pool_name: str):
+    """
+    JSON endpoint that returns the dataset space-usage tree for a pool
+    on a remote fleet server. Consumed by the dataset space visualizer
+    modal on the fleet view page.
+    """
+    try:
+        tree = fleet_service.fetch_pool_space_tree(server_id, pool_name)
+        return JSONResponse({"success": True, "tree": tree})
+    except KeyError:
+        return JSONResponse(
+            {"success": False, "error": "Server not found"},
+            status_code=404,
+        )
+    except ValueError as e:
+        return JSONResponse(
+            {"success": False, "error": str(e)},
+            status_code=400,
+        )
+    except Exception as e:
+        return JSONResponse(
+            {"success": False, "error": str(e)},
+            status_code=500,
+        )
