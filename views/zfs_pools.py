@@ -10,6 +10,7 @@ from config.templates import templates
 from services.zfs_pool import ZFSPoolService
 from services.zfs_dataset import ZFSDatasetService
 from services.disk_utils import DiskUtilsService
+from services.diagnostics import collect_pool_diagnostics
 from services.audit_logger import audit_logger
 from auth.dependencies import get_current_user
 
@@ -18,6 +19,61 @@ router = APIRouter(prefix="/zfs/pools", tags=["zfs-pools"], dependencies=[Depend
 pool_service = ZFSPoolService()
 dataset_service = ZFSDatasetService()
 disk_service = DiskUtilsService()
+
+
+def _get_min_data_device_size(topology: dict, disk_size_lookup: dict) -> int:
+    """
+    Get the minimum leaf device size in bytes across all data vdevs.
+    Used for spare size validation -- spares must be at least this large.
+    
+    Args:
+        topology: Pool topology dict from get_pool_topology()
+        disk_size_lookup: Dict mapping device name and /dev/name to size_bytes
+        
+    Returns:
+        Minimum device size in bytes, or 0 if unable to determine
+    """
+    min_size = 0
+    for vdev in topology.get('data_vdevs', []):
+        for device in vdev.get('devices', []):
+            dev_name = device.get('name', '')
+            if not dev_name:
+                continue
+            # Try lookup by name and /dev/name
+            size_bytes = disk_size_lookup.get(dev_name)
+            if size_bytes is None:
+                size_bytes = disk_size_lookup.get(f'/dev/{dev_name}')
+            # Resolve disk-by-id or other identifiers to real /dev/ path
+            if size_bytes is None:
+                resolved = disk_service.resolve_device_path(dev_name)
+                if resolved:
+                    # Try lookup by resolved path and its basename
+                    size_bytes = disk_size_lookup.get(resolved)
+                    if size_bytes is None:
+                        import os
+                        base_name = os.path.basename(resolved)
+                        size_bytes = disk_size_lookup.get(base_name)
+                    # Direct query using the resolved path
+                    if size_bytes is None:
+                        size_bytes = disk_service.get_device_size_bytes(resolved)
+            if size_bytes is not None and size_bytes > 0:
+                if min_size == 0 or size_bytes < min_size:
+                    min_size = size_bytes
+    return min_size
+
+
+def _format_bytes_human(size_bytes: int) -> str:
+    """Format a byte count to a human-readable string (e.g., 931.5 GB)"""
+    if size_bytes <= 0:
+        return ''
+    value = float(size_bytes)
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
+        if value < 1024:
+            if unit in ('B', 'KB'):
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} EB"
 
 
 def parse_pool_status(status_output: str) -> dict:
@@ -148,14 +204,65 @@ async def pool_detail(request: Request, pool_name: str):
         # Parse structured data from status output
         parsed = parse_pool_status(pool_status.get('status_output', ''))
 
-        # Get reservation from the root dataset (zfs property, not zpool)
+        # Get root dataset properties (reservation, available space, compression, etc.)
         reservation_value = 'none'
+        dataset_props = {}
         try:
-            ds_props = dataset_service.get_properties(pool_name)
-            if 'reservation' in ds_props:
-                reservation_value = ds_props['reservation'].get('value', 'none')
+            dataset_props = dataset_service.get_properties(pool_name)
+            if 'reservation' in dataset_props:
+                reservation_value = dataset_props['reservation'].get('value', 'none')
         except Exception:
             pass
+
+        # Compute user-facing used, available, total, and capacity from ZFS
+        # dataset layer. ZFS 'used' and 'available' account for metadata
+        # overhead, reservations, etc. total = used + avail gives a
+        # consistent set of numbers that match the capacity bar.
+        zfs_used = None
+        zfs_avail = None
+        zfs_total = None
+        zfs_cap = None
+        if dataset_props.get('used', {}).get('value'):
+            zfs_used = dataset_props['used']['value']
+        if dataset_props.get('available', {}).get('value'):
+            zfs_avail = dataset_props['available']['value']
+        if zfs_used and zfs_avail:
+            try:
+                def _parse_zfs_size(s: str) -> int:
+                    s = s.strip()
+                    multipliers = {
+                        'B': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3,
+                        'T': 1024**4, 'P': 1024**5, 'E': 1024**6,
+                    }
+                    if not s:
+                        return 0
+                    suffix = s[-1].upper()
+                    if suffix in multipliers:
+                        return int(float(s[:-1]) * multipliers[suffix])
+                    return int(s)
+
+                used_bytes = _parse_zfs_size(zfs_used)
+                avail_bytes = _parse_zfs_size(zfs_avail)
+                total_bytes = used_bytes + avail_bytes
+                # Format total back to human-readable
+                units = ['B', 'K', 'M', 'G', 'T', 'P', 'E']
+                val = float(total_bytes)
+                for unit in units:
+                    if abs(val) < 1024:
+                        if val >= 100:
+                            zfs_total = f"{int(val)}{unit}"
+                        elif val >= 10:
+                            zfs_total = f"{val:.1f}{unit}"
+                        else:
+                            zfs_total = f"{val:.2f}{unit}"
+                        break
+                    val /= 1024
+                else:
+                    zfs_total = f"{val:.2f}E"
+                if total_bytes > 0:
+                    zfs_cap = f"{round((used_bytes / total_bytes) * 100)}%"
+            except (ValueError, TypeError):
+                pass
 
         # Get checkpoint info if supported
         checkpoint_info = None
@@ -173,6 +280,11 @@ async def pool_detail(request: Request, pool_name: str):
                 "pool": pool_status,
                 "parsed": parsed,
                 "reservation_value": reservation_value,
+                "dataset_props": dataset_props,
+                "zfs_used": zfs_used,
+                "zfs_avail": zfs_avail,
+                "zfs_total": zfs_total,
+                "zfs_cap": zfs_cap,
                 "checkpoint_info": checkpoint_info,
                 "checkpoint_supported": checkpoint_supported,
                 "page_title": f"Pool: {pool_name}"
@@ -186,6 +298,24 @@ async def pool_detail(request: Request, pool_name: str):
                 "error": str(e),
                 "back_url": "/zfs/pools"
             }
+        )
+
+
+@router.get("/{pool_name}/space-tree", response_class=JSONResponse)
+async def pool_space_tree(request: Request, pool_name: str):
+    """
+    Return a nested dataset space-usage tree for the visualizer.
+
+    The tree is capped at four levels (pool plus three child levels) to
+    match what the front-end visualization is willing to render.
+    """
+    try:
+        tree = dataset_service.get_space_tree(pool_name, max_depth=4)
+        return JSONResponse(content={"success": True, "tree": tree})
+    except Exception as e:
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
         )
 
 
@@ -698,6 +828,418 @@ async def discard_checkpoint(
         )
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}?error={str(e)}",
+            status_code=303
+        )
+
+
+# ==================== Diagnostics Routes ====================
+
+
+@router.get("/{pool_name}/diagnostics/download")
+async def download_pool_diagnostics(pool_name: str):
+    """Download a zip file of diagnostic information for a faulted/suspended pool."""
+    from fastapi.responses import StreamingResponse
+    from datetime import datetime
+    import io
+
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_bytes = collect_pool_diagnostics(pool_name)
+        filename = f"{pool_name}_diagnostics_{timestamp}.zip"
+
+        return StreamingResponse(
+            io.BytesIO(zip_bytes),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(len(zip_bytes)),
+            }
+        )
+    except Exception as e:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(
+            content=f"Error collecting diagnostics: {str(e)}",
+            status_code=500
+        )
+
+
+# ==================== VDev Management Routes ====================
+
+
+@router.get("/{pool_name}/vdevs", response_class=HTMLResponse)
+async def vdev_management(request: Request, pool_name: str):
+    """Display vdev management page shell (data loaded async via JS)"""
+    return templates.TemplateResponse(
+        "zfs/pools/vdevs.jinja",
+        {
+            "request": request,
+            "pool_name": pool_name,
+            "page_title": f"VDev Management: {pool_name}"
+        }
+    )
+
+
+@router.get("/{pool_name}/vdevs/data", response_class=JSONResponse)
+async def vdev_management_data(request: Request, pool_name: str):
+    """Return topology and disk data as JSON for async page loading"""
+    try:
+        topology = pool_service.get_pool_topology(pool_name)
+        available_disks = disk_service.get_available_disks()
+
+        # Build disk size lookup for min-size calculation
+        disk_size_lookup = {}
+        all_disks = []
+        for disk in available_disks:
+            size_bytes = disk.get('size_bytes', 0)
+            disk_size_lookup[disk.get('name', '')] = size_bytes
+            disk_size_lookup[disk.get('device_path', '')] = size_bytes
+            all_disks.append({
+                'name': disk.get('name', ''),
+                'device_path': disk.get('device_path', ''),
+                'size': disk.get('size', ''),
+                'size_bytes': size_bytes,
+                'model': disk.get('model', 'Unknown'),
+                'type': disk.get('type', 'HDD'),
+                'in_use': disk.get('in_use', False),
+                'is_system_disk': disk.get('is_system_disk', False),
+                'system_usage': disk.get('system_usage', ''),
+            })
+
+        # Compute minimum data device size for spare validation
+        min_data_device_size = _get_min_data_device_size(topology, disk_size_lookup)
+
+        # Build list of devices currently in the pool topology
+        pool_devices = []
+        for section in ['data_vdevs', 'log_vdevs', 'cache_vdevs',
+                        'spare_vdevs', 'special_vdevs', 'dedup_vdevs']:
+            for vdev in topology.get(section, []):
+                for dev in vdev.get('devices', []):
+                    pool_devices.append(dev.get('name', ''))
+
+        # Convert topology to serializable dict
+        topology_dict = {
+            'pool_name': topology.get('pool_name', pool_name),
+            'state': topology.get('state', 'UNKNOWN'),
+            'scan_info': topology.get('scan_info', ''),
+            'data_vdevs': topology.get('data_vdevs', []),
+            'log_vdevs': topology.get('log_vdevs', []),
+            'cache_vdevs': topology.get('cache_vdevs', []),
+            'spare_vdevs': topology.get('spare_vdevs', []),
+            'special_vdevs': topology.get('special_vdevs', []),
+            'dedup_vdevs': topology.get('dedup_vdevs', []),
+        }
+
+        return JSONResponse(content={
+            "success": True,
+            "topology": topology_dict,
+            "all_disks": all_disks,
+            "pool_devices": pool_devices,
+            "min_data_device_size": min_data_device_size,
+        })
+    except Exception as e:
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@router.post("/{pool_name}/vdevs/acknowledge", response_class=JSONResponse)
+async def acknowledge_vdev_warning(
+    request: Request,
+    pool_name: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Log that the user acknowledged the VDev management data loss warning"""
+    audit_logger.log_vdev_warning_acknowledge(user=current_user, pool_name=pool_name)
+    return JSONResponse(content={"success": True})
+
+
+@router.get("/{pool_name}/vdevs/check-disk-usage", response_class=JSONResponse)
+async def vdev_check_disk_usage(request: Request, pool_name: str):
+    """Check disk usage status for vdev management page"""
+    try:
+        disk_status = disk_service.check_disk_usage_status()
+        return JSONResponse(content={
+            "success": True,
+            "disk_status": disk_status
+        })
+    except Exception as e:
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@router.post("/{pool_name}/vdevs/add", response_class=HTMLResponse)
+async def add_vdev(
+    request: Request,
+    pool_name: str,
+    vdev_type: Annotated[str, Form()],
+    devices: Annotated[str, Form()],
+    vdev_layout: Annotated[str, Form()] = "stripe",
+    force: Annotated[bool, Form()] = False,
+    current_user: str = Depends(get_current_user)
+):
+    """Add an auxiliary vdev to the pool"""
+    try:
+        vdevs = []
+        device_list = [d.strip() for d in devices.split(',') if d.strip()]
+        if not device_list:
+            raise ValueError("No devices specified")
+
+        # Spare size validation: spares must be >= smallest data device
+        if vdev_type == "spare":
+            topology = pool_service.get_pool_topology(pool_name)
+            available_disks = disk_service.get_available_disks()
+            disk_size_lookup = {}
+            for d in available_disks:
+                disk_size_lookup[d['name']] = d.get('size_bytes', 0)
+                disk_size_lookup[d['device_path']] = d.get('size_bytes', 0)
+            min_data_size = _get_min_data_device_size(topology, disk_size_lookup)
+            if min_data_size > 0:
+                for dev in device_list:
+                    dev_path = dev if dev.startswith('/') else f'/dev/{dev}'
+                    dev_size = disk_size_lookup.get(dev) or disk_size_lookup.get(dev_path)
+                    if dev_size is None:
+                        dev_size = disk_service.get_device_size_bytes(dev_path)
+                    if dev_size is not None and dev_size < min_data_size:
+                        raise ValueError(
+                            f"Spare device {dev} ({_format_bytes_human(dev_size)}) is smaller than "
+                            f"the smallest data device ({_format_bytes_human(min_data_size)}). "
+                            f"Spares must be the same size or larger than existing data devices."
+                        )
+
+        # Always add the vdev type keyword first
+        vdevs.append(vdev_type)
+
+        # Add mirror keyword only for types that support it: log and special
+        # Spares are individual disks, cache cannot be mirrored,
+        # dedup vdevs are individual disks (ZFS manages allocation)
+        if vdev_layout == "mirror" and vdev_type in ("log", "special"):
+            if len(device_list) < 2:
+                raise ValueError("Mirror layout requires at least 2 devices")
+            vdevs.append("mirror")
+
+        vdevs.extend(device_list)
+
+        pool_service.add_vdev(pool_name, vdevs, force=force)
+        audit_logger.log_pool_vdev_add(
+            user=current_user, pool_name=pool_name,
+            vdevs=','.join(vdevs)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message=VDev added successfully",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_vdev_add(
+            user=current_user, pool_name=pool_name,
+            vdevs=devices, success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/attach", response_class=HTMLResponse)
+async def attach_device(
+    request: Request,
+    pool_name: str,
+    existing_device: Annotated[str, Form()],
+    new_device: Annotated[str, Form()],
+    force: Annotated[bool, Form()] = False,
+    current_user: str = Depends(get_current_user)
+):
+    """Attach a device to create or extend a mirror"""
+    try:
+        pool_service.attach_device(
+            pool_name, existing_device.strip(),
+            new_device.strip(), force=force
+        )
+        audit_logger.log_pool_vdev_attach(
+            user=current_user, pool_name=pool_name,
+            existing_device=existing_device.strip(),
+            new_device=new_device.strip()
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message=Device attached successfully. Resilvering will begin.",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_vdev_attach(
+            user=current_user, pool_name=pool_name,
+            existing_device=existing_device.strip(),
+            new_device=new_device.strip(),
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/detach", response_class=HTMLResponse)
+async def detach_device(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """Detach a device from a mirror"""
+    try:
+        pool_service.detach_device(pool_name, device.strip())
+        audit_logger.log_pool_vdev_detach(
+            user=current_user, pool_name=pool_name,
+            device=device.strip()
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message=Device detached successfully",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_vdev_detach(
+            user=current_user, pool_name=pool_name,
+            device=device.strip(),
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/replace", response_class=HTMLResponse)
+async def replace_device(
+    request: Request,
+    pool_name: str,
+    old_device: Annotated[str, Form()],
+    new_device: Annotated[str, Form()],
+    force: Annotated[bool, Form()] = False,
+    current_user: str = Depends(get_current_user)
+):
+    """Replace a device in the pool"""
+    try:
+        pool_service.replace_device(
+            pool_name, old_device.strip(),
+            new_device.strip(), force=force
+        )
+        audit_logger.log_pool_vdev_replace(
+            user=current_user, pool_name=pool_name,
+            old_device=old_device.strip(),
+            new_device=new_device.strip()
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message=Device replacement started. Monitor resilvering progress on this page.",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_vdev_replace(
+            user=current_user, pool_name=pool_name,
+            old_device=old_device.strip(),
+            new_device=new_device.strip(),
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/remove", response_class=HTMLResponse)
+async def remove_vdev(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """Remove a vdev from the pool"""
+    try:
+        pool_service.remove_vdev(pool_name, device.strip())
+        audit_logger.log_pool_vdev_remove(
+            user=current_user, pool_name=pool_name,
+            device=device.strip()
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message=VDev removal initiated",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_vdev_remove(
+            user=current_user, pool_name=pool_name,
+            device=device.strip(),
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/online", response_class=HTMLResponse)
+async def online_device(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()],
+    expand: Annotated[bool, Form()] = False,
+    current_user: str = Depends(get_current_user)
+):
+    """Bring a device online"""
+    try:
+        pool_service.online_device(pool_name, device.strip(), expand=expand)
+        audit_logger.log_pool_device_online(
+            user=current_user, pool_name=pool_name,
+            device=device.strip(), expand=expand
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message=Device brought online successfully",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_device_online(
+            user=current_user, pool_name=pool_name,
+            device=device.strip(), expand=expand,
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/offline", response_class=HTMLResponse)
+async def offline_device(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()],
+    temporary: Annotated[bool, Form()] = False,
+    current_user: str = Depends(get_current_user)
+):
+    """Take a device offline"""
+    try:
+        pool_service.offline_device(
+            pool_name, device.strip(), temporary=temporary
+        )
+        audit_logger.log_pool_device_offline(
+            user=current_user, pool_name=pool_name,
+            device=device.strip(), temporary=temporary
+        )
+        msg = "Device taken offline"
+        if temporary:
+            msg += " (temporary, will auto-online on reboot)"
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message={msg}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_device_offline(
+            user=current_user, pool_name=pool_name,
+            device=device.strip(), temporary=temporary,
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
             status_code=303
         )
 

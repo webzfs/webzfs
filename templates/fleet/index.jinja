@@ -51,7 +51,6 @@
       </svg>
       Fleet View
     </h1>
-    <p class="text-text-secondary">Monitor ZFS pools across multiple remote servers</p>
   </div>
 
   {# Read-Only Banner #}
@@ -215,11 +214,12 @@
               <thead>
                 <tr class="bg-bg-elevated-2">
                   <th class="px-4 py-1.5 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Pool</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Size</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Alloc</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Free</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Used</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Available</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Total</th>
                   <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Capacity</th>
                   <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Health</th>
+                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Visualize</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border-subtle">
@@ -227,9 +227,9 @@
                   {% set cap_val = pool.capacity.rstrip('%') | int %}
                   <tr class="{% if pool.health == 'SUSPENDED' or pool.health == 'FAULTED' or pool.health == 'UNAVAIL' %}bg-danger-500/10{% elif pool.health == 'DEGRADED' %}bg-warning-500/10{% endif %}">
                     <td class="px-4 py-1.5 font-semibold text-purple-400 whitespace-nowrap">{{ pool.name }}</td>
-                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.size }}</td>
-                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.allocated }}</td>
+                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.used }}</td>
                     <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.free }}</td>
+                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.total }}</td>
                     <td class="px-3 py-1.5 text-center whitespace-nowrap">
                       <div class="flex items-center justify-center gap-2">
                         <span class="text-text-primary">{{ pool.capacity }}</span>
@@ -246,6 +246,19 @@
                       {% else %}
                         <span class="badge-danger text-xs">{{ pool.health }}</span>
                       {% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-center whitespace-nowrap">
+                      <button type="button"
+                              class="inline-flex items-center justify-center p-1.5 rounded-md text-text-tertiary hover:text-primary-400 hover:bg-bg-elevated-2 transition-colors"
+                              title="View dataset space usage"
+                              data-fleet-viz-server-id="{{ server.id }}"
+                              data-fleet-viz-server-name="{{ server.name }}"
+                              data-fleet-viz-pool="{{ pool.name }}">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                      </button>
                     </td>
                   </tr>
                 {% endfor %}
@@ -283,4 +296,179 @@
   {% endif %}
 
 </div>
+
+{# ===================================================================
+   Dataset Space Usage Modal (fleet-only).
+   Eye buttons in the pool table open this modal which fetches the
+   dataset hierarchy from the remote server and renders an icicle/
+   flamegraph layout. Pool detail page on this same WebZFS instance
+   uses an inline visualizer; the renderer JS is duplicated here so
+   the two pages stay independent.
+=================================================================== #}
+<div id="fleet-viz-modal"
+     class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+     style="display:none;">
+  <div class="bg-bg-elevated-1 border border-border-subtle rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
+      <div class="min-w-0">
+        <h2 class="text-lg font-semibold text-text-primary truncate flex items-center gap-2">
+          <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+          </svg>
+          <span id="fleet-viz-title">Dataset Space Usage</span>
+        </h2>
+        <p id="fleet-viz-subtitle" class="text-xs text-text-tertiary font-mono mt-0.5"></p>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="inline-flex items-center gap-2 text-text-secondary cursor-pointer select-none text-sm">
+          <input type="checkbox" id="fleet-viz-show-snapshots" checked
+                 class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+          <span>Show snapshot bands</span>
+        </label>
+        <button type="button" id="fleet-viz-back"
+                class="btn-secondary text-sm inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+          </svg>
+          Back
+        </button>
+        <button type="button" id="fleet-viz-close"
+                class="text-text-tertiary hover:text-text-primary transition-colors p-1 rounded"
+                aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="px-5 py-2 border-b border-border-subtle text-sm">
+      <div id="fleet-viz-breadcrumb" class="text-text-secondary"></div>
+    </div>
+    <div class="flex-1 overflow-auto p-5">
+      <div id="fleet-viz-container"
+           class="relative w-full bg-bg-base border border-border-subtle rounded-lg overflow-hidden">
+        <div id="fleet-viz-loading" class="flex items-center justify-center text-text-tertiary text-sm py-12">
+          Loading dataset usage...
+        </div>
+        <svg id="fleet-viz-svg" class="block w-full" style="display:none;" preserveAspectRatio="none"></svg>
+      </div>
+      <p class="text-xs text-text-tertiary mt-3">
+        Each row is one level of dataset depth. Segment width is proportional to space used relative to the parent.
+        Click a segment to drill in. The visualization shows up to four levels.
+      </p>
+    </div>
+  </div>
+</div>
+
+{# Floating tooltip lives outside the modal panel so it can position
+   anywhere over the document. #}
+<div id="fleet-viz-tooltip"
+     class="hidden fixed z-[60] bg-bg-elevated-2 border border-border-subtle rounded-lg shadow-lg px-3 py-2 text-xs text-text-primary pointer-events-none"
+     style="max-width: 320px;"></div>
+
+<script src="/static/js/space_visualizer.js"></script>
+<script>
+(function() {
+    "use strict";
+
+    var modal = document.getElementById("fleet-viz-modal");
+    if (!modal || !window.WebzfsSpaceVisualizer) return;
+
+    var titleEl = document.getElementById("fleet-viz-title");
+    var subtitleEl = document.getElementById("fleet-viz-subtitle");
+    var closeBtn = document.getElementById("fleet-viz-close");
+    var container = document.getElementById("fleet-viz-container");
+    var svg = document.getElementById("fleet-viz-svg");
+    var loadingEl = document.getElementById("fleet-viz-loading");
+    var tooltipEl = document.getElementById("fleet-viz-tooltip");
+    var breadcrumbEl = document.getElementById("fleet-viz-breadcrumb");
+    var backBtn = document.getElementById("fleet-viz-back");
+    var snapshotToggle = document.getElementById("fleet-viz-show-snapshots");
+
+    var currentViz = null;
+    var currentServerId = null;
+    var currentPool = null;
+
+    function openModal() {
+        modal.style.display = "flex";
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+
+    function closeModal() {
+        modal.style.display = "none";
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        if (tooltipEl) tooltipEl.classList.add("hidden");
+        if (currentViz && currentViz.destroy) {
+            currentViz.destroy();
+        }
+        currentViz = null;
+        currentServerId = null;
+        currentPool = null;
+    }
+
+    closeBtn.addEventListener("click", closeModal);
+    modal.addEventListener("click", function(ev) {
+        if (ev.target === modal) closeModal();
+    });
+    document.addEventListener("keydown", function(ev) {
+        if (ev.key === "Escape" && modal.style.display === "flex") {
+            closeModal();
+        }
+    });
+
+    function buildFetcher(serverId, poolName) {
+        return function() {
+            var url = "/fleet/servers/" + encodeURIComponent(serverId)
+                + "/pools/" + encodeURIComponent(poolName) + "/space-tree";
+            return fetch(url, { credentials: "same-origin" })
+                .then(function(resp) { return resp.json(); })
+                .then(function(data) {
+                    if (!data || !data.success) {
+                        throw new Error(data && data.error ? data.error : "Request failed");
+                    }
+                    return data.tree;
+                });
+        };
+    }
+
+    function openForPool(serverId, serverName, poolName) {
+        currentServerId = serverId;
+        currentPool = poolName;
+        titleEl.textContent = "Dataset Space Usage: " + poolName;
+        subtitleEl.textContent = serverName + " (" + serverId.substring(0, 8) + ")";
+        openModal();
+
+        // Recreate the visualizer each time so view stack resets.
+        if (currentViz && currentViz.destroy) {
+            currentViz.destroy();
+        }
+        currentViz = window.WebzfsSpaceVisualizer.create({
+            container: container,
+            svg: svg,
+            loadingEl: loadingEl,
+            tooltip: tooltipEl,
+            breadcrumb: breadcrumbEl,
+            backButton: backBtn,
+            snapshotToggle: snapshotToggle,
+            maxDepth: 4,
+            fetchTree: buildFetcher(serverId, poolName)
+        });
+        currentViz.load();
+    }
+
+    document.addEventListener("click", function(ev) {
+        var btn = ev.target.closest("[data-fleet-viz-pool]");
+        if (!btn) return;
+        ev.preventDefault();
+        openForPool(
+            btn.getAttribute("data-fleet-viz-server-id"),
+            btn.getAttribute("data-fleet-viz-server-name") || "",
+            btn.getAttribute("data-fleet-viz-pool")
+        );
+    });
+})();
+</script>
 {% endblock %}

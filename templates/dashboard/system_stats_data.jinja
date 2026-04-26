@@ -1,0 +1,68 @@
+{# OOB swap response for the 60-second system stats poll.
+   Updates uptime, tasks, system load, and CPU info. #}
+
+{% if realtime %}
+
+{# --- Uptime --- #}
+<div id="dash-uptime" hx-swap-oob="true" class="mt-3 pt-3 border-t border-border-subtle">
+    {% if realtime.uptime %}
+    <div class="flex items-center gap-2 text-sm">
+        <svg class="w-4 h-4 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span class="text-text-secondary">Uptime:</span>
+        <span class="text-text-primary font-semibold">{{ realtime.uptime.formatted }}</span>
+    </div>
+    {% endif %}
+</div>
+
+{# --- CPU Info (static, but included for OOB consistency) --- #}
+<div id="dash-cpu-info" hx-swap-oob="true">
+    {% if specs %}
+    <table class="w-full text-sm mb-3">
+        <tbody class="divide-y divide-border-subtle">
+            <tr><td class="py-1.5 text-text-secondary w-16">CPU</td><td class="py-1.5 text-text-primary text-xs">{{ specs.cpu_model }}</td></tr>
+            <tr><td class="py-1.5 text-text-secondary">Cores</td><td class="py-1.5 text-text-primary">{{ specs.cpu_count_physical or '?' }} physical / {{ specs.cpu_count }} logical</td></tr>
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+{# --- System Load bars --- #}
+<div id="dash-load" hx-swap-oob="true">
+    {% if realtime.system_load %}
+    {% set load = realtime.system_load %}
+    <div class="space-y-2">
+        {% for label, value, pct in [('1 min', load.load_1m, load.load_1m_pct), ('5 min', load.load_5m, load.load_5m_pct), ('15 min', load.load_15m, load.load_15m_pct)] %}
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-text-secondary">{{ label }}</span>
+                <span class="text-text-primary font-medium">{{ value }} ({{ pct }}%)</span>
+            </div>
+            <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                <div class="{% if pct > 80 %}bg-danger-500{% elif pct > 50 %}bg-warning-500{% else %}bg-success-500{% endif %} h-full rounded-full transition-all duration-500" style="width: {{ pct }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+{# --- Tasks (inside System Load card) --- #}
+<div id="dash-tasks" hx-swap-oob="true" class="mt-2 pt-2 border-t border-border-subtle">
+    {% if realtime.tasks %}
+    <div class="text-xs text-text-secondary">
+        <span class="font-medium text-text-primary">{{ realtime.tasks.total }}</span> tasks:
+        <span class="text-success-400">{{ realtime.tasks.running }} run</span>,
+        <span>{{ realtime.tasks.sleeping }} sleep</span>,
+        <span>{{ realtime.tasks.stopped }} stop</span>,
+        <span class="{% if realtime.tasks.zombie > 0 %}text-danger-400{% endif %}">{{ realtime.tasks.zombie }} zombie</span>
+        {% if realtime.system_load %}
+        / <span class="font-medium text-text-primary">{{ realtime.tasks.threads }}</span> threads
+        ({{ realtime.system_load.cpu_count }} CPUs)
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% endif %}

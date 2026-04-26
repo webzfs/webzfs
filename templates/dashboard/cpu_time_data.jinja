@@ -1,0 +1,31 @@
+{# CPU Time Distribution card body partial - loaded async via HTMX #}
+
+<div id="dash-cpu">
+    {% if realtime and realtime.cpu_pct %}
+    {% set cpu = realtime.cpu_pct %}
+    <div class="space-y-2">
+        {% for key, label, desc, color in [
+            ('user', 'User', 'Non-kernel code', 'bg-primary-500'),
+            ('system', 'System', 'Kernel processes', 'bg-info-500'),
+            ('nice', 'Nice', 'Low-priority procs', 'bg-purple-500'),
+            ('iowait', 'IO Wait', 'Disk I/O wait', 'bg-warning-500'),
+            ('irq', 'HW IRQ', 'Hardware interrupts', 'bg-danger-500'),
+            ('softirq', 'SW IRQ', 'Software interrupts', 'bg-pink-500'),
+            ('steal', 'Steal', 'Hypervisor stolen', 'bg-orange-500'),
+            ('idle', 'Idle', 'Waiting for work', 'bg-success-500'),
+        ] %}
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-text-secondary" title="{{ desc }}">{{ label }} <span class="text-text-tertiary">({{ key[:2] }})</span></span>
+                <span class="text-text-primary font-medium">{{ "%.1f"|format(cpu[key]) }}%</span>
+            </div>
+            <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                <div class="{{ color }} h-full rounded-full transition-all duration-500" style="width: {{ cpu[key] }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-text-tertiary text-sm text-center py-2">CPU data unavailable</p>
+    {% endif %}
+</div>

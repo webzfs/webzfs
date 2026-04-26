@@ -317,7 +317,11 @@ class ZFSPerformanceService:
         pool_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Get detailed capacity statistics for pools
+        Get detailed capacity statistics for pools.
+        
+        Includes 'available' from ZFS dataset layer which represents the actual
+        usable space for users. The 'free' field from zpool list is kept as raw
+        pool free space. Capacity is recalculated based on ZFS available space.
         
         Args:
             pool_name: Optional pool name to filter
@@ -359,12 +363,82 @@ class ZFSPerformanceService:
                         'health': parts[7]
                     })
             
+            # Enrich with ZFS used/available space from the dataset layer.
+            # used + avail form a consistent pair: total = used + avail.
+            space_map = {}
+            try:
+                space_cmd = ['zfs', 'list', '-H', '-p', '-o', 'name,used,avail', '-d', '0']
+                if pool_name:
+                    space_cmd.append(pool_name)
+                space_result = subprocess.run(
+                    space_cmd,
+                    capture_output=True, text=True, check=False,
+                    timeout=timeout,
+                )
+                if space_result.returncode == 0:
+                    for line in space_result.stdout.strip().split('\n'):
+                        if not line:
+                            continue
+                        sp_parts = line.split('\t')
+                        if len(sp_parts) >= 3:
+                            try:
+                                space_map[sp_parts[0]] = {
+                                    'used': int(sp_parts[1]),
+                                    'avail': int(sp_parts[2]),
+                                }
+                            except (ValueError, TypeError):
+                                pass
+            except Exception:
+                pass
+
+            for pool in pools:
+                name = pool['name']
+                space = space_map.get(name)
+                if space is not None:
+                    used_bytes = space['used']
+                    avail_bytes = space['avail']
+                    total_bytes = used_bytes + avail_bytes
+                    pool['used'] = self._format_bytes_zfs(used_bytes)
+                    pool['available'] = self._format_bytes_zfs(avail_bytes)
+                    pool['total'] = self._format_bytes_zfs(total_bytes)
+                    # Recalculate capacity based on used / total
+                    if total_bytes > 0:
+                        used_pct = round(
+                            (used_bytes / total_bytes) * 100
+                        )
+                        pool['capacity'] = f"{used_pct}%"
+                else:
+                    pool['used'] = pool['allocated']
+                    pool['available'] = pool['free']
+                    pool['total'] = pool['size']
+            
             return {'pools': pools}
         
         except subprocess.TimeoutExpired:
             raise Exception(f"ZPool list command timed out after {timeout} seconds. The system may be unresponsive.")
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get capacity stats: {e.stderr}")
+
+    @staticmethod
+    def _format_bytes_zfs(size_bytes: int) -> str:
+        """
+        Format bytes to ZFS-style human-readable string.
+        Mimics the output format of zpool/zfs list (e.g., 1.82T, 844G, 512M).
+        """
+        if size_bytes == 0:
+            return "0B"
+        units = ['B', 'K', 'M', 'G', 'T', 'P', 'E']
+        value = float(size_bytes)
+        for unit in units:
+            if abs(value) < 1024:
+                if value >= 100:
+                    return f"{int(value)}{unit}"
+                elif value >= 10:
+                    return f"{value:.1f}{unit}"
+                else:
+                    return f"{value:.2f}{unit}"
+            value /= 1024
+        return f"{value:.2f}E"
     
     def get_dataset_space_usage(
         self,

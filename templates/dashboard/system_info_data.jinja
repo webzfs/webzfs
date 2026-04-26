@@ -1,0 +1,40 @@
+{# System Information card body partial - loaded async via HTMX #}
+
+{% if specs %}
+<table class="w-full text-sm">
+    <tbody class="divide-y divide-border-subtle">
+        <tr><td class="py-1.5 text-text-secondary w-28">Hostname</td><td class="py-1.5 text-text-primary font-medium">{{ specs.hostname }}</td></tr>
+        <tr><td class="py-1.5 text-text-secondary">Platform</td><td class="py-1.5 text-text-primary text-xs">{{ specs.platform }}</td></tr>
+        {% if specs.os_release %}
+        <tr><td class="py-1.5 text-text-secondary">Release</td><td class="py-1.5 text-text-primary text-xs">{{ specs.os_release }}</td></tr>
+        {% endif %}
+        {% if specs.zfs_version %}
+        <tr>
+            <td class="py-1.5 text-text-secondary">ZFS Version</td>
+            <td class="py-1.5 text-text-primary text-xs">
+                {% if specs.zfs_version.get('module') and specs.zfs_version.get('userland') %}
+                    {{ specs.zfs_version.module }} / {{ specs.zfs_version.userland }}
+                {% elif specs.zfs_version.get('module') %}
+                    {{ specs.zfs_version.module }}
+                {% elif specs.zfs_version.get('userland') %}
+                    {{ specs.zfs_version.userland }}
+                {% endif %}
+            </td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- Uptime (updated via OOB every 60s) -->
+<div id="dash-uptime" class="mt-3 pt-3 border-t border-border-subtle">
+    {% if realtime and realtime.uptime %}
+    <div class="flex items-center gap-2 text-sm">
+        <svg class="w-4 h-4 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span class="text-text-secondary">Uptime:</span>
+        <span class="text-text-primary font-semibold">{{ realtime.uptime.formatted }}</span>
+    </div>
+    {% endif %}
+</div>
