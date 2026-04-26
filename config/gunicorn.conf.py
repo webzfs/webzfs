@@ -6,12 +6,33 @@ import multiprocessing
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_dir)
 
+# Load values from the project's .env file so that BIND_IP, PORT, BIND,
+# SOCKET_UMASK, and WORKERS edits in /opt/webzfs/.env are honored on
+# service restart. The application itself uses pydantic-settings to read
+# .env, but gunicorn binds its socket before the app starts, so we must
+# read the file here as well. python-dotenv is already a dependency.
+#
+# Existing process environment variables take precedence over .env values,
+# matching pydantic-settings behavior and allowing systemd Environment=
+# overrides to still work.
+try:
+    from dotenv import load_dotenv
+    env_file_path = os.path.join(project_dir, '.env')
+    if os.path.isfile(env_file_path):
+        load_dotenv(dotenv_path=env_file_path, override=False)
+except ImportError:
+    # python-dotenv is listed in requirements.txt; if it is somehow missing
+    # we fall back to whatever is already in the process environment.
+    pass
+
 wsgi_app = "config.asgi:app"
 worker_class = "uvicorn.workers.UvicornWorker"
 
 # Port 26619: Z(26th letter) F(6th letter) S(19th letter) = ZFS
 #
-# Bind configuration can be set via environment variables:
+# Bind configuration is read from /opt/webzfs/.env (or the process
+# environment). To change the listen address, edit /opt/webzfs/.env and
+# restart the service.
 #
 # TCP binding (default):
 #   BIND_IP=127.0.0.1 PORT=26619  -> binds to 127.0.0.1:26619
