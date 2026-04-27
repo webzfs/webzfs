@@ -14,6 +14,13 @@ from services.theme import (
     is_valid_theme,
     THEME_REGISTRY,
 )
+from services.corner_style import (
+    get_active_corner_style,
+    get_all_corner_styles_for_template,
+    save_corner_style,
+    is_valid_corner_style,
+    CORNER_STYLE_DISPLAY_NAMES,
+)
 from services.timeout_settings import (
     get_effective_session_timeout,
     save_session_timeout,
@@ -38,6 +45,9 @@ async def settings_index(request: Request, message: str = "", error: str = ""):
 
     current_session_timeout = get_effective_session_timeout()
 
+    active_corner_style = get_active_corner_style()
+    corner_styles = get_all_corner_styles_for_template()
+
     response = templates.TemplateResponse(
         "utils/settings/index.jinja",
         {
@@ -51,18 +61,23 @@ async def settings_index(request: Request, message: str = "", error: str = ""):
             "default_session_timeout": DEFAULT_SESSION_TIMEOUT,
             "default_session_timeout_display": format_timeout_display(DEFAULT_SESSION_TIMEOUT),
             "session_timeout_presets": SESSION_TIMEOUT_PRESETS,
+            "active_corner_style": active_corner_style,
+            "active_corner_style_name": CORNER_STYLE_DISPLAY_NAMES.get(
+                active_corner_style, active_corner_style
+            ),
+            "corner_styles": corner_styles,
             "message": message,
             "error": error,
             "page_title": "WebZFS Settings",
         },
     )
 
-    # When a theme was just changed, force HTMX to do a full page refresh.
-    # HTMX hx-boost only swaps <body>, leaving the old theme CSS in <head>.
-    # HX-Refresh on this 200 response (not the 303 redirect, which browsers
-    # follow transparently before HTMX can see the header) tells HTMX to
-    # reload the entire page including <head> with the new theme stylesheet.
-    if message and "Theme changed" in message:
+    # When a theme or corner style was just changed, force HTMX to do a full
+    # page refresh. HTMX hx-boost only swaps <body>, leaving stale stylesheet
+    # references in <head> and the old body class. HX-Refresh on this 200
+    # response (not the 303 redirect, which browsers follow transparently
+    # before HTMX can see the header) tells HTMX to reload the entire page.
+    if message and ("Theme changed" in message or "Corner style" in message):
         response.headers["HX-Refresh"] = "true"
 
     return response
@@ -87,6 +102,29 @@ async def apply_theme(request: Request, theme: str = Form(...)):
     else:
         return RedirectResponse(
             url="/utils/settings?error=Failed to save theme. Check file permissions on /opt/webzfs/.config/webzfs/",
+            status_code=303,
+        )
+
+
+@router.post("/apply-corner-style", response_class=HTMLResponse)
+async def apply_corner_style(request: Request, corner_style: str = Form(...)):
+    """Apply the selected corner style and save to config."""
+    if not is_valid_corner_style(corner_style):
+        return RedirectResponse(
+            url="/utils/settings?error=Invalid corner style selection",
+            status_code=303,
+        )
+
+    success = save_corner_style(corner_style)
+    if success:
+        style_name = CORNER_STYLE_DISPLAY_NAMES.get(corner_style, corner_style)
+        return RedirectResponse(
+            url=f"/utils/settings?message=Corner style changed to {style_name}",
+            status_code=303,
+        )
+    else:
+        return RedirectResponse(
+            url="/utils/settings?error=Failed to save corner style. Check file permissions on /opt/webzfs/.config/webzfs/",
             status_code=303,
         )
 
