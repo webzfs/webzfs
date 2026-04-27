@@ -20,13 +20,24 @@ observability_service = ZFSObservabilityService()
 
 @router.get("/", response_class=HTMLResponse)
 async def observability_index(request: Request):
-    """Main observability dashboard with overview of all log sources"""
+    """Main observability dashboard with overview of all log sources and live performance metrics"""
     try:
         # Only fetch ARC summary which is fast (reads from /proc)
         # Pool history and events can be very slow on systems with lots of data,
         # so we load those via separate page visits or HTMX partials
         arc_summary = observability_service.get_arc_summary()
-        
+
+        # Fetch ZFS processes for the live performance summary on the dashboard.
+        # Imported here to avoid a circular/heavy import at module load time.
+        try:
+            from services.zfs_performance import ZFSPerformanceService
+            performance_service = ZFSPerformanceService()
+            all_processes = performance_service.get_zfs_processes(sort_by_cpu=True)
+            active_processes = [p for p in all_processes if p.get('cpu_percent', 0) > 1.0]
+        except Exception:
+            all_processes = []
+            active_processes = []
+
         return templates.TemplateResponse(
             "zfs/observability/index.jinja",
             {
@@ -34,6 +45,8 @@ async def observability_index(request: Request):
                 "recent_history": [],  # Loaded via HTMX partial for performance
                 "recent_events": [],   # Loaded via HTMX partial for performance
                 "arc_summary": arc_summary,
+                "all_processes": all_processes,
+                "processes": active_processes,
                 "page_title": "ZFS Observability"
             }
         )
@@ -45,6 +58,8 @@ async def observability_index(request: Request):
                 "recent_history": [],
                 "recent_events": [],
                 "arc_summary": {},
+                "all_processes": [],
+                "processes": [],
                 "error": str(e),
                 "page_title": "ZFS Observability"
             }

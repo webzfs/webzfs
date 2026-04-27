@@ -18,7 +18,6 @@ NAV_TABS = [
     Tab(id="zfs_snapshots", label="Snapshots", url="/zfs/snapshots/"),
     Tab(id="zfs_replication", label="Replication", url="/zfs/replication/"),
     Tab(id="zfs_observability", label="Observability", url="/zfs/observability/"),
-    Tab(id="zfs_performance", label="Performance", url="/zfs/performance/"),
     Tab(id="utils", label="Utilities", url="/utils/"),
     Tab(id="fleet", label="Fleet View", url="/fleet/"),
 ]
