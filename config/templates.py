@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from fastapi.templating import Jinja2Templates
 from config.settings import BASE_DIR, settings
-from services.theme import get_active_theme, get_theme_css_path
+from services.theme import get_theme_css_path, get_active_theme
 from services.corner_style import get_active_corner_style, get_corner_styles_css_version
+
 
 @dataclass
 class Tab:
@@ -30,7 +31,10 @@ templates.env.globals["get_theme_css_path"] = get_theme_css_path
 templates.env.globals["get_active_theme"] = get_active_theme
 templates.env.globals["get_active_corner_style"] = get_active_corner_style
 templates.env.globals["get_corner_styles_css_version"] = get_corner_styles_css_version
+<<<<<<< HEAD
 =======
 templates.env.globals["get_active_theme"] = get_active_theme
 templates.env.globals["get_theme_css_path"] = get_theme_css_path
 >>>>>>> d750e2f (some small health report improvements)
+=======
+>>>>>>> 54a4204 (add optional design styles)
