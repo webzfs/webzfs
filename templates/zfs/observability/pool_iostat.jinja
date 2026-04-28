@@ -1,0 +1,173 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    <!-- Breadcrumb -->
+    <nav class="text-sm mb-4">
+        <ol class="list-none p-0 inline-flex">
+            <li class="flex items-center">
+                <a href="/" class="text-primary-400 hover:text-primary-300">Home</a>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li class="flex items-center">
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300">Observability</a>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li>
+                <span class="text-text-secondary">Pool I/O Statistics</span>
+            </li>
+        </ol>
+    </nav>
+
+    <div class="flex justify-between items-center mb-6" x-data="{ autoRefresh: true }" x-init="window.autoRefresh = autoRefresh">
+        <h1 class="text-3xl font-bold">Pool I/O Statistics</h1>
+        <div class="flex items-center gap-2">
+            <span class="text-sm text-text-secondary" id="last-update">Live Monitoring</span>
+            <button @click="autoRefresh = !autoRefresh; window.autoRefresh = autoRefresh" 
+                    class="px-4 py-2 transition-colors"
+                    :class="autoRefresh ? 'btn-success' : 'btn-secondary'">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <span x-text="autoRefresh ? 'Auto-refresh: ON' : 'Auto-refresh: OFF'"></span>
+                </span>
+            </button>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
+        <form method="get" action="/zfs/observability/pool-iostat" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label for="pool" class="block text-sm font-medium text-text-secondary mb-1">Pool</label>
+                    <select name="pool" id="pool" class="form-input focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">All Pools</option>
+                        {% for pool_name in all_pools %}
+                        <option value="{{ pool_name }}" {% if selected_pool == pool_name %}selected{% endif %}>{{ pool_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div>
+                    <label for="interval" class="block text-sm font-medium text-text-secondary mb-1">Refresh Interval (seconds)</label>
+                    <select name="interval" id="interval" class="form-input focus:ring-blue-500 focus:border-blue-500">
+                        <option value="1" {% if interval == 1 %}selected{% endif %}>1 second</option>
+                        <option value="2" {% if interval == 2 %}selected{% endif %}>2 seconds</option>
+                        <option value="5" {% if interval == 5 %}selected{% endif %}>5 seconds</option>
+                        <option value="10" {% if interval == 10 %}selected{% endif %}>10 seconds</option>
+                    </select>
+                </div>
+
+                <div class="flex items-end">
+                    <button type="submit" class="w-full px-4 py-2 btn-primary transition-colors">
+                        Apply Filters
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex gap-4">
+                <label class="flex items-center">
+                    <input type="checkbox" name="verbose" {% if verbose %}checked{% endif %} class="mr-2">
+                    <span class="text-sm text-text-secondary">Verbose (per-vdev stats)</span>
+                </label>
+                <label class="flex items-center">
+                    <input type="checkbox" name="latency" {% if latency %}checked{% endif %} class="mr-2">
+                    <span class="text-sm text-text-secondary">Show Latency</span>
+                </label>
+                <label class="flex items-center">
+                    <input type="checkbox" name="queue" {% if queue %}checked{% endif %} class="mr-2">
+                    <span class="text-sm text-text-secondary">Show Queue Depth</span>
+                </label>
+            </div>
+        </form>
+    </div>
+
+    <!-- I/O Statistics Display -->
+    <div class="bg-bg-elevated rounded-lg shadow mb-6" x-data>
+        <div class="px-6 py-4 border-b border-border-subtle">
+            <h2 class="text-xl font-semibold">Real-Time I/O Statistics</h2>
+        </div>
+        <div class="p-6">
+            <div id="iostat-display" 
+                 class="overflow-x-auto"
+                 hx-get="/zfs/observability/pool-iostat-partial?interval={{ interval }}&pool={{ selected_pool or '' }}&verbose={{ verbose }}&latency={{ latency }}&queue={{ queue }}"
+                 hx-trigger="load, every {{ interval }}s[autoRefresh]"
+                 hx-swap="innerHTML"
+                 hx-indicator=".htmx-indicator">
+                <div class="text-center py-8 text-text-secondary htmx-indicator">
+                    <svg class="animate-spin h-8 w-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Loading I/O statistics...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Raw Output (Collapsible) -->
+    <div class="bg-bg-elevated rounded-lg shadow" x-data="{ rawOutputOpen: false, loaded: false }" x-init="window.rawOutputOpen = rawOutputOpen">
+        <div class="px-6 py-4 cursor-pointer hover:bg-bg-elevated-2 transition-colors"
+             :class="{ 'border-b border-border-subtle': rawOutputOpen }"
+             @click="rawOutputOpen = !rawOutputOpen; window.rawOutputOpen = rawOutputOpen; if(rawOutputOpen && !loaded) { loaded = true; $nextTick(() => htmx.trigger(document.getElementById('raw-output'), 'loadContent')); }">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-semibold">Raw Output</h2>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-text-secondary" x-text="rawOutputOpen ? 'Click to collapse' : 'Click to expand'"></span>
+                    <svg class="w-5 h-5 text-text-secondary transition-transform duration-200"
+                         :class="{ 'rotate-180': rawOutputOpen }"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="p-6 transition-all duration-200" x-show="rawOutputOpen" x-cloak
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 -translate-y-2"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 -translate-y-2">
+            <pre id="raw-output" 
+                 class="bg-bg-elevated-2 p-4 rounded border overflow-x-auto text-sm font-mono"
+                 hx-get="/zfs/observability/pool-iostat-raw?interval={{ interval }}&pool={{ selected_pool or '' }}&verbose={{ verbose }}&latency={{ latency }}&queue={{ queue }}"
+                 hx-trigger="loadContent, every {{ interval }}s[autoRefresh && rawOutputOpen]"
+                 hx-swap="innerHTML">Click expand to view raw output...</pre>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Global variables for HTMX conditional triggers
+    window.autoRefresh = true;
+    window.rawOutputOpen = false;
+    
+    // Update last refresh time display
+    const lastUpdate = document.getElementById('last-update');
+    function updateLastRefresh() {
+        const now = new Date();
+        lastUpdate.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+    }
+    
+    // Update timestamp when HTMX completes a request
+    document.body.addEventListener('htmx:afterSwap', updateLastRefresh);
+    
+    // Initial timestamp
+    updateLastRefresh();
+</script>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    <!-- Breadcrumb -->
+    <nav class="text-sm mb-4">
+        <ol class="list-none p-0 inline-flex">
+            <li class="flex items-center">
+                <a href="/" class="text-primary-400 hover:text-primary-300">Home</a>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li class="flex items-center">
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300">Observability</a>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li>
+                <span class="text-text-secondary">System I/O Statistics</span>
+            </li>
+        </ol>
+    </nav>
+
+    <div class="flex justify-between items-center mb-6" x-data="{ autoRefresh: true }" x-init="window.autoRefresh = autoRefresh">
+        <h1 class="text-3xl font-bold">System I/O Statistics</h1>
+        <div class="flex items-center gap-2">
+            <span class="text-sm text-text-secondary" id="last-update">Live Monitoring</span>
+            <button @click="autoRefresh = !autoRefresh; window.autoRefresh = autoRefresh" 
+                    class="px-4 py-2 transition-colors"
+                    :class="autoRefresh ? 'btn-success' : 'btn-secondary'">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <span x-text="autoRefresh ? 'Auto-refresh: ON' : 'Auto-refresh: OFF'"></span>
+                </span>
+            </button>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- System Info -->
+    <div class="bg-primary-900/20 border border-primary-500/30 rounded-lg p-4 mb-6">
+        <p class="text-sm text-primary-300">
+            <strong>System:</strong> {{ system }}
+            {% if system == 'Linux' %}
+            - Using <code>iostat</code> command (requires sysstat package)
+            {% elif system == 'FreeBSD' %}
+            - Using <code>gstat</code> command
+            {% else %}
+            - System I/O statistics not available on this platform
+            {% endif %}
+        </p>
+    </div>
+
+    <!-- Filters -->
+    {% if system == 'Linux' or system == 'FreeBSD' %}
+    <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
+        <form method="get" action="/zfs/observability/system-iostat" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="interval" class="block text-sm font-medium text-text-secondary mb-1">Refresh Interval (seconds)</label>
+                    <select name="interval" id="interval" class="form-input focus:ring-blue-500 focus:border-blue-500">
+                        <option value="1" {% if interval == 1 %}selected{% endif %}>1 second</option>
+                        <option value="2" {% if interval == 2 %}selected{% endif %}>2 seconds</option>
+                        <option value="5" {% if interval == 5 %}selected{% endif %}>5 seconds</option>
+                        <option value="10" {% if interval == 10 %}selected{% endif %}>10 seconds</option>
+                    </select>
+                </div>
+                
+                {% if system == 'Linux' %}
+                <div class="flex items-end">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="extended" {% if extended %}checked{% endif %} class="mr-2">
+                        <span class="text-sm text-text-secondary">Extended statistics</span>
+                    </label>
+                </div>
+                {% endif %}
+            </div>
+            
+            <button type="submit" class="px-6 py-2 btn-primary transition-colors">
+                Apply Settings
+            </button>
+        </form>
+    </div>
+
+    <!-- I/O Statistics Display -->
+    <div class="bg-bg-elevated rounded-lg shadow">
+        <div class="px-6 py-4 border-b border-border-subtle">
+            <h2 class="text-xl font-semibold">System I/O Statistics</h2>
+        </div>
+        <div class="p-6">
+            <pre x-data
+                 class="bg-bg-elevated-2 p-4 rounded border overflow-x-auto text-sm font-mono whitespace-pre"
+                 hx-get="/zfs/observability/system-iostat-output?interval={{ interval }}&extended={{ extended }}"
+                 hx-trigger="load, every {{ interval }}s[autoRefresh]"
+                 hx-swap="innerHTML">{% if iostat_data and not iostat_data.get('error') %}{{ iostat_data.output }}{% elif iostat_data and iostat_data.get('error') %}<span class="text-warning-400">{{ iostat_data.error }}</span>{% if system == 'Linux' %}
+
+Note: Install the sysstat package to enable iostat:
+  sudo apt install sysstat  (Debian/Ubuntu)
+  sudo pacman -S sysstat    (Arch Linux){% endif %}{% else %}Loading I/O statistics...{% endif %}</pre>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-bg-elevated rounded-lg shadow p-12 text-center">
+        <svg class="w-16 h-16 mx-auto text-text-tertiary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <p class="text-xl text-text-secondary mb-2">System I/O statistics not available</p>
+        <p class="text-sm text-text-tertiary">This feature is only available on Linux and FreeBSD systems</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    // Global autoRefresh variable for HTMX conditional triggers
+    window.autoRefresh = true;
+    
+    // Update last refresh time display
+    const lastUpdate = document.getElementById('last-update');
+    function updateLastRefresh() {
+        const now = new Date();
+        lastUpdate.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+    }
+    
+    // Update timestamp when HTMX completes a request
+    document.body.addEventListener('htmx:afterSwap', updateLastRefresh);
+    
+    // Initial timestamp
+    updateLastRefresh();
+</script>
+{% endblock %}
