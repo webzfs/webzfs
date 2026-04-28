@@ -54,7 +54,6 @@
              ================================================================ -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-<<<<<<< HEAD
             <!-- Column 1: System Specs + Uptime -->
             <div class="card animate-fade-in">
                 <div class="card-body">
@@ -65,104 +64,19 @@
                             </svg>
                         </div>
                         <h2 class="text-lg font-semibold text-text-primary">System Information</h2>
-=======
-                <!-- Memory Info Card -->
-                <div class="card animate-fade-in" style="animation-delay: 0.1s;">
-                    <div class="card-body">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="p-2 bg-success-500/10 border border-success-500/20 rounded-lg">
-                                <svg class="w-6 h-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-                                </svg>
-                            </div>
-                            <h2 class="text-xl font-semibold text-text-primary">Memory Information</h2>
-                            <button type="button"
-                                    class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
-                                    hx-get="/memory-refresh"
-                                    hx-target="#memory-content"
-                                    hx-swap="innerHTML"
-                                    hx-indicator="#memory-spinner"
-                                    title="Refresh memory information">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                </svg>
-                            </button>
-                            <svg id="memory-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        </div>
-                        <div id="memory-content">
-                            {% if memory %}
-                                {% with data=memory %}
-                                    {% include "dashboard/table.jinja" %}
-                                {% endwith %}
-                            {% endif %}
-                        </div>
->>>>>>> 4f12b37 (dashboard refresh updates)
                     </div>
 
-<<<<<<< HEAD
                     <!-- Async load: system info -->
                     <div hx-get="/system-info-data"
                          hx-trigger="load"
                          hx-swap="innerHTML">
                         <div class="flex items-center justify-center py-8">
                             <svg class="w-6 h-6 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-=======
-                <!-- System Load Card -->
-                <div class="card animate-fade-in" 
-                     style="animation-delay: 0.2s;">
-                    <div class="card-body">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="p-2 bg-info-500/10 border border-info-500/20 rounded-lg">
-                                <svg class="w-6 h-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                </svg>
-                            </div>
-                            <h2 class="text-xl font-semibold text-text-primary">System Load</h2>
-                            <button type="button"
-                                    class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
-                                    hx-get="/system-load-refresh"
-                                    hx-target="#system-load-content"
-                                    hx-swap="innerHTML"
-                                    hx-indicator="#system-load-spinner"
-                                    title="Refresh system load">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                </svg>
-                            </button>
-                            <svg id="system-load-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
->>>>>>> 4f12b37 (dashboard refresh updates)
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                             <span class="ml-2 text-sm text-text-tertiary">Loading system info...</span>
                         </div>
-<<<<<<< HEAD
-=======
-                        <div id="system-load-content">
-                            {% if system_load %}
-                                <div class="overflow-x-auto"
-                                     hx-get="/system-load-values"
-                                     hx-trigger="every 1s"
-                                     hx-swap="none">
-                                    <table class="min-w-full">
-                                        <tbody>
-                                            {% for key, value in system_load.items() %}
-                                            <tr>
-                                                <td class="px-4 py-2 text-sm text-text-secondary">{{ key }}</td>
-                                                <td class="px-4 py-2 text-sm font-medium text-text-primary">
-                                                    <span id="system-load-{{ loop.index }}">{{ value }}</span>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            {% endif %}
-                        </div>
->>>>>>> 4f12b37 (dashboard refresh updates)
                     </div>
                 </div>
             </div>

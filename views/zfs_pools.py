@@ -831,8 +831,6 @@ async def discard_checkpoint(
             status_code=303
         )
 
-
-<<<<<<< HEAD
 # ==================== Diagnostics Routes ====================
 
 
@@ -864,9 +862,6 @@ async def download_pool_diagnostics(pool_name: str):
             status_code=500
         )
 
-
-=======
->>>>>>> 7fb748f (add vdev management)
 # ==================== VDev Management Routes ====================
 
 
@@ -897,17 +892,10 @@ async def vdev_management_data(request: Request, pool_name: str):
             size_bytes = disk.get('size_bytes', 0)
             disk_size_lookup[disk.get('name', '')] = size_bytes
             disk_size_lookup[disk.get('device_path', '')] = size_bytes
-
-        # Build disk size lookup for min-size calculation
-        disk_size_lookup = {}
-        all_disks = []
-        for disk in available_disks:
-            size_bytes = disk.get('size_bytes', 0)
-            disk_size_lookup[disk.get('name', '')] = size_bytes
-            disk_size_lookup[disk.get('device_path', '')] = size_bytes
             all_disks.append({
                 'name': disk.get('name', ''),
                 'device_path': disk.get('device_path', ''),
+
                 'size': disk.get('size', ''),
                 'size_bytes': size_bytes,
                 'model': disk.get('model', 'Unknown'),
@@ -927,7 +915,6 @@ async def vdev_management_data(request: Request, pool_name: str):
         # map to filter "Available Disks" lists for attach and replace so a
         # disk smaller than the existing device cannot be selected.
         import os
->>>>>>> 5efc04c (some minor vdev management page fixes to help users from the footgun)
         pool_devices = []
         pool_device_sizes = {}
         for section in ['data_vdevs', 'log_vdevs', 'cache_vdevs',
@@ -989,10 +976,12 @@ async def vdev_management_data(request: Request, pool_name: str):
             "topology": topology_dict,
             "all_disks": all_disks,
             "pool_devices": pool_devices,
+            "pool_device_sizes": pool_device_sizes,
             "min_data_device_size": min_data_device_size,
             "is_single_disk_pool": is_single_disk_pool,
             "data_vdev_types": data_vdev_types,
         })
+
 
     except Exception as e:
         return JSONResponse(
