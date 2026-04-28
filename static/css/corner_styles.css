@@ -469,3 +469,189 @@ body.corner-octagonal .pulse-border-warning {
     position: relative;
     box-shadow: inset 0 4px 0 0 rgb(234 179 8), inset 0 0 0 1px var(--border-subtle);
 }
+
+
+/* ============================================================
+ * NAVIGATION BAR
+ *
+ * The top navbar tabs (.nav-tab) and the logout button apply
+ * `rounded-lg` via Tailwind @apply inside src/styles.css, so the
+ * rendered HTML carries only the semantic class name. Without
+ * explicit rules below, the navbar always renders with rounded
+ * corners regardless of the user's selected corner style.
+ *
+ * SQUARED: zero out border-radius on the nav-tab and logout button.
+ *
+ * OCTAGONAL: a clipped element with `border` or `box-shadow: inset`
+ * shows visible diagonal gaps because the underlying rectangle's
+ * edges are chopped off. The reliable approach (used by .card and
+ * .p-2.rounded-lg elsewhere in this file) is the two-layer
+ * technique:
+ *   - parent element: solid outline-colour background, clipped to
+ *     the outer polygon, with `position: relative; isolation:
+ *     isolate;` so the ::before can sit beneath the text.
+ *   - ::before: navbar background colour, inset 1px on every side,
+ *     clipped to a polygon 1px smaller. The 1px gap around the
+ *     ::before reveals the parent colour as the visible outline,
+ *     and that outline DOES trace every diagonal because both
+ *     layers are polygons.
+ * ============================================================ */
+
+/* Squared: no rounded corners on the navbar pieces. */
+body.corner-squared .nav-tab,
+body.corner-squared .nav-tab-active,
+body.corner-squared .nav-primary form button,
+body.corner-squared #mobile-menu-button,
+body.corner-squared #mobile-menu a {
+    border-radius: 0 !important;
+}
+
+/* Octagonal: outer polygon = 8px button cut, parent supplies the
+   outline colour. The default outline is the subtle border colour
+   of the navbar separator. */
+body.corner-octagonal .nav-tab {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: var(--border-subtle) !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    ) !important;
+}
+
+/* Inner layer for nav-tabs: navbar background colour, slightly
+   smaller polygon, sits beneath the text. */
+body.corner-octagonal .nav-tab::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        calc(var(--oct-btn-cut) - 1px) 0,
+        calc(100% - (var(--oct-btn-cut) - 1px)) 0,
+        100% calc(var(--oct-btn-cut) - 1px),
+        100% calc(100% - (var(--oct-btn-cut) - 1px)),
+        calc(100% - (var(--oct-btn-cut) - 1px)) 100%,
+        calc(var(--oct-btn-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-btn-cut) - 1px)),
+        0 calc(var(--oct-btn-cut) - 1px)
+    );
+}
+
+/* Variant outline colours for the parent layer. The ::before stays
+   the same; only the parent's background-color changes, so the
+   outline takes the new colour while the interior stays neutral. */
+body.corner-octagonal .nav-tab:hover {
+    background-color: var(--border-default) !important;
+}
+body.corner-octagonal .nav-tab-active {
+    background-color: var(--primary-500) !important;
+}
+body.corner-octagonal .nav-tab.text-purple-400 {
+    background-color: rgb(168 85 247) !important;
+}
+
+/* Logout button uses the same two-layer pattern with a danger
+   tinted outline. */
+body.corner-octagonal .nav-primary form button {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: rgb(239 68 68 / 0.30) !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    ) !important;
+}
+body.corner-octagonal .nav-primary form button::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        calc(var(--oct-btn-cut) - 1px) 0,
+        calc(100% - (var(--oct-btn-cut) - 1px)) 0,
+        100% calc(var(--oct-btn-cut) - 1px),
+        100% calc(100% - (var(--oct-btn-cut) - 1px)),
+        calc(100% - (var(--oct-btn-cut) - 1px)) 100%,
+        calc(var(--oct-btn-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-btn-cut) - 1px)),
+        0 calc(var(--oct-btn-cut) - 1px)
+    );
+}
+body.corner-octagonal .nav-primary form button:hover {
+    background-color: rgb(239 68 68 / 0.50) !important;
+}
+
+/* Mobile menu hamburger button. Subtle outline only. */
+body.corner-octagonal #mobile-menu-button {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: var(--border-subtle) !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    ) !important;
+}
+body.corner-octagonal #mobile-menu-button::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        calc(var(--oct-btn-cut) - 1px) 0,
+        calc(100% - (var(--oct-btn-cut) - 1px)) 0,
+        100% calc(var(--oct-btn-cut) - 1px),
+        100% calc(100% - (var(--oct-btn-cut) - 1px)),
+        calc(100% - (var(--oct-btn-cut) - 1px)) 100%,
+        calc(var(--oct-btn-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-btn-cut) - 1px)),
+        0 calc(var(--oct-btn-cut) - 1px)
+    );
+}
+
+/* Mobile menu list items. */
+body.corner-squared #mobile-menu a {
+    border-radius: 0 !important;
+}
+body.corner-octagonal #mobile-menu a {
+    border-radius: 0 !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    );
+}
+
+
