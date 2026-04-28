@@ -11,7 +11,6 @@ from fastapi.responses import HTMLResponse
 
 from auth.dependencies import get_current_user
 from config.templates import templates
-<<<<<<< HEAD
 from services.dashboard import (
     get_system_specs,
     get_realtime_system_data,
@@ -21,9 +20,6 @@ from services.dashboard import (
     get_memory_stats, 
     get_system_load_stats
 )
-=======
-from services.dashboard import get_dashboard_context, get_memory_stats, get_system_load_stats, get_pool_stats
->>>>>>> 4f12b37 (dashboard refresh updates)
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
