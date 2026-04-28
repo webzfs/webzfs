@@ -310,6 +310,26 @@ class FleetMonitoringService:
                     self.update_server(server_id, status="error", last_checked=datetime.now().isoformat())
                     return []
                 
+                # Get ZFS used/available space (actual usable space for users)
+                space_map = {}
+                try:
+                    space_command = self._build_zfs_command(server, "zfs list -H -p -o name,used,avail -d 0")
+                    s_stdin, s_stdout, s_stderr = client.exec_command(space_command)
+                    space_output = s_stdout.read().decode('utf-8')
+                    for space_line in space_output.strip().split('\n'):
+                        if space_line:
+                            sp_parts = space_line.split('\t')
+                            if len(sp_parts) >= 3:
+                                try:
+                                    space_map[sp_parts[0]] = {
+                                        'used': int(sp_parts[1]),
+                                        'avail': int(sp_parts[2]),
+                                    }
+                                except (ValueError, TypeError):
+                                    pass
+                except Exception:
+                    pass
+                
                 # Parse the output
                 pools = []
                 for line in output.strip().split('\n'):
@@ -317,12 +337,30 @@ class FleetMonitoringService:
                         parts = line.split('\t')
                         if len(parts) >= 6:
                             name, size, alloc, free, cap, health = parts[:6]
+                            space = space_map.get(name)
+                            if space is not None:
+                                used_bytes = space['used']
+                                avail_bytes = space['avail']
+                                total_bytes = used_bytes + avail_bytes
+                                used_str = self._format_bytes(used_bytes)
+                                avail_str = self._format_bytes(avail_bytes)
+                                total_str = self._format_bytes(total_bytes)
+                                if total_bytes > 0:
+                                    used_pct = round((used_bytes / total_bytes) * 100)
+                                    cap_str = f"{used_pct}%"
+                                else:
+                                    cap_str = f"{cap}%"
+                            else:
+                                used_str = self._format_bytes(int(alloc))
+                                avail_str = self._format_bytes(int(free))
+                                total_str = self._format_bytes(int(size))
+                                cap_str = f"{cap}%"
                             pools.append({
                                 "name": name,
-                                "size": self._format_bytes(int(size)),
-                                "allocated": self._format_bytes(int(alloc)),
-                                "free": self._format_bytes(int(free)),
-                                "capacity": f"{cap}%",
+                                "used": used_str,
+                                "free": avail_str,
+                                "total": total_str,
+                                "capacity": cap_str,
                                 "health": health
                             })
                 
@@ -366,6 +404,129 @@ class FleetMonitoringService:
                 results[server_id] = []
         return results
     
+    def fetch_pool_space_tree(
+        self,
+        server_id: str,
+        pool_name: str,
+        max_depth: int = 4,
+    ) -> Dict[str, Any]:
+        """
+        Fetch a dataset space-usage tree for a single pool on a remote
+        server.
+
+        Mirrors the behaviour of ZFSDatasetService.get_space_tree but
+        runs the underlying 'zfs list' calls over the server's SSH
+        connection. Returns the same nested dict shape so the front-end
+        renderer can treat both local and remote data identically.
+
+        Args:
+            server_id: Server UUID.
+            pool_name: ZFS pool to inspect.
+            max_depth: Maximum depth (including the pool root) to
+                include. Children deeper than this are still summed via
+                'usedbychildren' but are not added as explicit nodes.
+
+        Returns:
+            Nested dict matching the local visualizer schema.
+        """
+        # Reject anything that is not a plain dataset-name token to
+        # avoid arbitrary command injection over the SSH channel.
+        if not pool_name or any(c.isspace() for c in pool_name):
+            raise ValueError("Invalid pool name")
+        for ch in pool_name:
+            if not (ch.isalnum() or ch in "._-:/"):
+                raise ValueError("Invalid pool name")
+
+        server = self._get_server_by_id(server_id)
+        client = self._create_ssh_client(server)
+        try:
+            properties = (
+                "name,used,referenced,available,"
+                "usedbysnapshots,usedbychildren,usedbydataset,compressratio"
+            )
+            ds_command = self._build_zfs_command(
+                server,
+                "zfs list -Hp -t filesystem,volume -o "
+                + properties
+                + " -r "
+                + pool_name,
+            )
+            stdin, stdout, stderr = client.exec_command(ds_command)
+            ds_output = stdout.read().decode("utf-8")
+            ds_error = stderr.read().decode("utf-8")
+            if ds_error and not ds_output:
+                raise Exception(ds_error.strip() or "zfs list failed")
+
+            snapshot_counts: Dict[str, int] = {}
+            try:
+                snap_command = self._build_zfs_command(
+                    server,
+                    "zfs list -Hp -t snapshot -o name -r " + pool_name,
+                )
+                s_stdin, s_stdout, s_stderr = client.exec_command(snap_command)
+                snap_output = s_stdout.read().decode("utf-8")
+                for line in snap_output.strip().split("\n"):
+                    if not line or "@" not in line:
+                        continue
+                    parent = line.split("@", 1)[0]
+                    snapshot_counts[parent] = snapshot_counts.get(parent, 0) + 1
+            except Exception:
+                snapshot_counts = {}
+
+            def _to_int(token: str) -> int:
+                token = (token or "").strip()
+                if not token or token == "-":
+                    return 0
+                try:
+                    return int(token)
+                except ValueError:
+                    return 0
+
+            nodes: Dict[str, Dict[str, Any]] = {}
+            order: List[str] = []
+            for line in ds_output.strip().split("\n"):
+                if not line:
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 8:
+                    continue
+                name = parts[0]
+                nodes[name] = {
+                    "name": name,
+                    "used": _to_int(parts[1]),
+                    "referenced": _to_int(parts[2]),
+                    "available": _to_int(parts[3]),
+                    "used_by_snapshots": _to_int(parts[4]),
+                    "used_by_children": _to_int(parts[5]),
+                    "used_by_dataset": _to_int(parts[6]),
+                    "compressratio": parts[7],
+                    "snapshot_count": snapshot_counts.get(name, 0),
+                    "children": [],
+                }
+                order.append(name)
+
+            if pool_name not in nodes:
+                raise Exception(
+                    "Pool " + pool_name + " not found in zfs list output"
+                )
+
+            root_depth = pool_name.count("/")
+            for name in order:
+                if name == pool_name:
+                    continue
+                parent_name = name.rsplit("/", 1)[0]
+                parent = nodes.get(parent_name)
+                if parent is None:
+                    continue
+                depth_from_root = name.count("/") - root_depth
+                if depth_from_root >= max_depth:
+                    continue
+                parent["children"].append(nodes[name])
+
+            return nodes[pool_name]
+        finally:
+            client.close()
+
     def execute_remote_command(self, server_id: str, command: str) -> str:
         """
         Execute a command on a remote server

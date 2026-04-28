@@ -1,0 +1,89 @@
+{# Scrub Status partial - used by both initial load and HTMX refresh #}
+
+{% if scrub_status and scrub_status.pools|length > 0 %}
+<div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+        <thead>
+            <tr class="border-b border-border-subtle text-text-tertiary text-xs uppercase tracking-wider">
+                <th class="py-2 pr-4 text-left font-medium">Pool</th>
+                <th class="py-2 px-4 text-left font-medium">Status</th>
+                <th class="py-2 px-4 text-left font-medium">Last Scrub</th>
+                <th class="py-2 px-4 text-left font-medium">Within 30 Days</th>
+                <th class="py-2 pl-4 text-left font-medium">Details</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-border-subtle">
+            {% for pool in scrub_status.pools %}
+            <tr class="hover:bg-bg-elevated-2 transition-colors">
+                <td class="py-2.5 pr-4">
+                    <a href="/zfs/pools/{{ pool.name }}" class="text-primary-400 hover:text-primary-300 font-semibold">{{ pool.name }}</a>
+                </td>
+                <td class="py-2.5 px-4">
+                    {% if pool.scrub_in_progress %}
+                    <span class="inline-flex items-center gap-1.5 text-info-400">
+                        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        In Progress
+                        {% if pool.scrub_progress is not none %}
+                        <span class="text-text-secondary">({{ pool.scrub_progress }}%)</span>
+                        {% endif %}
+                    </span>
+                    {% elif pool.last_scrub %}
+                    <span class="text-text-primary">Completed</span>
+                    {% else %}
+                    <span class="text-text-tertiary">No scrub recorded</span>
+                    {% endif %}
+                </td>
+                <td class="py-2.5 px-4 text-text-secondary">
+                    {% if pool.last_scrub_human %}
+                    {{ pool.last_scrub_human }}
+                    {% elif pool.last_scrub %}
+                    {{ pool.last_scrub[:19]|replace('T', ' ') }}
+                    {% else %}
+                    <span class="text-text-tertiary">--</span>
+                    {% endif %}
+                </td>
+                <td class="py-2.5 px-4">
+                    {% if pool.scrub_in_progress %}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-info-500/20 text-info-400">Running</span>
+                    {% elif pool.scrub_within_30_days %}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-success-500/20 text-success-400">Yes</span>
+                    {% elif pool.last_scrub %}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-danger-500/20 text-danger-400">No</span>
+                    {% else %}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-bg-elevated-3 text-text-tertiary">Never</span>
+                    {% endif %}
+                </td>
+                <td class="py-2.5 pl-4 text-xs text-text-tertiary max-w-xs truncate" title="{{ pool.scan_line|default('') }}">
+                    {{ pool.scan_line|default('--') }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if scrub_status.scrub_cron_configured %}
+<div class="mt-3 flex items-center gap-2 text-xs text-text-secondary">
+    <svg class="w-4 h-4 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    Automated scrub schedule detected
+</div>
+{% else %}
+<div class="mt-3 flex items-center gap-2 text-xs text-text-secondary">
+    <svg class="w-4 h-4 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+    </svg>
+    No automated scrub schedule detected --
+    <a href="/utils/scrub-scheduling" class="text-primary-400 hover:text-primary-300">configure scrub schedules</a>
+</div>
+{% endif %}
+
+{% else %}
+<div class="text-center py-6 text-text-tertiary">
+    <p class="text-sm">No pools found for scrub status</p>
+</div>
+{% endif %}

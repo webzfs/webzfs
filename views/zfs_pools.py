@@ -10,6 +10,7 @@ from config.templates import templates
 from services.zfs_pool import ZFSPoolService
 from services.zfs_dataset import ZFSDatasetService
 from services.disk_utils import DiskUtilsService
+from services.diagnostics import collect_pool_diagnostics
 from services.audit_logger import audit_logger
 from auth.dependencies import get_current_user
 
@@ -203,14 +204,65 @@ async def pool_detail(request: Request, pool_name: str):
         # Parse structured data from status output
         parsed = parse_pool_status(pool_status.get('status_output', ''))
 
-        # Get reservation from the root dataset (zfs property, not zpool)
+        # Get root dataset properties (reservation, available space, compression, etc.)
         reservation_value = 'none'
+        dataset_props = {}
         try:
-            ds_props = dataset_service.get_properties(pool_name)
-            if 'reservation' in ds_props:
-                reservation_value = ds_props['reservation'].get('value', 'none')
+            dataset_props = dataset_service.get_properties(pool_name)
+            if 'reservation' in dataset_props:
+                reservation_value = dataset_props['reservation'].get('value', 'none')
         except Exception:
             pass
+
+        # Compute user-facing used, available, total, and capacity from ZFS
+        # dataset layer. ZFS 'used' and 'available' account for metadata
+        # overhead, reservations, etc. total = used + avail gives a
+        # consistent set of numbers that match the capacity bar.
+        zfs_used = None
+        zfs_avail = None
+        zfs_total = None
+        zfs_cap = None
+        if dataset_props.get('used', {}).get('value'):
+            zfs_used = dataset_props['used']['value']
+        if dataset_props.get('available', {}).get('value'):
+            zfs_avail = dataset_props['available']['value']
+        if zfs_used and zfs_avail:
+            try:
+                def _parse_zfs_size(s: str) -> int:
+                    s = s.strip()
+                    multipliers = {
+                        'B': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3,
+                        'T': 1024**4, 'P': 1024**5, 'E': 1024**6,
+                    }
+                    if not s:
+                        return 0
+                    suffix = s[-1].upper()
+                    if suffix in multipliers:
+                        return int(float(s[:-1]) * multipliers[suffix])
+                    return int(s)
+
+                used_bytes = _parse_zfs_size(zfs_used)
+                avail_bytes = _parse_zfs_size(zfs_avail)
+                total_bytes = used_bytes + avail_bytes
+                # Format total back to human-readable
+                units = ['B', 'K', 'M', 'G', 'T', 'P', 'E']
+                val = float(total_bytes)
+                for unit in units:
+                    if abs(val) < 1024:
+                        if val >= 100:
+                            zfs_total = f"{int(val)}{unit}"
+                        elif val >= 10:
+                            zfs_total = f"{val:.1f}{unit}"
+                        else:
+                            zfs_total = f"{val:.2f}{unit}"
+                        break
+                    val /= 1024
+                else:
+                    zfs_total = f"{val:.2f}E"
+                if total_bytes > 0:
+                    zfs_cap = f"{round((used_bytes / total_bytes) * 100)}%"
+            except (ValueError, TypeError):
+                pass
 
         # Get checkpoint info if supported
         checkpoint_info = None
@@ -228,6 +280,11 @@ async def pool_detail(request: Request, pool_name: str):
                 "pool": pool_status,
                 "parsed": parsed,
                 "reservation_value": reservation_value,
+                "dataset_props": dataset_props,
+                "zfs_used": zfs_used,
+                "zfs_avail": zfs_avail,
+                "zfs_total": zfs_total,
+                "zfs_cap": zfs_cap,
                 "checkpoint_info": checkpoint_info,
                 "checkpoint_supported": checkpoint_supported,
                 "page_title": f"Pool: {pool_name}"
@@ -241,6 +298,24 @@ async def pool_detail(request: Request, pool_name: str):
                 "error": str(e),
                 "back_url": "/zfs/pools"
             }
+        )
+
+
+@router.get("/{pool_name}/space-tree", response_class=JSONResponse)
+async def pool_space_tree(request: Request, pool_name: str):
+    """
+    Return a nested dataset space-usage tree for the visualizer.
+
+    The tree is capped at four levels (pool plus three child levels) to
+    match what the front-end visualization is willing to render.
+    """
+    try:
+        tree = dataset_service.get_space_tree(pool_name, max_depth=4)
+        return JSONResponse(content={"success": True, "tree": tree})
+    except Exception as e:
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
         )
 
 
@@ -754,6 +829,38 @@ async def discard_checkpoint(
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}?error={str(e)}",
             status_code=303
+        )
+
+
+# ==================== Diagnostics Routes ====================
+
+
+@router.get("/{pool_name}/diagnostics/download")
+async def download_pool_diagnostics(pool_name: str):
+    """Download a zip file of diagnostic information for a faulted/suspended pool."""
+    from fastapi.responses import StreamingResponse
+    from datetime import datetime
+    import io
+
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_bytes = collect_pool_diagnostics(pool_name)
+        filename = f"{pool_name}_diagnostics_{timestamp}.zip"
+
+        return StreamingResponse(
+            io.BytesIO(zip_bytes),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(len(zip_bytes)),
+            }
+        )
+    except Exception as e:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(
+            content=f"Error collecting diagnostics: {str(e)}",
+            status_code=500
         )
 
 

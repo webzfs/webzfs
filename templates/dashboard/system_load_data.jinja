@@ -1,0 +1,52 @@
+{# System Load + CPU Info + Tasks card body partial - loaded async via HTMX #}
+
+<!-- CPU Info (static specs) -->
+<div id="dash-cpu-info">
+    {% if specs %}
+    <table class="w-full text-sm mb-3">
+        <tbody class="divide-y divide-border-subtle">
+            <tr><td class="py-1.5 text-text-secondary w-16">CPU</td><td class="py-1.5 text-text-primary text-xs">{{ specs.cpu_model }}</td></tr>
+            <tr><td class="py-1.5 text-text-secondary">Cores</td><td class="py-1.5 text-text-primary">{{ specs.cpu_count_physical or '?' }} physical / {{ specs.cpu_count }} logical</td></tr>
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+<!-- Load averages -->
+<div id="dash-load">
+    {% if realtime and realtime.system_load %}
+    {% set load = realtime.system_load %}
+    <div class="space-y-2">
+        {% for label, value, pct in [('1 min', load.load_1m, load.load_1m_pct), ('5 min', load.load_5m, load.load_5m_pct), ('15 min', load.load_15m, load.load_15m_pct)] %}
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-text-secondary">{{ label }}</span>
+                <span class="text-text-primary font-medium">{{ value }} ({{ pct }}%)</span>
+            </div>
+            <div class="w-full h-2 bg-bg-elevated-3 rounded-full overflow-hidden">
+                <div class="{% if pct > 80 %}bg-danger-500{% elif pct > 50 %}bg-warning-500{% else %}bg-success-500{% endif %} h-full rounded-full transition-all duration-500" style="width: {{ pct }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-text-tertiary text-sm text-center py-2">Load data unavailable</p>
+    {% endif %}
+</div>
+
+<!-- Tasks (updated via OOB every 60s) -->
+<div id="dash-tasks" class="mt-2 pt-2 border-t border-border-subtle">
+    {% if realtime and realtime.tasks %}
+    <div class="text-xs text-text-secondary">
+        <span class="font-medium text-text-primary">{{ realtime.tasks.total }}</span> tasks:
+        <span class="text-success-400">{{ realtime.tasks.running }} run</span>,
+        <span>{{ realtime.tasks.sleeping }} sleep</span>,
+        <span>{{ realtime.tasks.stopped }} stop</span>,
+        <span class="{% if realtime.tasks.zombie > 0 %}text-danger-400{% endif %}">{{ realtime.tasks.zombie }} zombie</span>
+        {% if realtime.system_load %}
+        / <span class="font-medium text-text-primary">{{ realtime.tasks.threads }}</span> threads
+        ({{ realtime.system_load.cpu_count }} CPUs)
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
