@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from fastapi.templating import Jinja2Templates
 from config.settings import BASE_DIR, settings
-from services.theme import get_theme_css_path, get_active_theme
+from services.theme import get_active_theme, get_theme_css_path
+
 
 @dataclass
 class Tab:

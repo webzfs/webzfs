@@ -642,6 +642,11 @@ def get_memory_stats() -> dict[str, Any]:
     return get_realtime_system_data()['memory']
 
 
+def get_memory_stats() -> dict[str, Any]:
+    """Public function to get memory statistics."""
+    return _get_memory_info()
+
+
 def get_system_load_stats() -> dict[str, Any]:
     """Public function to get system load statistics."""
     return get_realtime_system_data()['system_load']
