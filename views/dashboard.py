@@ -57,7 +57,6 @@ def system_info_data(request: Request):
     )
 
 
-<<<<<<< HEAD
 @router.get("/memory-data", response_class=HTMLResponse)
 def memory_data(request: Request):
     """HTMX endpoint: memory usage card."""
@@ -173,37 +172,6 @@ def system_stats_refresh(request: Request):
 
 
 @router.get("/zfs-pools-refresh", response_class=HTMLResponse)
-=======
-@router.get("/memory-refresh")
-def memory_refresh(request: Request):
-    """Return refreshed memory information."""
-    try:
-        memory = get_memory_stats()
-        context = {"data": memory}
-    except Exception as exc:
-        context = {"data": {"Error": str(exc)}}
-
-    return templates.TemplateResponse(
-        request, name="dashboard/table.jinja", context=context
-    )
-
-
-@router.get("/system-load-refresh")
-def system_load_refresh(request: Request):
-    """Return refreshed system load information."""
-    try:
-        system_load = get_system_load_stats()
-        context = {"system_load": system_load}
-    except Exception as exc:
-        context = {"system_load": {"Error": str(exc)}}
-
-    return templates.TemplateResponse(
-        request, name="dashboard/system_load_table.jinja", context=context
-    )
-
-
-@router.get("/zfs-pools-refresh")
->>>>>>> 4f12b37 (dashboard refresh updates)
 def zfs_pools_refresh(request: Request):
     """HTMX endpoint for refreshing pool information."""
     try:
