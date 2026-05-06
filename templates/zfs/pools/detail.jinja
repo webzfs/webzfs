@@ -101,6 +101,12 @@
                            class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
                     <span>Show snapshot bands</span>
                 </label>
+                <label class="inline-flex items-center gap-2 text-text-secondary cursor-pointer select-none"
+                       title="Shrink the free-space block so dataset segments fill more of the row.">
+                    <input type="checkbox" id="space-viz-collapse-free"
+                           class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+                    <span>Collapse free space</span>
+                </label>
                 <button type="button" id="space-viz-back"
                         class="btn-secondary text-sm inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled>
@@ -709,12 +715,20 @@ window.showConfirm = function(dialogId) {
     var breadcrumb = document.getElementById("space-viz-breadcrumb");
     var backButton = document.getElementById("space-viz-back");
     var snapshotToggle = document.getElementById("space-viz-show-snapshots");
+    var collapseFreeToggle = document.getElementById("space-viz-collapse-free");
 
     if (!container || !svg) return;
+
+    // When the user enables "Collapse free space", the free-space block
+    // on the pool row shrinks to roughly the width needed for its label
+    // so the dataset blocks can fill the rest of the row. Anything
+    // smaller hides the label without losing the space proportions.
+    var COLLAPSED_FREE_WIDTH = 140;
 
     var rootTree = null;
     var viewStack = [];
     var showSnapshotBands = true;
+    var collapseFreeSpace = false;
 
     function formatBytes(bytes) {
         if (bytes === null || bytes === undefined || isNaN(bytes)) return "-";
@@ -935,14 +949,26 @@ window.showConfirm = function(dialogId) {
         if (depth === 0 && node.available > 0) {
             var totalCapacity = node.used + node.available;
             if (totalCapacity > 0) {
-                var usedWidth = width * (node.used / totalCapacity);
+                var usedWidth;
+                var freeWidth;
+                if (collapseFreeSpace) {
+                    // Reserve a fixed slice for the free-space label and
+                    // give the rest of the row to the dataset segments.
+                    // Cap the slice at half the row so a tiny pool with
+                    // mostly-free space does not collapse to nothing.
+                    freeWidth = Math.min(COLLAPSED_FREE_WIDTH, width * 0.5);
+                    usedWidth = width - freeWidth;
+                } else {
+                    usedWidth = width * (node.used / totalCapacity);
+                    freeWidth = width - usedWidth;
+                }
                 drawSegment(parentSvg, node, x, y, usedWidth, depth, false);
                 drawSegment(
                     parentSvg,
                     { name: "free", used: node.available },
                     x + usedWidth,
                     y,
-                    width - usedWidth,
+                    freeWidth,
                     depth,
                     true
                 );
@@ -1059,6 +1085,14 @@ window.showConfirm = function(dialogId) {
         showSnapshotBands = !!snapshotToggle.checked;
         draw();
     });
+
+    if (collapseFreeToggle) {
+        collapseFreeSpace = !!collapseFreeToggle.checked;
+        collapseFreeToggle.addEventListener("change", function() {
+            collapseFreeSpace = !!collapseFreeToggle.checked;
+            draw();
+        });
+    }
 
     var resizeTimer = null;
     window.addEventListener("resize", function() {

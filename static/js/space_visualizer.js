@@ -41,6 +41,10 @@
     var DEFAULT_MAX_DEPTH = 4;
     var ROW_HEIGHT = 56;
     var ROW_GAP = 4;
+    // Width reserved for the free-space block when "Collapse free space"
+    // is enabled. Just enough room for the label so dataset segments can
+    // claim the rest of the row.
+    var COLLAPSED_FREE_WIDTH = 140;
 
     function hexToRgb(hex) {
         var h = (hex || "").replace("#", "").trim();
@@ -196,10 +200,13 @@
             throw new Error("space_visualizer.create: missing required options");
         }
 
+        var collapseFreeToggle = opts.collapseFreeToggle;
+
         var theme = readTheme();
         var rootTree = null;
         var viewStack = [];
         var showSnapshotBands = snapshotToggle ? !!snapshotToggle.checked : true;
+        var collapseFreeSpace = collapseFreeToggle ? !!collapseFreeToggle.checked : false;
 
         function setBackEnabled(enabled) {
             if (!backButton) return;
@@ -346,12 +353,24 @@
             if (depth === 0 && node.available > 0) {
                 var totalCapacity = node.used + node.available;
                 if (totalCapacity > 0) {
-                    var usedWidth = width * (node.used / totalCapacity);
+                    var usedWidth;
+                    var freeWidth;
+                    if (collapseFreeSpace) {
+                        // Collapse the free-space block to a fixed slice
+                        // so dataset segments fill the rest of the row.
+                        // Cap at half so a tiny pool with mostly-free
+                        // space does not collapse to nothing.
+                        freeWidth = Math.min(COLLAPSED_FREE_WIDTH, width * 0.5);
+                        usedWidth = width - freeWidth;
+                    } else {
+                        usedWidth = width * (node.used / totalCapacity);
+                        freeWidth = width - usedWidth;
+                    }
                     drawSegment(parentSvg, node, x, y, usedWidth, depth, false);
                     drawSegment(
                         parentSvg,
                         { name: "free", used: node.available },
-                        x + usedWidth, y, width - usedWidth, depth, true
+                        x + usedWidth, y, freeWidth, depth, true
                     );
                     if (depth + 1 < depthCap) {
                         layoutChildren(parentSvg, node, x, y, usedWidth, depth + 1, depthCap);
@@ -431,6 +450,13 @@
         if (snapshotToggle) {
             snapshotToggle.addEventListener("change", function() {
                 showSnapshotBands = !!snapshotToggle.checked;
+                draw();
+            });
+        }
+
+        if (collapseFreeToggle) {
+            collapseFreeToggle.addEventListener("change", function() {
+                collapseFreeSpace = !!collapseFreeToggle.checked;
                 draw();
             });
         }

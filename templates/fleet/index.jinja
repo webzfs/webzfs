@@ -325,6 +325,12 @@
                  class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
           <span>Show snapshot bands</span>
         </label>
+        <label class="inline-flex items-center gap-2 text-text-secondary cursor-pointer select-none text-sm"
+               title="Shrink the free-space block so dataset segments fill more of the row.">
+          <input type="checkbox" id="fleet-viz-collapse-free"
+                 class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+          <span>Collapse free space</span>
+        </label>
         <button type="button" id="fleet-viz-back"
                 class="btn-secondary text-sm inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled>
@@ -385,6 +391,7 @@
     var breadcrumbEl = document.getElementById("fleet-viz-breadcrumb");
     var backBtn = document.getElementById("fleet-viz-back");
     var snapshotToggle = document.getElementById("fleet-viz-show-snapshots");
+    var collapseFreeToggle = document.getElementById("fleet-viz-collapse-free");
 
     var currentViz = null;
     var currentServerId = null;
@@ -434,12 +441,39 @@
         };
     }
 
+    function refreshServer(serverId) {
+        // Force the fleet service to re-establish the SSH session and
+        // re-fetch the pool list for this server before we ask for the
+        // space tree. Without this, a stale SSH client occasionally
+        // makes the first space-tree call fail silently and the user
+        // has to click the per-server "Refresh" button before the
+        // visualize button does anything. The refresh endpoint redirects
+        // to /fleet/ on success, but we only care that the server-side
+        // state is freshened, so we ignore the response body.
+        return fetch("/fleet/servers/" + encodeURIComponent(serverId) + "/refresh", {
+            method: "POST",
+            credentials: "same-origin",
+            redirect: "manual"
+        }).catch(function() {
+            // A failed refresh should not block the visualizer attempt;
+            // the space-tree request will surface its own error if the
+            // server is genuinely unreachable.
+            return null;
+        });
+    }
+
     function openForPool(serverId, serverName, poolName) {
         currentServerId = serverId;
         currentPool = poolName;
         titleEl.textContent = "Dataset Space Usage: " + poolName;
         subtitleEl.textContent = serverName + " (" + serverId.substring(0, 8) + ")";
         openModal();
+
+        if (loadingEl) {
+            loadingEl.textContent = "Refreshing server connection...";
+            loadingEl.style.display = "";
+        }
+        svg.style.display = "none";
 
         // Recreate the visualizer each time so view stack resets.
         if (currentViz && currentViz.destroy) {
@@ -453,10 +487,22 @@
             breadcrumb: breadcrumbEl,
             backButton: backBtn,
             snapshotToggle: snapshotToggle,
+            collapseFreeToggle: collapseFreeToggle,
             maxDepth: 4,
             fetchTree: buildFetcher(serverId, poolName)
         });
-        currentViz.load();
+
+        // Auto-refresh the server first so the SSH session is healthy
+        // and the pool list is current before the visualizer fetches
+        // the dataset tree.
+        refreshServer(serverId).then(function() {
+            if (currentServerId !== serverId || currentPool !== poolName) {
+                // User closed or switched pools while the refresh was
+                // in flight; do not stomp the new state.
+                return;
+            }
+            currentViz.load();
+        });
     }
 
     document.addEventListener("click", function(ev) {
