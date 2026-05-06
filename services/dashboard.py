@@ -575,6 +575,41 @@ def get_arc_stats_summary() -> dict[str, Any]:
             summary['demand_pct'] = 0
             summary['prefetch_pct'] = 0
 
+        # --- Miss & Ghost Rates / Miss Breakdown ---
+        total_misses = stats.get('misses', 0)
+        mru_ghost = stats.get('mru_ghost_hits', 0)
+        mfu_ghost = stats.get('mfu_ghost_hits', 0)
+        ghost_total = mru_ghost + mfu_ghost
+        cold_misses = total_misses - ghost_total if total_misses >= ghost_total else 0
+        total_requests = stats.get('hits', 0) + total_misses
+
+        summary['ghost_total'] = ghost_total
+        summary['ghost_total_human'] = humanize.intcomma(ghost_total)
+        summary['cold_misses'] = cold_misses
+        summary['cold_misses_human'] = humanize.intcomma(cold_misses)
+
+        if total_requests > 0:
+            summary['miss_rate_pct'] = round(
+                (total_misses / total_requests) * 100, 2,
+            )
+            summary['ghost_rate_pct'] = round(
+                (ghost_total / total_requests) * 100, 2,
+            )
+        else:
+            summary['miss_rate_pct'] = 0
+            summary['ghost_rate_pct'] = 0
+
+        if total_misses > 0:
+            summary['cold_miss_pct'] = round(
+                (cold_misses / total_misses) * 100, 1,
+            )
+            summary['ghost_miss_pct'] = round(
+                (ghost_total / total_misses) * 100, 1,
+            )
+        else:
+            summary['cold_miss_pct'] = 0
+            summary['ghost_miss_pct'] = 0
+
         return summary
     except Exception as exc:
         return {'error': str(exc)}

@@ -126,6 +126,71 @@
             </div>
         </div>
     </div>
+
+    {# Row 3: Miss & Ghost Rates | Miss Breakdown #}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {# Miss & Ghost Rates #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg pt-5 px-5 pb-3">
+            <h4 class="text-base font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <svg class="w-4 h-4 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                Miss &amp; Ghost Rates
+            </h4>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-bg-elevated-3 border border-border-subtle rounded-lg p-4">
+                    <div class="text-xs text-text-tertiary uppercase tracking-wide mb-2">Miss Rate</div>
+                    <div class="text-3xl font-bold text-danger-400 mb-1">{{ arc_stats.miss_rate_pct|default(0) }}%</div>
+                    <div class="text-sm text-text-secondary">{{ arc_stats.misses_human|default('0') }} misses</div>
+                </div>
+                <div class="bg-bg-elevated-3 border border-border-subtle rounded-lg p-4">
+                    <div class="text-xs text-text-tertiary uppercase tracking-wide mb-2">Ghost Hits / Misses</div>
+                    <div class="text-3xl font-bold text-warning-400 mb-1">{{ arc_stats.ghost_rate_pct|default(0) }}%</div>
+                    <div class="text-sm text-text-secondary">{{ arc_stats.ghost_total_human|default('0') }} near-misses</div>
+                </div>
+            </div>
+            <p class="text-xs text-text-tertiary mt-4" style="margin-bottom: 0;">Ghost hits indicate the ARC evicted data that was needed shortly after.</p>
+        </div>
+
+        {# Miss Breakdown #}
+        <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg p-5">
+            <h4 class="text-base font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <svg class="w-4 h-4 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                Miss Breakdown
+            </h4>
+            {% if arc_stats.misses|default(0) > 0 %}
+            <div class="space-y-4">
+                {# Cold misses #}
+                <div>
+                    <div class="flex justify-between text-sm mb-1.5">
+                        <span class="font-medium text-text-primary">Cold misses</span>
+                        <span class="text-text-secondary">{{ arc_stats.cold_miss_pct|default(0) }}%</span>
+                    </div>
+                    <div class="bg-bg-elevated-3 rounded-full h-2.5 mb-1">
+                        <div class="bg-danger-500 h-2.5 rounded-full transition-all duration-300" style="width: {{ [arc_stats.cold_miss_pct|default(0), 1]|max }}%"></div>
+                    </div>
+                    <p class="text-xs text-text-tertiary">{{ arc_stats.cold_misses_human|default('0') }} - data never cached or evicted long ago</p>
+                </div>
+
+                {# Ghost hits #}
+                <div>
+                    <div class="flex justify-between text-sm mb-1.5">
+                        <span class="font-medium text-text-primary">Ghost hits (near-misses)</span>
+                        <span class="text-text-secondary">{{ arc_stats.ghost_miss_pct|default(0) }}%</span>
+                    </div>
+                    <div class="bg-bg-elevated-3 rounded-full h-2.5 mb-1">
+                        <div class="bg-warning-500 h-2.5 rounded-full transition-all duration-300" style="width: {{ [arc_stats.ghost_miss_pct|default(0), 1]|max }}%"></div>
+                    </div>
+                    <p class="text-xs text-text-tertiary">{{ arc_stats.ghost_total_human|default('0') }} - had it, evicted too soon</p>
+                </div>
+            </div>
+            {% else %}
+            <p class="text-text-tertiary text-sm text-center py-4">No miss data available</p>
+            {% endif %}
+        </div>
+    </div>
 </div>
 {% elif arc_stats and arc_stats.get('error') %}
 <div class="bg-bg-elevated-2 rounded-lg p-4 text-center">
