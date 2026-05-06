@@ -1,0 +1,181 @@
+{% extends "layout.jinja" %}
+
+{% set active_page = 'utils' %}
+
+{% block title %}Confirm Restore{% endblock %}
+
+{% set category_labels = {
+    'config': ('WebZFS configuration files', 'Themes, session timeout, SSH connection metadata, fleet servers, scrub schedules, SMART schedules, syncoid jobs, replication history.'),
+    'ssh-key': ('SSH key pairs', 'Private and public ED25519 key files used by Fleet Monitoring and Replication.'),
+    'sanoid': ('Sanoid configuration', 'sanoid.conf controlling automated snapshot policies.'),
+    'cron': ('System cron entries', 'WebZFS-managed files in /etc/cron.d.'),
+    'env': ('Application secret', 'WebZFS .env file (SECRET_KEY and bind configuration).')
+} %}
+
+{% set category_field = {
+    'config': 'restore_config',
+    'ssh-key': 'restore_ssh_key',
+    'sanoid': 'restore_sanoid',
+    'cron': 'restore_cron',
+    'env': 'restore_env'
+} %}
+
+{% block content %}
+    <!-- Breadcrumb Navigation -->
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <a href="/utils/settings" class="hover:text-primary-400">WebZFS Settings</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Confirm Restore</span>
+    </nav>
+
+    <div class="space-y-6">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary">Confirm Restore</h1>
+            <p class="text-text-secondary mt-1">Review the archive contents before any files are written</p>
+        </div>
+
+        <!-- Archive Metadata -->
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <h2 class="text-xl font-semibold text-text-primary mb-4">Archive Metadata</h2>
+                <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    <div>
+                        <dt class="text-text-tertiary">Created</dt>
+                        <dd class="text-text-primary">{{ header.created }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-text-tertiary">Original Hostname</dt>
+                        <dd class="text-text-primary">{{ header.hostname }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-text-tertiary">Original Platform</dt>
+                        <dd class="text-text-primary">{{ header.platform }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-text-tertiary">WebZFS Version</dt>
+                        <dd class="text-text-primary">{{ header.app_version }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-text-tertiary">Cipher</dt>
+                        <dd class="text-text-primary">{{ header.cipher }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-text-tertiary">Format Version</dt>
+                        <dd class="text-text-primary">{{ header.v }}</dd>
+                    </div>
+                </dl>
+
+                {% if header.hostname != current_hostname %}
+                <div class="alert alert-warning mt-4 flex items-start gap-3">
+                    <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    <div class="text-sm">
+                        <p class="font-medium">Cross-host restore detected.</p>
+                        <p>This archive was created on <strong>{{ header.hostname }}</strong> but the current host is <strong>{{ current_hostname }}</strong>. Restoring SSH keys means this host will inherit the previous host's identity for fleet/replication peers. That is usually what you want when migrating to a new system, but be sure before proceeding.</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if header.platform != current_platform %}
+                <div class="alert alert-warning mt-4 flex items-start gap-3">
+                    <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    <div class="text-sm">
+                        <p class="font-medium">Cross-platform restore detected.</p>
+                        <p>Archive platform: <strong>{{ header.platform }}</strong>, current platform: <strong>{{ current_platform }}</strong>. System config paths (sanoid.conf, cron.d) may differ between Linux and BSD; review the file list below before continuing.</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- File List + Restore Form -->
+        <form action="/utils/settings/backup/restore" method="post" hx-boost="false" class="space-y-6">
+            <input type="hidden" name="token" value="{{ token }}" />
+
+            <div class="card animate-fade-in">
+                <div class="card-body space-y-4">
+                    <h2 class="text-xl font-semibold text-text-primary">Files to Restore</h2>
+                    <p class="text-sm text-text-secondary">
+                        Untick any category you want to skip. Existing files at each target path will be renamed to <code>&lt;file&gt;.pre-restore-&lt;timestamp&gt;</code>; nothing is deleted.
+                    </p>
+
+                    {% for category, entries in files_by_category.items() %}
+                    {% set label_pair = category_labels.get(category, (category, '')) %}
+                    {% set field_name = category_field.get(category) %}
+                    <div class="card-nested">
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            {% if field_name %}
+                            <input
+                                type="checkbox"
+                                name="{{ field_name }}"
+                                value="1"
+                                class="form-checkbox mt-1"
+                                checked
+                            />
+                            {% endif %}
+                            <div class="flex-1">
+                                <div class="flex items-baseline justify-between gap-3">
+                                    <span class="text-text-primary font-medium">{{ label_pair[0] }}</span>
+                                    <span class="text-xs text-text-tertiary">{{ entries|length }} file{{ 's' if entries|length != 1 else '' }}</span>
+                                </div>
+                                {% if label_pair[1] %}
+                                <p class="text-sm text-text-secondary mt-1">{{ label_pair[1] }}</p>
+                                {% endif %}
+                                <ul class="mt-3 space-y-1 text-xs text-text-tertiary font-mono">
+                                    {% for entry in entries %}
+                                    <li class="flex items-baseline justify-between gap-3">
+                                        <span class="truncate">{{ entry.source or entry.arcname }}</span>
+                                        <span class="flex-shrink-0">{{ entry.size }} bytes</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </label>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">The archive does not contain any restorable files.</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Confirm and Restore -->
+            <div class="card animate-fade-in">
+                <div class="card-body space-y-4">
+                    <h2 class="text-xl font-semibold text-text-primary">Confirm Restore</h2>
+                    <p class="text-sm text-text-secondary">
+                        Re-enter the archive passphrase to confirm. Decryption is repeated server-side for safety; we never keep your passphrase between requests.
+                    </p>
+                    <div class="max-w-md">
+                        <label for="confirm-passphrase" class="form-label">Passphrase</label>
+                        <input
+                            type="password"
+                            id="confirm-passphrase"
+                            name="passphrase"
+                            class="form-input w-full"
+                            autocomplete="current-password"
+                            required
+                        />
+                    </div>
+
+                    <div class="flex items-center gap-3 pt-2">
+                        <button type="submit" class="btn btn-primary">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            Restore Selected Files
+                        </button>
+                        <a href="/utils/settings" class="btn bg-bg-elevated-2 text-text-secondary border border-border-default hover:bg-bg-elevated-3 hover:text-text-primary">
+                            Cancel
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+{% endblock %}
