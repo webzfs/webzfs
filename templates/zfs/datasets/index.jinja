@@ -35,11 +35,18 @@
         {% endwith %}
     {% endif %}
 
+    {# Optional 'focus' query param: when provided, only the pool with that
+       name is expanded and all other pools are collapsed. This is used when
+       linking from the pool detail page so the user lands directly on the
+       datasets for that pool. #}
+    {% set focus_pool = request.query_params.get('focus') %}
+
     <!-- Datasets List Grouped by Pool -->
     {% if pools %}
     <div class="space-y-4">
         {% for pool_name, pool_datasets in pools %}
-        <details class="card group" open>
+        {% set is_open = (focus_pool is none) or (focus_pool == '') or (focus_pool == pool_name) %}
+        <details class="card group"{% if is_open %} open{% endif %}>
             <summary class="cursor-pointer select-none px-6 py-4 flex items-center justify-between hover:bg-bg-elevated-2 transition-colors rounded-t-lg">
                 <div class="flex items-center gap-3">
                     <svg class="w-5 h-5 text-primary-400 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">

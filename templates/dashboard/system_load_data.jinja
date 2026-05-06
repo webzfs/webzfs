@@ -12,6 +12,30 @@
     {% endif %}
 </div>
 
+<!-- CPU Temperature -->
+<div id="dash-cpu-temp" class="mb-3">
+    {% if realtime and realtime.cpu_temp %}
+    {% set temp = realtime.cpu_temp %}
+    {% set temp_color = 'text-danger-400' if temp.current >= 85 else ('text-warning-400' if temp.current >= 70 else 'text-success-400') %}
+    <div class="flex items-center gap-2 text-sm">
+        <svg class="w-4 h-4 {{ temp_color }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17.25a3 3 0 11-1.5-2.598V5.25a1.5 1.5 0 113 0v9.402a3 3 0 01-1.5 2.598z"/>
+        </svg>
+        <span class="text-text-secondary">CPU Temp:</span>
+        <span class="{{ temp_color }} font-semibold">{{ temp.current }} &deg;C</span>
+        {% if temp.label %}<span class="text-text-tertiary text-xs">({{ temp.label }})</span>{% endif %}
+    </div>
+    {% else %}
+    <div class="flex items-center gap-2 text-sm">
+        <svg class="w-4 h-4 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17.25a3 3 0 11-1.5-2.598V5.25a1.5 1.5 0 113 0v9.402a3 3 0 01-1.5 2.598z"/>
+        </svg>
+        <span class="text-text-secondary">CPU Temp:</span>
+        <span class="text-text-tertiary text-xs">Not available</span>
+    </div>
+    {% endif %}
+</div>
+
 <!-- Load averages -->
 <div id="dash-load">
     {% if realtime and realtime.system_load %}

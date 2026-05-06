@@ -132,6 +132,95 @@ def _get_uptime() -> dict[str, Any]:
     }
 
 
+def _get_cpu_temperature() -> Optional[dict[str, Any]]:
+    """
+    Return the current CPU temperature (in Celsius) and sensor label.
+
+    Returns ``None`` when no temperature data can be obtained.
+
+    Supports Linux (via ``psutil.sensors_temperatures``) and FreeBSD
+    (via ``sysctl dev.cpu.0.temperature``).  NetBSD generally does not
+    expose CPU temperature, so ``None`` is returned there.
+    """
+    # FreeBSD: sysctl dev.cpu.0.temperature returns "45.0C"
+    if is_freebsd():
+        try:
+            result = subprocess.run(
+                ['sysctl', '-n', 'dev.cpu.0.temperature'],
+                capture_output=True, text=True, timeout=3,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                raw = result.stdout.strip().rstrip('C').strip()
+                temp_c = float(raw)
+                return {
+                    'current': round(temp_c, 1),
+                    'label': 'CPU 0',
+                    'high': None,
+                    'critical': None,
+                }
+        except Exception:
+            pass
+        return None
+
+    # Linux (and any platform supported by psutil sensors_temperatures)
+    try:
+        sensors_func = getattr(psutil, 'sensors_temperatures', None)
+        if sensors_func is None:
+            return None
+        temps = sensors_func()
+        if not temps:
+            return None
+    except Exception:
+        return None
+
+    # Preferred sensor chip names for CPU temperature, in priority order.
+    preferred_chips = [
+        'coretemp',      # Intel
+        'k10temp',       # AMD modern
+        'k8temp',        # AMD older
+        'zenpower',      # AMD Ryzen alternative driver
+        'cpu_thermal',   # ARM SoC
+        'cpu-thermal',
+        'acpitz',        # ACPI thermal zone fallback
+    ]
+
+    def _pick_entry(entries):
+        """Pick the most representative sensor entry from a chip's list."""
+        if not entries:
+            return None
+        # Prefer "Package", "Tdie", "Tctl" labels when present.
+        priority_labels = ('package', 'tdie', 'tctl', 'cpu')
+        for label_match in priority_labels:
+            for entry in entries:
+                if entry.label and label_match in entry.label.lower():
+                    return entry
+        return entries[0]
+
+    for chip in preferred_chips:
+        if chip in temps:
+            entry = _pick_entry(temps[chip])
+            if entry and entry.current is not None:
+                return {
+                    'current': round(float(entry.current), 1),
+                    'label': entry.label or chip,
+                    'high': entry.high,
+                    'critical': entry.critical,
+                }
+
+    # Fallback: take the first available chip with a usable reading.
+    for chip_name, entries in temps.items():
+        entry = _pick_entry(entries)
+        if entry and entry.current is not None:
+            return {
+                'current': round(float(entry.current), 1),
+                'label': entry.label or chip_name,
+                'high': entry.high,
+                'critical': entry.critical,
+            }
+
+    return None
+
+
 def _get_task_summary() -> dict[str, int]:
     """Return lightweight task/thread counts."""
     counts = {
@@ -247,12 +336,16 @@ def get_realtime_system_data() -> dict[str, Any]:
     # --- Tasks / threads ---
     tasks = _get_task_summary()
 
+    # --- CPU temperature ---
+    cpu_temp = _get_cpu_temperature()
+
     return {
         'memory': memory,
         'system_load': system_load,
         'cpu_pct': cpu_pct,
         'uptime': uptime,
         'tasks': tasks,
+        'cpu_temp': cpu_temp,
     }
 
 
