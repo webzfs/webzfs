@@ -350,24 +350,37 @@ async def clear_events(request: Request, pool: Optional[str] = Form(None)):
 async def kernel_debug_log(
     request: Request,
     lines: int = 1000,
-    filter: Optional[str] = None
+    filter: Optional[str] = None,
+    search: Optional[str] = None,
 ):
-    """Display ZFS kernel debug log"""
+    """Display ZFS kernel debug log.
+
+    `filter` is the existing regex filter applied at read time by the
+    service layer. `search` is an additional case-insensitive substring
+    filter applied to the returned lines.
+    """
     import platform
     from services.utils import is_freebsd, is_netbsd
-    
+
     # Determine the appropriate source description based on platform
     if is_freebsd() or is_netbsd():
         debug_source = "sysctl kstat.zfs.misc.dbgmsg"
     else:
         debug_source = "/proc/spl/kstat/zfs/dbgmsg"
-    
+
     try:
         log_lines = observability_service.get_kernel_debug_log(
             lines=lines,
             filter_pattern=filter
         )
-        
+
+        if search:
+            needle = search.lower()
+            log_lines = [
+                line for line in log_lines
+                if needle in (line or '').lower()
+            ]
+
         return templates.TemplateResponse(
             "zfs/observability/kernel_log.jinja",
             {
@@ -375,6 +388,7 @@ async def kernel_debug_log(
                 "log_lines": log_lines,
                 "lines": lines,
                 "filter": filter,
+                "search": search,
                 "debug_source": debug_source,
                 "page_title": "ZFS Kernel Debug Log"
             }
@@ -386,6 +400,7 @@ async def kernel_debug_log(
                 "request": request,
                 "log_lines": [f"Error: {str(e)}"],
                 "error": str(e),
+                "search": search,
                 "debug_source": debug_source,
                 "page_title": "ZFS Kernel Debug Log"
             }
@@ -396,15 +411,27 @@ async def kernel_debug_log(
 async def syslog_zfs(
     request: Request,
     lines: int = 1000,
-    severity: Optional[str] = None
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
 ):
-    """Display ZFS-related syslog entries"""
+    """Display ZFS-related syslog entries.
+
+    The optional `search` parameter performs case-insensitive substring
+    matching on the message body, applied after the ZFS keyword filter.
+    """
     try:
         syslog_entries = observability_service.get_syslog_zfs(
             lines=lines,
-            severity=severity
+            severity=severity,
         )
-        
+
+        if search:
+            needle = search.lower()
+            syslog_entries = [
+                e for e in syslog_entries
+                if needle in (e.get('message') or '').lower()
+            ]
+
         return templates.TemplateResponse(
             "zfs/observability/syslog.jinja",
             {
@@ -412,6 +439,7 @@ async def syslog_zfs(
                 "syslog_entries": syslog_entries,
                 "lines": lines,
                 "severity": severity,
+                "search": search,
                 "filtered": True,
                 "page_title": "ZFS System Log"
             }
@@ -423,6 +451,7 @@ async def syslog_zfs(
                 "request": request,
                 "syslog_entries": [],
                 "error": str(e),
+                "search": search,
                 "filtered": True,
                 "page_title": "ZFS System Log"
             }
@@ -433,13 +462,17 @@ async def syslog_zfs(
 async def syslog_full(
     request: Request,
     lines: int = 1000,
-    severity: Optional[str] = None
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
 ):
     """Display full unfiltered syslog entries.
 
     Source selection by platform:
       - Linux: journalctl (systemd) -> dmesg -T fallback
       - FreeBSD/NetBSD: /var/log/messages -> dmesg fallback (no -T flag)
+
+    The optional `search` parameter performs case-insensitive substring
+    matching on the message body, applied after the source is read.
     """
     try:
         import subprocess
@@ -531,6 +564,13 @@ async def syslog_full(
                 except FileNotFoundError:
                     pass
 
+        if search:
+            needle = search.lower()
+            syslog_entries = [
+                e for e in syslog_entries
+                if needle in (e.get('message') or '').lower()
+            ]
+
         return templates.TemplateResponse(
             "zfs/observability/syslog.jinja",
             {
@@ -538,6 +578,7 @@ async def syslog_full(
                 "syslog_entries": syslog_entries,
                 "lines": lines,
                 "severity": severity,
+                "search": search,
                 "filtered": False,
                 "page_title": "Full System Log"
             }
@@ -549,6 +590,7 @@ async def syslog_full(
                 "request": request,
                 "syslog_entries": [],
                 "error": str(e),
+                "search": search,
                 "filtered": False,
                 "page_title": "Full System Log"
             }
@@ -934,7 +976,8 @@ async def download_arc_summary():
 @router.get("/kernel-log/download", response_class=PlainTextResponse)
 async def download_kernel_log(
     lines: int = 1000,
-    filter: Optional[str] = None
+    filter: Optional[str] = None,
+    search: Optional[str] = None,
 ):
     """Download kernel debug log as text file"""
     try:
@@ -942,7 +985,14 @@ async def download_kernel_log(
             lines=lines,
             filter_pattern=filter
         )
-        
+
+        if search:
+            needle = search.lower()
+            log_lines = [
+                line for line in log_lines
+                if needle in (line or '').lower()
+            ]
+
         # Build text output
         output_lines = []
         output_lines.append("=" * 80)
@@ -951,6 +1001,8 @@ async def download_kernel_log(
         output_lines.append(f"Lines: {lines}")
         if filter:
             output_lines.append(f"Filter: {filter}")
+        if search:
+            output_lines.append(f"Search: {search}")
         output_lines.append("=" * 80)
         output_lines.append("")
         
@@ -978,7 +1030,8 @@ async def download_kernel_log(
 @router.get("/syslog/download", response_class=PlainTextResponse)
 async def download_syslog(
     lines: int = 1000,
-    severity: Optional[str] = None
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
 ):
     """Download syslog as text file"""
     try:
@@ -986,7 +1039,14 @@ async def download_syslog(
             lines=lines,
             severity=severity
         )
-        
+
+        if search:
+            needle = search.lower()
+            syslog_entries = [
+                e for e in syslog_entries
+                if needle in (e.get('message') or '').lower()
+            ]
+
         # Build text output
         output_lines = []
         output_lines.append("=" * 80)
@@ -995,9 +1055,11 @@ async def download_syslog(
         output_lines.append(f"Lines: {lines}")
         if severity:
             output_lines.append(f"Severity: {severity}")
+        if search:
+            output_lines.append(f"Search:   {search}")
         output_lines.append("=" * 80)
         output_lines.append("")
-        
+
         for entry in syslog_entries:
             output_lines.append(entry.get('message', ''))
         

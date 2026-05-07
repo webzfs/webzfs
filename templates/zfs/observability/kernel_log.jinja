@@ -31,7 +31,7 @@
             <h1 class="text-3xl font-bold text-text-primary mb-2">ZFS Kernel Debug Log</h1>
             <p class="text-text-secondary">View kernel-level ZFS debug messages</p>
         </div>
-        <a href="/zfs/observability/kernel-log/download?lines={{ lines }}{% if filter %}&filter={{ filter }}{% endif %}" 
+        <a href="/zfs/observability/kernel-log/download?lines={{ lines }}{% if filter %}&filter={{ filter }}{% endif %}{% if search %}&search={{ search }}{% endif %}"
            class="btn-success flex items-center gap-2"
            hx-boost="false">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,7 +64,7 @@
             </h2>
         </div>
         <div class="p-6">
-            <form method="get" action="/zfs/observability/kernel-log" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <form method="get" action="/zfs/observability/kernel-log" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <label for="lines" class="form-label">Number of Lines</label>
                     <select id="lines" name="lines" class="form-select">
@@ -76,12 +76,19 @@
                 </div>
                 <div>
                     <label for="filter" class="form-label">Filter Pattern (regex)</label>
-                    <input type="text" id="filter" name="filter" value="{{ filter or '' }}" 
+                    <input type="text" id="filter" name="filter" value="{{ filter or '' }}"
                            placeholder="e.g. error|warn"
                            class="form-input">
-                    <p class="text-xs text-text-tertiary mt-1">Use regex patterns to filter log messages</p>
+                    <p class="text-xs text-text-tertiary mt-1">Regex applied at read time</p>
                 </div>
-                <div class="md:col-span-2">
+                <div>
+                    <label for="search" class="form-label">Search</label>
+                    <input type="text" id="search" name="search" value="{{ search or '' }}"
+                           placeholder="case-insensitive substring"
+                           class="form-input">
+                    <p class="text-xs text-text-tertiary mt-1">Plain-text search applied to results</p>
+                </div>
+                <div class="md:col-span-3">
                     <button type="submit" class="btn-primary">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>

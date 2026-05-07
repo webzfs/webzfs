@@ -32,7 +32,7 @@
             <p class="text-text-secondary">{% if filtered %}ZFS-filtered system log messages{% else %}Full system log{% endif %}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-            <a href="/zfs/observability/syslog/download?lines={{ lines }}{% if severity %}&severity={{ severity }}{% endif %}" 
+            <a href="/zfs/observability/syslog/download?lines={{ lines }}{% if severity %}&severity={{ severity }}{% endif %}{% if search %}&search={{ search }}{% endif %}"
                class="btn-success flex items-center gap-2"
                hx-boost="false">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,12 +41,12 @@
                 Download
             </a>
             {% if filtered %}
-            <a href="/zfs/observability/syslog-full?lines={{ lines }}{% if severity %}&severity={{ severity }}{% endif %}" 
+            <a href="/zfs/observability/syslog-full?lines={{ lines }}{% if severity %}&severity={{ severity }}{% endif %}{% if search %}&search={{ search }}{% endif %}"
                class="btn-secondary">
                 View Full Log
             </a>
             {% else %}
-            <a href="/zfs/observability/syslog?lines={{ lines }}{% if severity %}&severity={{ severity }}{% endif %}" 
+            <a href="/zfs/observability/syslog?lines={{ lines }}{% if severity %}&severity={{ severity }}{% endif %}{% if search %}&search={{ search }}{% endif %}"
                class="btn-primary">
                 View ZFS Filter
             </a>
@@ -77,7 +77,7 @@
             </h2>
         </div>
         <div class="p-6">
-            <form method="get" action="/zfs/observability/syslog" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <form method="get" action="{% if filtered %}/zfs/observability/syslog{% else %}/zfs/observability/syslog-full{% endif %}" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <label for="lines" class="form-label">Number of Lines</label>
                     <select id="lines" name="lines" class="form-select">
@@ -96,7 +96,14 @@
                         <option value="info" {% if severity == 'info' %}selected{% endif %}>Info</option>
                     </select>
                 </div>
-                <div class="md:col-span-2">
+                <div>
+                    <label for="search" class="form-label">Search</label>
+                    <input type="text" id="search" name="search" value="{{ search or '' }}"
+                           placeholder="case-insensitive substring"
+                           class="form-input">
+                    <p class="text-xs text-text-tertiary mt-1">Filter to lines containing this text</p>
+                </div>
+                <div class="md:col-span-3">
                     <button type="submit" class="btn-primary">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
@@ -119,18 +126,12 @@
                 <span class="text-sm font-normal text-text-secondary ml-2">({{ syslog_entries|length }} entries)</span>
             </h2>
         </div>
-        
+
         <div class="p-6">
             {% if syslog_entries %}
-            <div class="space-y-2">
-                {% for entry in syslog_entries %}
-                <div class="p-4 bg-bg-elevated-2 rounded-lg border-l-4 
-                    {% if 'error' in entry.message.lower() %}border-danger-500
-                    {% elif 'warn' in entry.message.lower() %}border-warning-500
-                    {% else %}border-primary-500{% endif %}">
-                    <pre class="text-sm text-text-primary whitespace-pre-wrap font-mono leading-relaxed m-0">{{ entry.message }}</pre>
-                </div>
-                {% endfor %}
+            <div class="bg-gray-900 rounded-lg p-6 overflow-x-auto border border-gray-800">
+                <pre class="text-success-400 text-sm font-mono whitespace-pre leading-relaxed m-0">{% for entry in syslog_entries %}{{ entry.message }}
+{% endfor %}</pre>
             </div>
             {% else %}
             <div class="text-center py-12">
@@ -151,8 +152,8 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
             <div class="text-sm text-info-400">
-                <p class="mb-2"><strong>Source:</strong> <code class="bg-gray-900 px-2 py-0.5 rounded">journalctl</code> or <code class="bg-gray-900 px-2 py-0.5 rounded">/var/log/messages</code></p>
-                <p><strong>Note:</strong> {% if filtered %}Only messages containing "zfs" or "zpool" keywords are displayed.{% else %}Showing complete system log without filtering.{% endif %}</p>
+                <p class="mb-2"><strong>Source:</strong> <code class="bg-gray-900 px-2 py-0.5 rounded">journalctl</code> on Linux, <code class="bg-gray-900 px-2 py-0.5 rounded">/var/log/messages</code> on FreeBSD/NetBSD</p>
+                <p><strong>Note:</strong> {% if filtered %}Only messages containing "zfs" or "zpool" keywords are displayed.{% else %}Showing complete system log without ZFS filtering.{% endif %}</p>
             </div>
         </div>
     </div>
