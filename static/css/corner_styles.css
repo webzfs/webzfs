@@ -209,12 +209,21 @@ body.corner-octagonal .card::before {
     );
 }
 
-/* Inner sub-cards / metric tiles / rows. */
+/* Inner sub-cards / metric tiles / rows.
+ *
+ * The exclusion list keeps tiny utility boxes (`.p-1` / `.p-1.5` /
+ * `.p-2`) out of the two-layer treatment so icon-only buttons and
+ * 16x16 form checkboxes do not become elongated octagonal pills.
+ * Form controls (`input`, `.form-checkbox`, `.form-radio`) are also
+ * excluded explicitly because they often carry the `.rounded` utility
+ * class (e.g. `<input type="checkbox" class="form-checkbox h-4 w-4
+ * rounded ...">`) and would otherwise be replaced by a card-shaped
+ * background that hides the actual checkbox state. */
 body.corner-octagonal .card-nested,
-body.corner-octagonal .rounded-lg:not(.card):not(.p-2):not(.p-1):not(.p-1\.5),
-body.corner-octagonal .rounded-xl:not(.card),
-body.corner-octagonal .rounded-md,
-body.corner-octagonal .rounded {
+body.corner-octagonal .rounded-lg:not(.card):not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio),
+body.corner-octagonal .rounded-xl:not(.card):not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio),
+body.corner-octagonal .rounded-md:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio),
+body.corner-octagonal .rounded:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio) {
     position: relative;
     isolation: isolate;
     border-radius: 0 !important;
@@ -232,10 +241,10 @@ body.corner-octagonal .rounded {
     ) !important;
 }
 body.corner-octagonal .card-nested::before,
-body.corner-octagonal .rounded-lg:not(.card):not(.p-2):not(.p-1):not(.p-1\.5)::before,
-body.corner-octagonal .rounded-xl:not(.card)::before,
-body.corner-octagonal .rounded-md::before,
-body.corner-octagonal .rounded::before {
+body.corner-octagonal .rounded-lg:not(.card):not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio)::before,
+body.corner-octagonal .rounded-xl:not(.card):not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio)::before,
+body.corner-octagonal .rounded-md:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio)::before,
+body.corner-octagonal .rounded:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio)::before {
     content: "";
     position: absolute;
     inset: 1px;
@@ -252,6 +261,59 @@ body.corner-octagonal .rounded::before {
         0 calc(var(--oct-sub-cut) - 1px)
     );
 }
+
+/* OCTAGONAL INLINE PADDING
+ *
+ * The diagonal cuts on cards / sub-cards / alerts / badges eat into
+ * the painting area at all four corners. With the default Tailwind
+ * paddings (p-4 == 16px on cards, p-3 / p-2 on sub-cards) the very
+ * top and very bottom rows of inline content sit close enough to the
+ * diagonal edge that a character or two of the first/last line gets
+ * clipped against the bevel. The classic example is "Pool Capacity"
+ * losing its leading "P" and the matching "184G used" footer losing
+ * its leading "1".
+ *
+ * Add a small amount of inline (left/right) padding ONLY on the
+ * octagonal variant so content is pushed away from the diagonal cuts.
+ * Vertical padding is left alone. Rounded and squared variants are
+ * untouched.
+ *
+ * Tiny icon-only p-1 / p-1.5 / p-2 boxes are excluded the same way
+ * the rest of the file excludes them, so square icon tiles do not get
+ * stretched. Buttons and form controls already carry generous Tailwind
+ * inline padding (px-3 / px-4) on a smaller 8px bevel, so they do not
+ * need a bump here.
+ */
+body.corner-octagonal .card,
+body.corner-octagonal .card-nested,
+body.corner-octagonal .rounded-lg:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio):not(button),
+body.corner-octagonal .rounded-xl:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio):not(button),
+body.corner-octagonal .rounded-md:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio):not(button),
+body.corner-octagonal .rounded:not(.p-2):not(.p-1):not(.p-1\.5):not(input):not(.form-checkbox):not(.form-radio):not(button) {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+}
+
+body.corner-octagonal .alert,
+body.corner-octagonal .alert-success,
+body.corner-octagonal .alert-warning,
+body.corner-octagonal .alert-danger,
+body.corner-octagonal .alert-info {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+}
+
+body.corner-octagonal .badge,
+body.corner-octagonal .badge-success,
+body.corner-octagonal .badge-warning,
+body.corner-octagonal .badge-danger,
+body.corner-octagonal .badge-info,
+body.corner-octagonal .badge-primary,
+body.corner-octagonal .badge-secondary {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+}
+
 
 /* Alerts: per-variant accent ring. */
 body.corner-octagonal .alert,

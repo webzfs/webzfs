@@ -17,9 +17,19 @@ ssh_service = SSHConnectionService()
 
 @router.get("/", response_class=HTMLResponse)
 async def fleet_index(request: Request):
-    """Main fleet view page showing all servers"""
+    """
+    Main fleet view page.
+
+    The page is rendered with the cached pool data already on disk
+    (whatever fetch_server_pools last wrote). Each card embeds an
+    HTMX `hx-trigger="load"` directive that fires after the page
+    paints and replaces the card with a freshly refreshed copy. That
+    keeps the initial paint instant even when the fleet has many
+    servers, while still landing the user on up-to-date data within
+    a couple of seconds.
+    """
     servers = fleet_service.list_servers()
-    
+
     return templates.TemplateResponse(
         "fleet/index.jinja",
         {
@@ -28,6 +38,51 @@ async def fleet_index(request: Request):
             "active_page": "fleet"
         }
     )
+
+
+@router.get("/servers/{server_id}/card", response_class=HTMLResponse)
+async def get_server_card_partial(request: Request, server_id: str):
+    """
+    HTMX endpoint that returns a single refreshed server card.
+
+    Called automatically on page load (one request per server, with a
+    small per-server stagger delay) and also from the per-card
+    "Refresh" button. Always tries to fetch fresh pool data; on
+    failure, falls back to whatever was cached so the user still sees
+    something meaningful and a small inline error row.
+
+    Returns the `partials/server_card.jinja` partial with
+    `auto_refresh=False` so the refreshed card does not chain another
+    background load and pin the SSH session in a refresh loop.
+    """
+    refresh_error = None
+    try:
+        # fetch_server_pools updates the persisted server record
+        # (status / last_checked / pools) inside the service so the
+        # subsequent get_server() call returns the freshly populated
+        # values without us having to glue them together by hand.
+        fleet_service.fetch_server_pools(server_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Server not found")
+    except Exception as e:
+        refresh_error = str(e)
+
+    try:
+        server = fleet_service.get_server(server_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    return templates.TemplateResponse(
+        "fleet/partials/server_card.jinja",
+        {
+            "request": request,
+            "server": server,
+            "auto_refresh": False,
+            "loop_index": 0,
+            "refresh_error": refresh_error,
+        }
+    )
+
 
 
 @router.get("/servers/add", response_class=HTMLResponse)
