@@ -519,55 +519,89 @@ async def syslog_full(
                 except FileNotFoundError:
                     pass
         else:
-            # Linux: prefer journalctl (systemd), then plain text
-            # /var/log/syslog (Debian/Ubuntu) or /var/log/messages
-            # (RHEL/Fedora/Arch), and finally dmesg -T as a last
-            # resort. journalctl returning success with empty output
-            # is treated as "not really available" so we move on.
-            cmd = ['journalctl', '-n', str(lines), '--no-pager']
+            # Linux: try journalctl (unprivileged, then sudo -n),
+            # plain-text syslog files (unprivileged, then sudo -n
+            # tail), then dmesg -T. Empty stdout from a successful
+            # journalctl is treated as "not really available" so we
+            # move on. We collect stderr from each failed attempt so
+            # we can surface a real error to the user instead of a
+            # silent empty page.
+            attempt_errors: list = []
 
-            if severity:
-                priority_map = {
-                    'error': 'err',
-                    'warning': 'warning',
-                    'info': 'info',
-                }
-                if severity.lower() in priority_map:
-                    cmd.extend(['-p', priority_map[severity.lower()]])
+            priority_map = {
+                'error': 'err',
+                'warning': 'warning',
+                'info': 'info',
+            }
 
-            try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
+            def build_journalctl_cmd(prefix: list) -> list:
+                base = list(prefix) + ['journalctl', '-n', str(lines), '--no-pager']
+                if severity and severity.lower() in priority_map:
+                    base.extend(['-p', priority_map[severity.lower()]])
+                return base
+
+            for prefix in ([], ['sudo', '-n']):
+                try:
+                    result = subprocess.run(
+                        build_journalctl_cmd(prefix),
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                except FileNotFoundError:
+                    continue
+
                 if result.returncode == 0 and result.stdout.strip():
                     for line in result.stdout.split('\n'):
                         if line.strip():
                             syslog_entries.append({'message': line.strip()})
-            except FileNotFoundError:
-                # journalctl not installed (e.g. non-systemd Linux)
-                pass
+                    break
+
+                err = (result.stderr or '').strip()
+                if err:
+                    label = 'sudo journalctl' if prefix else 'journalctl'
+                    attempt_errors.append(
+                        f'{label}: {err.splitlines()[0]}'
+                    )
 
             if not syslog_entries:
-                # Plain text syslog files
+                # Plain text syslog files. Try unprivileged then
+                # sudo -n tail before giving up on the path.
                 for path in ('/var/log/syslog', '/var/log/messages'):
-                    try:
-                        result = subprocess.run(
-                            ['tail', '-n', str(lines), path],
-                            capture_output=True,
-                            text=True,
-                            check=False,
+                    found = False
+                    for use_sudo in (False, True):
+                        argv = (
+                            ['sudo', '-n', 'tail', '-n', str(lines), path]
+                            if use_sudo
+                            else ['tail', '-n', str(lines), path]
                         )
-                    except FileNotFoundError:
-                        continue
-                    if result.returncode == 0 and result.stdout.strip():
-                        for line in result.stdout.split('\n'):
-                            if line.strip():
-                                syslog_entries.append(
-                                    {'message': line.strip()}
-                                )
+                        try:
+                            result = subprocess.run(
+                                argv,
+                                capture_output=True,
+                                text=True,
+                                check=False,
+                            )
+                        except FileNotFoundError:
+                            break
+                        if result.returncode == 0 and result.stdout.strip():
+                            for line in result.stdout.split('\n'):
+                                if line.strip():
+                                    syslog_entries.append(
+                                        {'message': line.strip()}
+                                    )
+                            found = True
+                            break
+                        err = (result.stderr or '').strip()
+                        if err and 'No such file' not in err:
+                            label = (
+                                f'sudo tail {path}' if use_sudo
+                                else f'tail {path}'
+                            )
+                            attempt_errors.append(
+                                f'{label}: {err.splitlines()[0]}'
+                            )
+                    if found:
                         break
 
             if not syslog_entries:
@@ -579,14 +613,36 @@ async def syslog_full(
                         text=True,
                         check=False,
                     )
-                    if result.returncode == 0:
+                    if result.returncode == 0 and result.stdout.strip():
                         for line in result.stdout.split('\n')[-lines:]:
                             if line.strip():
                                 syslog_entries.append(
                                     {'message': line.strip()}
                                 )
+                    else:
+                        err = (result.stderr or '').strip()
+                        if err:
+                            attempt_errors.append(
+                                f'dmesg -T: {err.splitlines()[0]}'
+                            )
                 except FileNotFoundError:
                     pass
+
+            if not syslog_entries and attempt_errors:
+                # Surface why every source failed so the user can
+                # actually fix it instead of staring at an empty page.
+                hint_lines = [
+                    'No system log source is readable. Tried:',
+                ] + ['  ' + msg for msg in attempt_errors] + [
+                    '',
+                    'Fixes:',
+                    '  - Add webzfs to the systemd-journal group:',
+                    '      sudo usermod -aG systemd-journal webzfs',
+                    '  - Or grant NOPASSWD sudo for journalctl:',
+                    '      webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl',
+                ]
+                for hint in hint_lines:
+                    syslog_entries.append({'message': hint})
 
         if search:
             needle = search.lower()

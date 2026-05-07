@@ -325,6 +325,12 @@ webzfs ALL=(ALL) NOPASSWD: /usr/bin/crontab
 
 # File editing (for config files like smartd.conf, sanoid.conf)
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
+
+# Read system journal and plain-text syslog files for the
+# Observability -> System Log page. journalctl needs sudo (or
+# systemd-journal group) on most distros. tail covers Debian/Ubuntu
+# (/var/log/syslog) and old RHEL (/var/log/messages).
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl, /usr/bin/tail, /bin/tail
 SUDO_EOF
 
 chmod 0440 "$SUDOERS_FILE"
