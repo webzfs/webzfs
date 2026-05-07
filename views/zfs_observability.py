@@ -519,7 +519,11 @@ async def syslog_full(
                 except FileNotFoundError:
                     pass
         else:
-            # Linux: try journalctl first, fall back to dmesg -T.
+            # Linux: prefer journalctl (systemd), then plain text
+            # /var/log/syslog (Debian/Ubuntu) or /var/log/messages
+            # (RHEL/Fedora/Arch), and finally dmesg -T as a last
+            # resort. journalctl returning success with empty output
+            # is treated as "not really available" so we move on.
             cmd = ['journalctl', '-n', str(lines), '--no-pager']
 
             if severity:
@@ -538,13 +542,33 @@ async def syslog_full(
                     text=True,
                     check=False,
                 )
-                if result.returncode == 0:
+                if result.returncode == 0 and result.stdout.strip():
                     for line in result.stdout.split('\n'):
                         if line.strip():
                             syslog_entries.append({'message': line.strip()})
             except FileNotFoundError:
                 # journalctl not installed (e.g. non-systemd Linux)
                 pass
+
+            if not syslog_entries:
+                # Plain text syslog files
+                for path in ('/var/log/syslog', '/var/log/messages'):
+                    try:
+                        result = subprocess.run(
+                            ['tail', '-n', str(lines), path],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                    except FileNotFoundError:
+                        continue
+                    if result.returncode == 0 and result.stdout.strip():
+                        for line in result.stdout.split('\n'):
+                            if line.strip():
+                                syslog_entries.append(
+                                    {'message': line.strip()}
+                                )
+                        break
 
             if not syslog_entries:
                 # Fall back to dmesg with timestamps

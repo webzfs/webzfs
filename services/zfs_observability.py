@@ -340,44 +340,68 @@ class ZFSObservabilityService:
         if is_freebsd() or is_netbsd():
             # BSD uses syslog - grep /var/log/messages
             return self._read_bsd_syslog(lines, since, severity)
-        
+
+        # Linux: try journalctl first, then fall back to /var/log/syslog
+        # or /var/log/messages, then to dmesg as a last resort.
+        zfs_lines: List[Dict[str, Any]] = []
+
         try:
-            # Linux uses journalctl on systemd systems (default)
             cmd = ['journalctl', '-n', str(lines), '--no-pager']
-            
-            # Add grep for ZFS-related messages
-            cmd.extend(['-t', 'kernel'])
-            
+
             if since:
                 cmd.extend(['--since', since.isoformat()])
-            
+
             if severity:
                 priority_map = {
                     'error': 'err',
                     'warning': 'warning',
-                    'info': 'info'
+                    'info': 'info',
                 }
                 if severity.lower() in priority_map:
                     cmd.extend(['-p', priority_map[severity.lower()]])
-            
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                check=True
+                check=False,
             )
-            
-            # Filter for ZFS messages
-            zfs_lines = []
-            for line in result.stdout.split('\n'):
-                if 'zfs' in line.lower() or 'zpool' in line.lower():
-                    zfs_lines.append({'message': line.strip()})
-            
+
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.split('\n'):
+                    low = line.lower()
+                    if 'zfs' in low or 'zpool' in low:
+                        zfs_lines.append({'message': line.strip()})
+        except FileNotFoundError:
+            # journalctl not installed (e.g. non-systemd Linux)
+            pass
+
+        if zfs_lines:
             return zfs_lines
-            
-        except subprocess.CalledProcessError:
-            # Fallback to reading /var/log/messages or dmesg
-            return self._fallback_syslog_read(lines)
+
+        # Fall back to plain text syslog files. Debian/Ubuntu use
+        # /var/log/syslog, RHEL/Fedora/Arch use /var/log/messages.
+        for path in ('/var/log/syslog', '/var/log/messages'):
+            try:
+                result = subprocess.run(
+                    ['tail', '-n', str(lines * 5), path],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except FileNotFoundError:
+                continue
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.split('\n'):
+                    low = line.lower()
+                    if 'zfs' in low or 'zpool' in low:
+                        zfs_lines.append({'message': line.strip()})
+                # Honor the requested line count after filtering
+                if zfs_lines:
+                    return zfs_lines[-lines:]
+
+        # Last resort: dmesg ring buffer
+        return self._fallback_syslog_read(lines)
     
     def get_arc_summary(self) -> Dict[str, Any]:
         """
