@@ -23,10 +23,18 @@
       rel="stylesheet"
       href="{{ url_for('static', path=get_theme_css_path(get_active_theme())) }}"
     />
+    {# Corner-style overrides (rounded / squared / octagonal). The active style
+       is selected via a body.corner-{style} class set below; this stylesheet
+       contains rules for all three. The active style id is appended as a
+       cache-busting query string so browsers always fetch the right ruleset. #}
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', path='css/corner_styles.css') }}?v={{ get_corner_styles_css_version() }}"
+    />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💾</text></svg>">
     <title>{% block title %}WebZFS{% endblock %}</title>
   </head>
-  <body class="bg-bg-base text-text-primary overscroll-none antialiased" hx-boost="true" hx-indicator="#page-loading">
+  <body class="bg-bg-base text-text-primary overscroll-none antialiased corner-{{ get_active_corner_style() }}" hx-boost="true" hx-indicator="#page-loading">
     {# Global page loading indicator #}
     <div id="page-loading" class="htmx-indicator fixed top-0 left-0 right-0 z-50">
       <div class="h-1 bg-primary-500 transition-all duration-300 ease-out" style="width: 0%; animation: progress-bar 1s ease-in-out infinite;"></div>

@@ -20,13 +20,59 @@ observability_service = ZFSObservabilityService()
 
 @router.get("/", response_class=HTMLResponse)
 async def observability_index(request: Request):
-    """Main observability dashboard with overview of all log sources"""
+    """Main observability dashboard with overview of all log sources and live performance metrics"""
     try:
         # Only fetch ARC summary which is fast (reads from /proc)
         # Pool history and events can be very slow on systems with lots of data,
         # so we load those via separate page visits or HTMX partials
         arc_summary = observability_service.get_arc_summary()
-        
+
+        # Fetch ZFS processes for the live performance summary on the dashboard.
+        # Imported here to avoid a circular/heavy import at module load time.
+        try:
+            from services.zfs_performance import ZFSPerformanceService
+            performance_service = ZFSPerformanceService()
+            all_processes = performance_service.get_zfs_processes(sort_by_cpu=True)
+            active_processes = [p for p in all_processes if p.get('cpu_percent', 0) > 1.0]
+        except Exception:
+            all_processes = []
+            active_processes = []
+
+        # Pull the latest completed health report (if any) to populate the
+        # Disk Health card on the dashboard. We only consider completed
+        # reports so a still-running analysis does not show partial counts.
+        latest_health = None
+        try:
+            from services.health_analysis import HealthAnalysisService
+            health_service = HealthAnalysisService()
+            for report in health_service.list_reports(limit=10):
+                if report.get("status") == "completed":
+                    latest_health = report
+                    break
+        except Exception:
+            latest_health = None
+
+        # Compute scrub freshness for the Scrub Status card. We use the
+        # existing dashboard helper which already parses zpool status for
+        # every pool and exposes scrub_within_30_days per pool.
+        scrub_overdue_count = 0
+        scrub_total_pools = 0
+        scrub_known = False
+        try:
+            from services.dashboard import get_scrub_status_all
+            scrub_status_all = get_scrub_status_all() or {}
+            scrub_pools = scrub_status_all.get("pools", []) or []
+            scrub_total_pools = len(scrub_pools)
+            scrub_known = scrub_total_pools > 0
+            if scrub_known:
+                scrub_overdue_count = sum(
+                    1 for p in scrub_pools if not p.get("scrub_within_30_days")
+                )
+        except Exception:
+            scrub_known = False
+            scrub_overdue_count = 0
+            scrub_total_pools = 0
+
         return templates.TemplateResponse(
             "zfs/observability/index.jinja",
             {
@@ -34,6 +80,12 @@ async def observability_index(request: Request):
                 "recent_history": [],  # Loaded via HTMX partial for performance
                 "recent_events": [],   # Loaded via HTMX partial for performance
                 "arc_summary": arc_summary,
+                "all_processes": all_processes,
+                "processes": active_processes,
+                "latest_health": latest_health,
+                "scrub_known": scrub_known,
+                "scrub_overdue_count": scrub_overdue_count,
+                "scrub_total_pools": scrub_total_pools,
                 "page_title": "ZFS Observability"
             }
         )
@@ -45,6 +97,12 @@ async def observability_index(request: Request):
                 "recent_history": [],
                 "recent_events": [],
                 "arc_summary": {},
+                "all_processes": [],
+                "processes": [],
+                "latest_health": None,
+                "scrub_known": False,
+                "scrub_overdue_count": 0,
+                "scrub_total_pools": 0,
                 "error": str(e),
                 "page_title": "ZFS Observability"
             }

@@ -14,7 +14,7 @@
                 </svg>
             </li>
             <li class="flex items-center">
-                <a href="/zfs/performance" class="text-primary-400 hover:text-primary-300">Performance</a>
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300">Observability</a>
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
@@ -35,7 +35,7 @@
 
     <!-- Filters -->
     <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
-        <form method="get" action="/zfs/performance/dataset-space" class="space-y-4">
+        <form method="get" action="/zfs/observability/dataset-space" class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label for="dataset" class="block text-sm font-medium text-text-secondary mb-1">Dataset</label>
@@ -69,11 +69,17 @@
         <div class="p-6">
             {% if space_usage %}
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-border-subtle">
+                <table id="dataset-space-table" class="min-w-full divide-y divide-border-subtle">
                     <thead class="bg-bg-elevated-2">
                         <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Dataset Name</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Used</th>
+                            <th data-sort-key="name" class="dataset-sort-header cursor-pointer select-none px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider hover:text-text-primary">
+                                Dataset Name
+                                <span class="dataset-sort-indicator ml-1 text-text-tertiary"></span>
+                            </th>
+                            <th data-sort-key="used" class="dataset-sort-header cursor-pointer select-none px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider hover:text-text-primary">
+                                Used
+                                <span class="dataset-sort-indicator ml-1 text-text-tertiary"></span>
+                            </th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Available</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Referenced</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Compression</th>
@@ -83,7 +89,7 @@
                     </thead>
                     <tbody class="bg-bg-elevated divide-y divide-border-subtle">
                         {% for ds in space_usage %}
-                        <tr class="hover:bg-bg-elevated-2">
+                        <tr class="hover:bg-bg-elevated-2 dataset-space-row" data-name="{{ ds.name }}" data-used="{{ ds.used }}">
                             <td class="px-4 py-3 text-sm font-medium text-text-primary">
                                 {{ ds.name }}
                             </td>
@@ -119,4 +125,107 @@
         </div>
     </div>
 </div>
+
+<script>
+    /*
+        Sort the dataset-space table by Dataset Name or Used. Default sort
+        is Name ascending and is re-applied on every page load (no state
+        persists). This mirrors the per-pool sort behavior on the main
+        Datasets page but applies to the single flat table here.
+    */
+    (function () {
+        const ARROW_UP = '\u25B2';
+        const ARROW_DOWN = '\u25BC';
+
+        function parseSize(text) {
+            if (!text) return 0;
+            const trimmed = String(text).trim();
+            if (trimmed === '' || trimmed === '-') return 0;
+            const match = trimmed.match(/^([0-9]*\.?[0-9]+)\s*([KMGTPEZY]?)(B?)$/i);
+            if (!match) {
+                const numeric = parseFloat(trimmed);
+                return Number.isFinite(numeric) ? numeric : 0;
+            }
+            const value = parseFloat(match[1]);
+            const unit = match[2].toUpperCase();
+            const multipliers = {
+                '':  1,
+                'K': 1024,
+                'M': 1024 ** 2,
+                'G': 1024 ** 3,
+                'T': 1024 ** 4,
+                'P': 1024 ** 5,
+                'E': 1024 ** 6,
+                'Z': 1024 ** 7,
+                'Y': 1024 ** 8,
+            };
+            return value * (multipliers[unit] || 1);
+        }
+
+        function initDatasetSpaceSort() {
+            const table = document.getElementById('dataset-space-table');
+            if (!table) return;
+            if (table.dataset.sortInitialized === '1') return;
+            table.dataset.sortInitialized = '1';
+
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+
+            const state = { key: 'name', dir: 'asc' };
+
+            function applySort() {
+                const rows = Array.from(tbody.querySelectorAll('tr.dataset-space-row'));
+                rows.sort((a, b) => {
+                    let av, bv;
+                    if (state.key === 'used') {
+                        av = parseSize(a.dataset.used);
+                        bv = parseSize(b.dataset.used);
+                    } else {
+                        av = (a.dataset.name || '').toLowerCase();
+                        bv = (b.dataset.name || '').toLowerCase();
+                    }
+                    if (av < bv) return state.dir === 'asc' ? -1 : 1;
+                    if (av > bv) return state.dir === 'asc' ? 1 : -1;
+                    return 0;
+                });
+                rows.forEach((row) => tbody.appendChild(row));
+                updateIndicators();
+            }
+
+            function updateIndicators() {
+                table.querySelectorAll('.dataset-sort-header').forEach((header) => {
+                    const indicator = header.querySelector('.dataset-sort-indicator');
+                    if (!indicator) return;
+                    if (header.dataset.sortKey === state.key) {
+                        indicator.textContent = state.dir === 'asc' ? ARROW_UP : ARROW_DOWN;
+                    } else {
+                        indicator.textContent = '';
+                    }
+                });
+            }
+
+            table.querySelectorAll('.dataset-sort-header').forEach((header) => {
+                header.addEventListener('click', () => {
+                    const key = header.dataset.sortKey;
+                    if (state.key === key) {
+                        state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        state.key = key;
+                        state.dir = key === 'used' ? 'desc' : 'asc';
+                    }
+                    applySort();
+                });
+            });
+
+            applySort();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initDatasetSpaceSort);
+        } else {
+            initDatasetSpaceSort();
+        }
+        document.addEventListener('htmx:load', initDatasetSpaceSort);
+    })();
+</script>
 {% endblock %}

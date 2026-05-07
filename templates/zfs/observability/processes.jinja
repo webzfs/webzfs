@@ -14,7 +14,7 @@
                 </svg>
             </li>
             <li class="flex items-center">
-                <a href="/zfs/performance" class="text-primary-400 hover:text-primary-300">Performance</a>
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300">Observability</a>
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
@@ -35,7 +35,7 @@
             
             <select x-model="refreshInterval" 
                     class="form-select text-sm py-1.5"
-                    @change="window.location.href = '/zfs/performance/processes?interval=' + refreshInterval">
+                    @change="window.location.href = '/zfs/observability/processes?interval=' + refreshInterval">
                 <option value="1" {% if interval == 1 %}selected{% endif %}>1s refresh</option>
                 <option value="5" {% if interval == 5 %}selected{% endif %}>5s refresh</option>
                 <option value="10" {% if interval == 10 %}selected{% endif %}>10s refresh</option>
@@ -54,7 +54,7 @@
                 </span>
             </button>
             
-            <a href="/zfs/performance/processes/download" 
+            <a href="/zfs/observability/processes/download" 
                class="btn-success flex items-center gap-2"
                hx-boost="false">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -74,7 +74,7 @@
     <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" 
          x-data
-         hx-get="/zfs/performance/processes-summary"
+         hx-get="/zfs/observability/processes-summary"
          :hx-trigger="`load, every ${refreshInterval}s[autoRefresh]`"
          hx-swap="innerHTML">
         <div class="bg-bg-elevated rounded-lg shadow p-6">
@@ -105,7 +105,7 @@
         <div class="p-6">
             <div class="overflow-x-auto" 
                  x-data
-                 hx-get="/zfs/performance/processes-table"
+                 hx-get="/zfs/observability/processes-table"
                  :hx-trigger="`load, every ${refreshInterval}s[autoRefresh]`"
                  hx-swap="innerHTML">
                 {% if processes %}

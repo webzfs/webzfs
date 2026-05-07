@@ -831,7 +831,6 @@ async def discard_checkpoint(
             status_code=303
         )
 
-
 # ==================== Diagnostics Routes ====================
 
 
@@ -862,7 +861,6 @@ async def download_pool_diagnostics(pool_name: str):
             content=f"Error collecting diagnostics: {str(e)}",
             status_code=500
         )
-
 
 # ==================== VDev Management Routes ====================
 
@@ -897,6 +895,7 @@ async def vdev_management_data(request: Request, pool_name: str):
             all_disks.append({
                 'name': disk.get('name', ''),
                 'device_path': disk.get('device_path', ''),
+
                 'size': disk.get('size', ''),
                 'size_bytes': size_bytes,
                 'model': disk.get('model', 'Unknown'),
@@ -909,13 +908,55 @@ async def vdev_management_data(request: Request, pool_name: str):
         # Compute minimum data device size for spare validation
         min_data_device_size = _get_min_data_device_size(topology, disk_size_lookup)
 
-        # Build list of devices currently in the pool topology
+
+        # Build list of devices currently in the pool topology and a parallel
+        # map of pool-device name -> size in bytes (resolving by-id paths and
+        # falling back to a direct device size query). The frontend uses this
+        # map to filter "Available Disks" lists for attach and replace so a
+        # disk smaller than the existing device cannot be selected.
+        import os
         pool_devices = []
+        pool_device_sizes = {}
         for section in ['data_vdevs', 'log_vdevs', 'cache_vdevs',
                         'spare_vdevs', 'special_vdevs', 'dedup_vdevs']:
             for vdev in topology.get(section, []):
                 for dev in vdev.get('devices', []):
-                    pool_devices.append(dev.get('name', ''))
+                    dev_name = dev.get('name', '')
+                    if not dev_name:
+                        continue
+                    pool_devices.append(dev_name)
+                    size_bytes = disk_size_lookup.get(dev_name)
+                    if size_bytes is None:
+                        size_bytes = disk_size_lookup.get(f'/dev/{dev_name}')
+                    if size_bytes is None:
+                        resolved = disk_service.resolve_device_path(dev_name)
+                        if resolved:
+                            size_bytes = disk_size_lookup.get(resolved)
+                            if size_bytes is None:
+                                size_bytes = disk_size_lookup.get(
+                                    os.path.basename(resolved)
+                                )
+                            if size_bytes is None:
+                                size_bytes = disk_service.get_device_size_bytes(resolved)
+                    if size_bytes is not None and size_bytes > 0:
+                        pool_device_sizes[dev_name] = size_bytes
+
+        # Determine the data vdev layout types so the frontend can disable
+        # operations that don't apply (e.g. replace on a single-disk pool).
+        data_vdev_types = []
+        for vdev in topology.get('data_vdevs', []):
+            data_vdev_types.append((vdev.get('type') or '').lower())
+        # A pool is "single-disk" only if it has exactly one data vdev with
+        # one device and no redundancy (single, stripe, or empty type).
+        is_single_disk_pool = False
+        data_vdevs = topology.get('data_vdevs', [])
+        if len(data_vdevs) == 1:
+            only_vdev = data_vdevs[0]
+            only_type = (only_vdev.get('type') or '').lower()
+            device_count = len(only_vdev.get('devices', []))
+            if device_count == 1 and only_type in ('', 'single', 'stripe'):
+                is_single_disk_pool = True
+
 
         # Convert topology to serializable dict
         topology_dict = {
@@ -935,8 +976,13 @@ async def vdev_management_data(request: Request, pool_name: str):
             "topology": topology_dict,
             "all_disks": all_disks,
             "pool_devices": pool_devices,
+            "pool_device_sizes": pool_device_sizes,
             "min_data_device_size": min_data_device_size,
+            "is_single_disk_pool": is_single_disk_pool,
+            "data_vdev_types": data_vdev_types,
         })
+
+
     except Exception as e:
         return JSONResponse(
             content={"success": False, "error": str(e)},
@@ -1054,10 +1100,38 @@ async def attach_device(
 ):
     """Attach a device to create or extend a mirror"""
     try:
+        existing_clean = existing_device.strip()
+        new_clean = new_device.strip()
+
+        # Size validation: new device must be the same size or larger than the existing device.
+        # ZFS will refuse to attach a smaller device, but check up front so the user gets a clear message.
+        existing_path = existing_clean if existing_clean.startswith('/') else f'/dev/{existing_clean}'
+        new_path = new_clean if new_clean.startswith('/') else f'/dev/{new_clean}'
+        existing_size = disk_service.get_device_size_bytes(existing_path)
+        new_size = disk_service.get_device_size_bytes(new_path)
+        # Fall back to resolving non-standard identifiers (e.g. /dev/disk/by-id/...)
+        if existing_size is None:
+            resolved = disk_service.resolve_device_path(existing_clean)
+            if resolved:
+                existing_size = disk_service.get_device_size_bytes(resolved)
+        if new_size is None:
+            resolved = disk_service.resolve_device_path(new_clean)
+            if resolved:
+                new_size = disk_service.get_device_size_bytes(resolved)
+        if (existing_size is not None and new_size is not None
+                and existing_size > 0 and new_size > 0
+                and new_size < existing_size):
+            raise ValueError(
+                f"New device {new_clean} ({_format_bytes_human(new_size)}) is smaller than the "
+                f"existing device {existing_clean} ({_format_bytes_human(existing_size)}). "
+                f"The attached disk must be the same size or larger."
+            )
+
         pool_service.attach_device(
-            pool_name, existing_device.strip(),
-            new_device.strip(), force=force
+            pool_name, existing_clean,
+            new_clean, force=force
         )
+
         audit_logger.log_pool_vdev_attach(
             user=current_user, pool_name=pool_name,
             existing_device=existing_device.strip(),
@@ -1121,10 +1195,53 @@ async def replace_device(
 ):
     """Replace a device in the pool"""
     try:
+        old_clean = old_device.strip()
+        new_clean = new_device.strip()
+
+        # Block replace entirely on single-disk pools. There is no
+        # redundancy to read from while replacing, so the operation does
+        # not make sense in this context.
+        topology = pool_service.get_pool_topology(pool_name)
+        data_vdevs = topology.get('data_vdevs', [])
+        if len(data_vdevs) == 1:
+            only_vdev = data_vdevs[0]
+            only_type = (only_vdev.get('type') or '').lower()
+            if (len(only_vdev.get('devices', [])) == 1
+                    and only_type in ('', 'single', 'stripe')):
+                raise ValueError(
+                    "Replace is not available for single-disk pools because the "
+                    "pool has no redundancy. Attach a mirror device first or "
+                    "create a new pool with redundancy."
+                )
+
+        # Size validation: new device must be the same size or larger than the
+        # device being replaced. ZFS will refuse a smaller device.
+        old_path = old_clean if old_clean.startswith('/') else f'/dev/{old_clean}'
+        new_path = new_clean if new_clean.startswith('/') else f'/dev/{new_clean}'
+        old_size = disk_service.get_device_size_bytes(old_path)
+        new_size = disk_service.get_device_size_bytes(new_path)
+        if old_size is None:
+            resolved = disk_service.resolve_device_path(old_clean)
+            if resolved:
+                old_size = disk_service.get_device_size_bytes(resolved)
+        if new_size is None:
+            resolved = disk_service.resolve_device_path(new_clean)
+            if resolved:
+                new_size = disk_service.get_device_size_bytes(resolved)
+        if (old_size is not None and new_size is not None
+                and old_size > 0 and new_size > 0
+                and new_size < old_size):
+            raise ValueError(
+                f"Replacement device {new_clean} ({_format_bytes_human(new_size)}) is smaller "
+                f"than the device being replaced {old_clean} ({_format_bytes_human(old_size)}). "
+                f"The replacement disk must be the same size or larger."
+            )
+
         pool_service.replace_device(
-            pool_name, old_device.strip(),
-            new_device.strip(), force=force
+            pool_name, old_clean,
+            new_clean, force=force
         )
+
         audit_logger.log_pool_vdev_replace(
             user=current_user, pool_name=pool_name,
             old_device=old_device.strip(),

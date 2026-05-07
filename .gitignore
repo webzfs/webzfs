@@ -298,6 +298,7 @@ static/*
 !static/css/
 static/css/*
 !static/css/themes/
+!static/css/corner_styles.css
 !static/img/
 !static/js/
 static/js/*

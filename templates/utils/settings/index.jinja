@@ -137,6 +137,98 @@
             </div>
         </div>
 
+        <!-- Corner Style Card -->
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-2 bg-info-500/10 border border-info-500/20 rounded-lg">
+                        <svg class="w-6 h-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-primary">Corner Style</h2>
+                        <p class="text-sm text-text-secondary">
+                            Current style: <span class="text-info-400 font-medium">{{ active_corner_style_name }}</span>
+                        </p>
+                    </div>
+                </div>
+
+                <form action="/utils/settings/apply-corner-style" method="post" hx-boost="false">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {% for style in corner_styles %}
+                        <label class="card-nested cursor-pointer flex flex-col gap-3 hover:border-info-500 transition-colors {% if style.active %}border-info-500{% endif %}">
+                            <div class="flex items-center gap-2">
+                                <input
+                                    type="radio"
+                                    name="corner_style"
+                                    value="{{ style.id }}"
+                                    {% if style.active %}checked{% endif %}
+                                    class="form-radio text-info-500"
+                                >
+                                <span class="text-text-primary font-medium">{{ style.name }}</span>
+                                {% if style.active %}
+                                <span class="ml-auto text-xs text-info-400">Active</span>
+                                {% endif %}
+                            </div>
+                            <p class="text-xs text-text-tertiary">{{ style.description }}</p>
+                            <!-- Visual sample of the corner style.
+                                 Inline styles bypass the global body.corner-{style}
+                                 overrides so all three samples render their own
+                                 corner shape regardless of the active site style. -->
+                            {% if style.id == 'rounded' %}
+                            <div class="mt-1 flex items-center justify-center h-12 bg-bg-elevated-2 text-xs text-text-secondary"
+                                 style="border: 1px solid var(--border-default); border-radius: 10px !important; clip-path: none !important;">
+                                Sample
+                            </div>
+                            {% elif style.id == 'squared' %}
+                            <div class="mt-1 flex items-center justify-center h-12 bg-bg-elevated-2 text-xs text-text-secondary"
+                                 style="border: 1px solid var(--border-default); border-radius: 0 !important; clip-path: none !important;">
+                                Sample
+                            </div>
+                            {% else %}
+                            {# Octagonal sample: clip-path bevel + inset
+                               box-shadow as the visible outline. Inset
+                               shadows paint inside the polygon's painting
+                               area and follow the polygon edge exactly,
+                               which a regular border cannot do (clip-path
+                               cuts borders away on the diagonal edges). #}
+                            <div class="mt-1 flex items-center justify-center h-12 bg-bg-elevated-2 text-xs text-text-secondary"
+                                 style="border: 0 !important; border-radius: 0 !important;
+                                        box-shadow: inset 0 0 0 1px var(--border-default);
+                                        clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 10px);">
+                                Sample
+                            </div>
+                            {% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+
+                    <div class="flex items-center gap-3 mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            Apply Corner Style
+                        </button>
+                        <span class="text-sm text-text-tertiary">Applies to every page once saved</span>
+                    </div>
+
+                    <div class="card-nested mt-4">
+                        <div class="flex items-start gap-2">
+                            <svg class="w-4 h-4 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <div class="text-sm text-text-secondary">
+                                <p class="mb-1">Corner style controls the shape of cards, buttons, badges, and icon tiles across every page in WebZFS.</p>
+                                <p>The selection is saved to <code>/opt/webzfs/.config/webzfs/corner_style.conf</code> and persists across sessions.</p>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- Session Timeout Card -->
         <div class="card animate-fade-in">
             <div class="card-body">

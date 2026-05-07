@@ -14,7 +14,7 @@
                 </svg>
             </li>
             <li class="flex items-center">
-                <a href="/zfs/performance" class="text-primary-400 hover:text-primary-300">Performance</a>
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300">Observability</a>
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
@@ -35,7 +35,7 @@
 
     <!-- Pool Filter -->
     <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
-        <form method="get" action="/zfs/performance/vdev-stats" class="flex gap-4 items-end">
+        <form method="get" action="/zfs/observability/vdev-stats" class="flex gap-4 items-end">
             <div class="flex-1">
                 <label for="pool" class="block text-sm font-medium text-text-secondary mb-1">Select Pool</label>
                 <select name="pool" id="pool" class="form-input focus:ring-blue-500 focus:border-blue-500">
@@ -74,7 +74,7 @@
         <div class="p-6">
             {% if vdev_stats %}
             <div class="overflow-x-auto" 
-                 hx-get="/zfs/performance/vdev-stats-table?pool={{ selected_pool }}"
+                 hx-get="/zfs/observability/vdev-stats-table?pool={{ selected_pool }}"
                  hx-trigger="load, every 1s[autoRefresh]"
                  hx-swap="innerHTML">
                 <table class="min-w-full">

@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from fastapi.templating import Jinja2Templates
 from config.settings import BASE_DIR, settings
-from services.theme import get_active_theme, get_theme_css_path
+from services.theme import get_theme_css_path, get_active_theme
+from services.corner_style import get_active_corner_style, get_corner_styles_css_version
 
 
 @dataclass
@@ -18,7 +19,6 @@ NAV_TABS = [
     Tab(id="zfs_snapshots", label="Snapshots", url="/zfs/snapshots/"),
     Tab(id="zfs_replication", label="Replication", url="/zfs/replication/"),
     Tab(id="zfs_observability", label="Observability", url="/zfs/observability/"),
-    Tab(id="zfs_performance", label="Performance", url="/zfs/performance/"),
     Tab(id="utils", label="Utilities", url="/utils/"),
     Tab(id="fleet", label="Fleet View", url="/fleet/"),
 ]
@@ -28,3 +28,5 @@ templates.env.globals["settings"] = settings
 templates.env.globals["NAV_TABS"] = NAV_TABS
 templates.env.globals["get_theme_css_path"] = get_theme_css_path
 templates.env.globals["get_active_theme"] = get_active_theme
+templates.env.globals["get_active_corner_style"] = get_active_corner_style
+templates.env.globals["get_corner_styles_css_version"] = get_corner_styles_css_version

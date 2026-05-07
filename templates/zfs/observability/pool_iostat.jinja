@@ -14,7 +14,7 @@
                 </svg>
             </li>
             <li class="flex items-center">
-                <a href="/zfs/performance" class="text-primary-400 hover:text-primary-300">Performance</a>
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300">Observability</a>
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
@@ -50,7 +50,7 @@
 
     <!-- Filters -->
     <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
-        <form method="get" action="/zfs/performance/pool-iostat" class="space-y-4">
+        <form method="get" action="/zfs/observability/pool-iostat" class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                     <label for="pool" class="block text-sm font-medium text-text-secondary mb-1">Pool</label>
@@ -104,7 +104,7 @@
         <div class="p-6">
             <div id="iostat-display" 
                  class="overflow-x-auto"
-                 hx-get="/zfs/performance/pool-iostat-partial?interval={{ interval }}&pool={{ selected_pool or '' }}&verbose={{ verbose }}&latency={{ latency }}&queue={{ queue }}"
+                 hx-get="/zfs/observability/pool-iostat-partial?interval={{ interval }}&pool={{ selected_pool or '' }}&verbose={{ verbose }}&latency={{ latency }}&queue={{ queue }}"
                  hx-trigger="load, every {{ interval }}s[autoRefresh]"
                  hx-swap="innerHTML"
                  hx-indicator=".htmx-indicator">
@@ -145,7 +145,7 @@
              x-transition:leave-end="opacity-0 -translate-y-2">
             <pre id="raw-output" 
                  class="bg-bg-elevated-2 p-4 rounded border overflow-x-auto text-sm font-mono"
-                 hx-get="/zfs/performance/pool-iostat-raw?interval={{ interval }}&pool={{ selected_pool or '' }}&verbose={{ verbose }}&latency={{ latency }}&queue={{ queue }}"
+                 hx-get="/zfs/observability/pool-iostat-raw?interval={{ interval }}&pool={{ selected_pool or '' }}&verbose={{ verbose }}&latency={{ latency }}&queue={{ queue }}"
                  hx-trigger="loadContent, every {{ interval }}s[autoRefresh && rawOutputOpen]"
                  hx-swap="innerHTML">Click expand to view raw output...</pre>
         </div>

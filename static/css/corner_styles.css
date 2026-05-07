@@ -1,0 +1,657 @@
+/*
+ * WebZFS Corner Style Overrides
+ *
+ * Three exclusive looks, scoped to the <body> element via one of three
+ * classes added in templates/base.jinja:
+ *
+ *   body.corner-rounded       Tailwind default rounded corners (legacy).
+ *   body.corner-squared       Hard 90 degree corners.
+ *   body.corner-octagonal     Octagonal bevels via clip-path.
+ *
+ * IMPORTANT: most rounded styling in WebZFS is applied through Tailwind's
+ * @apply directive inside src/styles.css. The rendered HTML for things
+ * like .btn-primary, .card-nested, .alert, .badge, .form-input,
+ * .form-select carries ONLY the semantic class name (no `rounded-lg`
+ * literal). Each semantic class is therefore listed explicitly below.
+ *
+ * KEY OCTAGONAL TECHNIQUE: `clip-path` clips the element's `border`
+ * away on the diagonal cut edges, leaving visible gaps at every corner.
+ * The fix is to remove the border and replace it with
+ * `box-shadow: inset 0 0 0 1px <colour>`. Inset shadows paint inside
+ * the polygon's painting area and follow the polygon edge exactly, so
+ * the 1px ring traces every diagonal cleanly.
+ */
+
+
+/* ============================================================
+ * SHARED: outline-only icon tile colours
+ *
+ * Strips the original bg-{color}-500/10 fill and bumps the
+ * border colour from /0.20 to /0.50 so a 1px outline reads
+ * cleanly. Applied to every variant; only the SHAPE comes from
+ * the variant-specific blocks below.
+ * ============================================================ */
+body.corner-rounded .p-2.bg-primary-500\/10,
+body.corner-squared .p-2.bg-primary-500\/10,
+body.corner-octagonal .p-2.bg-primary-500\/10 {
+    background-color: transparent !important;
+    border-color: rgb(59 130 246 / 0.50) !important;
+}
+body.corner-rounded .p-2.bg-success-500\/10,
+body.corner-squared .p-2.bg-success-500\/10,
+body.corner-octagonal .p-2.bg-success-500\/10 {
+    background-color: transparent !important;
+    border-color: rgb(34 197 94 / 0.50) !important;
+}
+body.corner-rounded .p-2.bg-warning-500\/10,
+body.corner-squared .p-2.bg-warning-500\/10,
+body.corner-octagonal .p-2.bg-warning-500\/10 {
+    background-color: transparent !important;
+    border-color: rgb(234 179 8 / 0.50) !important;
+}
+body.corner-rounded .p-2.bg-danger-500\/10,
+body.corner-squared .p-2.bg-danger-500\/10,
+body.corner-octagonal .p-2.bg-danger-500\/10 {
+    background-color: transparent !important;
+    border-color: rgb(239 68 68 / 0.50) !important;
+}
+body.corner-rounded .p-2.bg-info-500\/10,
+body.corner-squared .p-2.bg-info-500\/10,
+body.corner-octagonal .p-2.bg-info-500\/10 {
+    background-color: transparent !important;
+    border-color: rgb(14 165 233 / 0.50) !important;
+}
+body.corner-rounded .p-2.bg-purple-500\/10,
+body.corner-squared .p-2.bg-purple-500\/10,
+body.corner-octagonal .p-2.bg-purple-500\/10 {
+    background-color: transparent !important;
+    border-color: rgb(168 85 247 / 0.50) !important;
+}
+
+
+/* ============================================================
+ * VARIANT: SQUARED
+ *
+ * Force border-radius to 0 on every previously rounded element.
+ * ============================================================ */
+body.corner-squared [class*="rounded"],
+body.corner-squared .card,
+body.corner-squared .card-nested,
+body.corner-squared .btn,
+body.corner-squared .btn-primary,
+body.corner-squared .btn-secondary,
+body.corner-squared .btn-success,
+body.corner-squared .btn-danger,
+body.corner-squared .btn-warning,
+body.corner-squared .btn-info,
+body.corner-squared .btn-ghost,
+body.corner-squared .btn-sm,
+body.corner-squared .btn-lg,
+body.corner-squared .btn-icon,
+body.corner-squared a.btn-primary,
+body.corner-squared a.btn-secondary,
+body.corner-squared a.btn-success,
+body.corner-squared a.btn-danger,
+body.corner-squared a.btn-warning,
+body.corner-squared a.btn-info,
+body.corner-squared a.btn-ghost,
+body.corner-squared .alert,
+body.corner-squared .alert-success,
+body.corner-squared .alert-warning,
+body.corner-squared .alert-danger,
+body.corner-squared .alert-info,
+body.corner-squared .badge,
+body.corner-squared .badge-success,
+body.corner-squared .badge-warning,
+body.corner-squared .badge-danger,
+body.corner-squared .badge-info,
+body.corner-squared .badge-primary,
+body.corner-squared .badge-secondary,
+body.corner-squared .form-input,
+body.corner-squared .form-select,
+body.corner-squared .form-textarea,
+body.corner-squared input,
+body.corner-squared select,
+body.corner-squared textarea,
+body.corner-squared button,
+body.corner-squared code,
+body.corner-squared pre {
+    border-radius: 0 !important;
+}
+
+
+/* ============================================================
+ * VARIANT: OCTAGONAL
+ *
+ * Replace border-radius with clip-path polygons that cut 45
+ * degree corners. Bevel sizes:
+ *   --oct-card-cut    14px   outer cards
+ *   --oct-sub-cut     10px   inner sub-cards / metric tiles / rows
+ *   --oct-pill-cut    10px   icon tiles (two-layer outline only)
+ *   --oct-btn-cut      8px   buttons / inputs / selects / textareas / badges
+ *
+ * Tiny icon-only buttons (p-1, p-1.5, p-2 buttons) and short
+ * progress-bar tracks (rounded-full + h-1..h-6) opt out so their
+ * content stays readable.
+ *
+ * Borders use `box-shadow: inset 0 0 0 1px <colour>` because
+ * `clip-path` clips the regular `border` away on the diagonal cut
+ * edges. Inset shadows paint inside the polygon's painting area and
+ * follow the polygon edge exactly.
+ * ============================================================ */
+body.corner-octagonal {
+    --oct-card-cut: 14px;
+    --oct-sub-cut: 10px;
+    --oct-pill-cut: 10px;
+    --oct-btn-cut: 8px;
+    --oct-pill-border: 1px;
+    --oct-pill-inner: calc(var(--oct-pill-cut) - var(--oct-pill-border));
+}
+
+/* OCTAGONAL OUTLINE TECHNIQUE (cards / sub-cards / form controls / etc.)
+ *
+ * `clip-path: polygon` cuts the element's painting to the polygon shape.
+ * Both `border` AND `box-shadow: inset` are painted along the element's
+ * RECTANGULAR border-box first; clip-path then chops off the outer
+ * corners. On the diagonal cut segments, no part of the original
+ * rectangle's edge runs along the diagonal, so neither border nor inset
+ * shadow draws there. That is why every previous attempt produced
+ * either gaps on the diagonals or no visible outline at all.
+ *
+ * The reliable fix is a TWO-LAYER setup:
+ *   - The element itself takes the OUTLINE colour as its background
+ *     and uses the OUTER polygon (e.g. 14px cuts).
+ *   - A `::before` pseudo-element fills the body colour, inset by 1px
+ *     on every side, clipped to a slightly SMALLER polygon. The 1px
+ *     gap around it is the visible outline, which DOES trace the
+ *     diagonals because both layers follow polygons, not rectangles.
+ *
+ * For elements that contain text content, the original element's text
+ * sits at the default stacking level. We use `isolation: isolate` on
+ * the parent to create an isolated stacking context, then push the
+ * `::before` to `z-index: -1`. This keeps the body fill behind the
+ * text without using `position: absolute` on every text node.
+ */
+
+/* Outer cards. */
+body.corner-octagonal .card {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: var(--border-strong) !important;
+    clip-path: polygon(
+        var(--oct-card-cut) 0,
+        calc(100% - var(--oct-card-cut)) 0,
+        100% var(--oct-card-cut),
+        100% calc(100% - var(--oct-card-cut)),
+        calc(100% - var(--oct-card-cut)) 100%,
+        var(--oct-card-cut) 100%,
+        0 calc(100% - var(--oct-card-cut)),
+        0 var(--oct-card-cut)
+    ) !important;
+}
+body.corner-octagonal .card::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        calc(var(--oct-card-cut) - 1px) 0,
+        calc(100% - (var(--oct-card-cut) - 1px)) 0,
+        100% calc(var(--oct-card-cut) - 1px),
+        100% calc(100% - (var(--oct-card-cut) - 1px)),
+        calc(100% - (var(--oct-card-cut) - 1px)) 100%,
+        calc(var(--oct-card-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-card-cut) - 1px)),
+        0 calc(var(--oct-card-cut) - 1px)
+    );
+}
+
+/* Inner sub-cards / metric tiles / rows. */
+body.corner-octagonal .card-nested,
+body.corner-octagonal .rounded-lg:not(.card):not(.p-2):not(.p-1):not(.p-1\.5),
+body.corner-octagonal .rounded-xl:not(.card),
+body.corner-octagonal .rounded-md,
+body.corner-octagonal .rounded {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: var(--border-strong) !important;
+    clip-path: polygon(
+        var(--oct-sub-cut) 0,
+        calc(100% - var(--oct-sub-cut)) 0,
+        100% var(--oct-sub-cut),
+        100% calc(100% - var(--oct-sub-cut)),
+        calc(100% - var(--oct-sub-cut)) 100%,
+        var(--oct-sub-cut) 100%,
+        0 calc(100% - var(--oct-sub-cut)),
+        0 var(--oct-sub-cut)
+    ) !important;
+}
+body.corner-octagonal .card-nested::before,
+body.corner-octagonal .rounded-lg:not(.card):not(.p-2):not(.p-1):not(.p-1\.5)::before,
+body.corner-octagonal .rounded-xl:not(.card)::before,
+body.corner-octagonal .rounded-md::before,
+body.corner-octagonal .rounded::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated-2);
+    clip-path: polygon(
+        calc(var(--oct-sub-cut) - 1px) 0,
+        calc(100% - (var(--oct-sub-cut) - 1px)) 0,
+        100% calc(var(--oct-sub-cut) - 1px),
+        100% calc(100% - (var(--oct-sub-cut) - 1px)),
+        calc(100% - (var(--oct-sub-cut) - 1px)) 100%,
+        calc(var(--oct-sub-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-sub-cut) - 1px)),
+        0 calc(var(--oct-sub-cut) - 1px)
+    );
+}
+
+/* Alerts: per-variant accent ring. */
+body.corner-octagonal .alert,
+body.corner-octagonal .alert-success,
+body.corner-octagonal .alert-warning,
+body.corner-octagonal .alert-danger,
+body.corner-octagonal .alert-info {
+    border-radius: 0 !important;
+    border: none !important;
+    clip-path: polygon(
+        var(--oct-sub-cut) 0,
+        calc(100% - var(--oct-sub-cut)) 0,
+        100% var(--oct-sub-cut),
+        100% calc(100% - var(--oct-sub-cut)),
+        calc(100% - var(--oct-sub-cut)) 100%,
+        var(--oct-sub-cut) 100%,
+        0 calc(100% - var(--oct-sub-cut)),
+        0 var(--oct-sub-cut)
+    );
+}
+body.corner-octagonal .alert-success { box-shadow: inset 0 0 0 1px var(--success-500); }
+body.corner-octagonal .alert-warning { box-shadow: inset 0 0 0 1px var(--warning-500); }
+body.corner-octagonal .alert-danger  { box-shadow: inset 0 0 0 1px var(--danger-500); }
+body.corner-octagonal .alert-info    { box-shadow: inset 0 0 0 1px var(--info-500); }
+body.corner-octagonal .alert         { box-shadow: inset 0 0 0 1px var(--border-default); }
+
+/* Buttons and form controls. */
+body.corner-octagonal button,
+body.corner-octagonal .btn,
+body.corner-octagonal .btn-primary,
+body.corner-octagonal .btn-secondary,
+body.corner-octagonal .btn-success,
+body.corner-octagonal .btn-danger,
+body.corner-octagonal .btn-warning,
+body.corner-octagonal .btn-info,
+body.corner-octagonal .btn-ghost,
+body.corner-octagonal .btn-sm,
+body.corner-octagonal .btn-lg,
+body.corner-octagonal .btn-icon,
+body.corner-octagonal a.btn-primary,
+body.corner-octagonal a.btn-secondary,
+body.corner-octagonal a.btn-success,
+body.corner-octagonal a.btn-danger,
+body.corner-octagonal a.btn-warning,
+body.corner-octagonal a.btn-info,
+body.corner-octagonal a.btn-ghost,
+body.corner-octagonal .form-input,
+body.corner-octagonal .form-select,
+body.corner-octagonal .form-textarea,
+body.corner-octagonal input[type="text"],
+body.corner-octagonal input[type="search"],
+body.corner-octagonal input[type="number"],
+body.corner-octagonal input[type="email"],
+body.corner-octagonal input[type="password"],
+body.corner-octagonal select,
+body.corner-octagonal textarea {
+    border-radius: 0 !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    );
+}
+
+/* Form controls and bordered buttons swap their border for an inset
+   ring so the 1px outline traces the polygon edges. */
+body.corner-octagonal .form-input,
+body.corner-octagonal .form-select,
+body.corner-octagonal .form-textarea,
+body.corner-octagonal input[type="text"],
+body.corner-octagonal input[type="search"],
+body.corner-octagonal input[type="number"],
+body.corner-octagonal input[type="email"],
+body.corner-octagonal input[type="password"],
+body.corner-octagonal select,
+body.corner-octagonal textarea,
+body.corner-octagonal .btn-secondary,
+body.corner-octagonal a.btn-secondary,
+body.corner-octagonal .btn-ghost,
+body.corner-octagonal a.btn-ghost {
+    border: none !important;
+    box-shadow: inset 0 0 0 1px var(--border-default);
+}
+
+/* Tiny icon-only buttons keep their full rectangle and any styling
+   on them stays as-is. */
+body.corner-octagonal button.p-1,
+body.corner-octagonal button.p-1\.5,
+body.corner-octagonal button.p-2 {
+    clip-path: none !important;
+    border-radius: 0 !important;
+}
+
+/* Progress-bar tracks (rounded-full strips). */
+body.corner-octagonal [class*="rounded-full"],
+body.corner-octagonal .h-1,
+body.corner-octagonal .h-1\.5,
+body.corner-octagonal .h-2,
+body.corner-octagonal .h-2\.5,
+body.corner-octagonal .h-3,
+body.corner-octagonal .h-6 {
+    border-radius: 0 !important;
+    clip-path: none !important;
+}
+
+/* Badges: keep their semantic fill, only cut the corners.
+   Use a single-layer clip-path so the bare text node stays visible.
+   The original border is replaced with an inset ring in the matching
+   colour family so the bevel reads as outlined-and-filled. */
+body.corner-octagonal .badge,
+body.corner-octagonal .badge-success,
+body.corner-octagonal .badge-warning,
+body.corner-octagonal .badge-danger,
+body.corner-octagonal .badge-info,
+body.corner-octagonal .badge-primary,
+body.corner-octagonal .badge-secondary {
+    border-radius: 0 !important;
+    border: none !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    );
+}
+body.corner-octagonal .badge-success   { box-shadow: inset 0 0 0 1px var(--success-900); }
+body.corner-octagonal .badge-warning   { box-shadow: inset 0 0 0 1px var(--warning-900); }
+body.corner-octagonal .badge-danger    { box-shadow: inset 0 0 0 1px var(--danger-900); }
+body.corner-octagonal .badge-info      { box-shadow: inset 0 0 0 1px var(--info-900); }
+body.corner-octagonal .badge-primary   { box-shadow: inset 0 0 0 1px var(--primary-900); }
+body.corner-octagonal .badge-secondary { box-shadow: inset 0 0 0 1px var(--border-default); }
+
+/* Icon tiles only (p-2 boxes wrapping header SVG icons): octagonal
+   outline-only via a two-layer technique because we want the tile to
+   be HOLLOW (no fill behind the SVG), not just bordered.
+   - Parent layer = the per-variant outline colour, clipped to outer
+     10px octagon.
+   - ::before layer = card colour, inset 1px, clipped to a slightly
+     smaller (9px) octagon. The 1px gap reveals the parent colour as
+     the visible octagonal outline.
+   This is reserved for icon tiles ONLY because the contents of an
+   icon tile is a single SVG element that can be lifted above the
+   ::before via z-index. Anything containing text would be hidden. */
+body.corner-octagonal .p-2.rounded-lg {
+    position: relative;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: rgb(59 130 246 / 0.50) !important;
+    clip-path: polygon(
+        var(--oct-pill-cut) 0,
+        calc(100% - var(--oct-pill-cut)) 0,
+        100% var(--oct-pill-cut),
+        100% calc(100% - var(--oct-pill-cut)),
+        calc(100% - var(--oct-pill-cut)) 100%,
+        var(--oct-pill-cut) 100%,
+        0 calc(100% - var(--oct-pill-cut)),
+        0 var(--oct-pill-cut)
+    );
+}
+
+body.corner-octagonal .p-2.rounded-lg::before {
+    content: "";
+    position: absolute;
+    inset: var(--oct-pill-border);
+    z-index: 0;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        var(--oct-pill-inner) 0,
+        calc(100% - var(--oct-pill-inner)) 0,
+        100% var(--oct-pill-inner),
+        100% calc(100% - var(--oct-pill-inner)),
+        calc(100% - var(--oct-pill-inner)) 100%,
+        var(--oct-pill-inner) 100%,
+        0 calc(100% - var(--oct-pill-inner)),
+        0 var(--oct-pill-inner)
+    );
+}
+
+/* Per-variant outline colour for octagonal icon tiles. */
+body.corner-octagonal .p-2.rounded-lg.bg-primary-500\/10 { background-color: rgb(59 130 246 / 0.50) !important; }
+body.corner-octagonal .p-2.rounded-lg.bg-success-500\/10 { background-color: rgb(34 197 94  / 0.50) !important; }
+body.corner-octagonal .p-2.rounded-lg.bg-warning-500\/10 { background-color: rgb(234 179 8  / 0.50) !important; }
+body.corner-octagonal .p-2.rounded-lg.bg-danger-500\/10  { background-color: rgb(239 68 68  / 0.50) !important; }
+body.corner-octagonal .p-2.rounded-lg.bg-info-500\/10    { background-color: rgb(14 165 233 / 0.50) !important; }
+body.corner-octagonal .p-2.rounded-lg.bg-purple-500\/10  { background-color: rgb(168 85 247 / 0.50) !important; }
+
+/* The SVG icon child must render above the ::before card-colour fill. */
+body.corner-octagonal .p-2.rounded-lg > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* clip-path also clips box-shadow's *outer* glow. The dashboard
+   pulse-border animation relies on outer box-shadow. Replace the
+   pulsing glow with a thick coloured top inset stripe so faulted /
+   degraded pools still stand out without bleeding past the bevel. */
+body.corner-octagonal .pulse-border-danger {
+    animation: none !important;
+    border: none !important;
+    position: relative;
+    box-shadow: inset 0 4px 0 0 rgb(239 68 68), inset 0 0 0 1px var(--border-subtle);
+}
+body.corner-octagonal .pulse-border-warning {
+    animation: none !important;
+    border: none !important;
+    position: relative;
+    box-shadow: inset 0 4px 0 0 rgb(234 179 8), inset 0 0 0 1px var(--border-subtle);
+}
+
+
+/* ============================================================
+ * NAVIGATION BAR
+ *
+ * The top navbar tabs (.nav-tab) and the logout button apply
+ * `rounded-lg` via Tailwind @apply inside src/styles.css, so the
+ * rendered HTML carries only the semantic class name. Without
+ * explicit rules below, the navbar always renders with rounded
+ * corners regardless of the user's selected corner style.
+ *
+ * SQUARED: zero out border-radius on the nav-tab and logout button.
+ *
+ * OCTAGONAL: a clipped element with `border` or `box-shadow: inset`
+ * shows visible diagonal gaps because the underlying rectangle's
+ * edges are chopped off. The reliable approach (used by .card and
+ * .p-2.rounded-lg elsewhere in this file) is the two-layer
+ * technique:
+ *   - parent element: solid outline-colour background, clipped to
+ *     the outer polygon, with `position: relative; isolation:
+ *     isolate;` so the ::before can sit beneath the text.
+ *   - ::before: navbar background colour, inset 1px on every side,
+ *     clipped to a polygon 1px smaller. The 1px gap around the
+ *     ::before reveals the parent colour as the visible outline,
+ *     and that outline DOES trace every diagonal because both
+ *     layers are polygons.
+ * ============================================================ */
+
+/* Squared: no rounded corners on the navbar pieces. */
+body.corner-squared .nav-tab,
+body.corner-squared .nav-tab-active,
+body.corner-squared .nav-primary form button,
+body.corner-squared #mobile-menu-button,
+body.corner-squared #mobile-menu a {
+    border-radius: 0 !important;
+}
+
+/* Octagonal: outer polygon = 8px button cut, parent supplies the
+   outline colour. The default outline is the subtle border colour
+   of the navbar separator. */
+body.corner-octagonal .nav-tab {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: var(--border-subtle) !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    ) !important;
+}
+
+/* Inner layer for nav-tabs: navbar background colour, slightly
+   smaller polygon, sits beneath the text. */
+body.corner-octagonal .nav-tab::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        calc(var(--oct-btn-cut) - 1px) 0,
+        calc(100% - (var(--oct-btn-cut) - 1px)) 0,
+        100% calc(var(--oct-btn-cut) - 1px),
+        100% calc(100% - (var(--oct-btn-cut) - 1px)),
+        calc(100% - (var(--oct-btn-cut) - 1px)) 100%,
+        calc(var(--oct-btn-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-btn-cut) - 1px)),
+        0 calc(var(--oct-btn-cut) - 1px)
+    );
+}
+
+/* Variant outline colours for the parent layer. The ::before stays
+   the same; only the parent's background-color changes, so the
+   outline takes the new colour while the interior stays neutral. */
+body.corner-octagonal .nav-tab:hover {
+    background-color: var(--border-default) !important;
+}
+body.corner-octagonal .nav-tab-active {
+    background-color: var(--primary-500) !important;
+}
+body.corner-octagonal .nav-tab.text-purple-400 {
+    background-color: rgb(168 85 247) !important;
+}
+
+/* Logout button uses the same two-layer pattern with a danger
+   tinted outline. */
+body.corner-octagonal .nav-primary form button {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: rgb(239 68 68 / 0.30) !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    ) !important;
+}
+body.corner-octagonal .nav-primary form button::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        calc(var(--oct-btn-cut) - 1px) 0,
+        calc(100% - (var(--oct-btn-cut) - 1px)) 0,
+        100% calc(var(--oct-btn-cut) - 1px),
+        100% calc(100% - (var(--oct-btn-cut) - 1px)),
+        calc(100% - (var(--oct-btn-cut) - 1px)) 100%,
+        calc(var(--oct-btn-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-btn-cut) - 1px)),
+        0 calc(var(--oct-btn-cut) - 1px)
+    );
+}
+body.corner-octagonal .nav-primary form button:hover {
+    background-color: rgb(239 68 68 / 0.50) !important;
+}
+
+/* Mobile menu hamburger button. Subtle outline only. */
+body.corner-octagonal #mobile-menu-button {
+    position: relative;
+    isolation: isolate;
+    border-radius: 0 !important;
+    border: none !important;
+    background-color: var(--border-subtle) !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    ) !important;
+}
+body.corner-octagonal #mobile-menu-button::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    background-color: var(--bg-elevated);
+    clip-path: polygon(
+        calc(var(--oct-btn-cut) - 1px) 0,
+        calc(100% - (var(--oct-btn-cut) - 1px)) 0,
+        100% calc(var(--oct-btn-cut) - 1px),
+        100% calc(100% - (var(--oct-btn-cut) - 1px)),
+        calc(100% - (var(--oct-btn-cut) - 1px)) 100%,
+        calc(var(--oct-btn-cut) - 1px) 100%,
+        0 calc(100% - (var(--oct-btn-cut) - 1px)),
+        0 calc(var(--oct-btn-cut) - 1px)
+    );
+}
+
+/* Mobile menu list items. */
+body.corner-squared #mobile-menu a {
+    border-radius: 0 !important;
+}
+body.corner-octagonal #mobile-menu a {
+    border-radius: 0 !important;
+    clip-path: polygon(
+        var(--oct-btn-cut) 0,
+        calc(100% - var(--oct-btn-cut)) 0,
+        100% var(--oct-btn-cut),
+        100% calc(100% - var(--oct-btn-cut)),
+        calc(100% - var(--oct-btn-cut)) 100%,
+        var(--oct-btn-cut) 100%,
+        0 calc(100% - var(--oct-btn-cut)),
+        0 var(--oct-btn-cut)
+    );
+}
+
+

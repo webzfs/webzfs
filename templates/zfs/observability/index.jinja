@@ -23,6 +23,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
             <h1 class="text-3xl font-bold text-text-primary mb-2">ZFS Observability Dashboard</h1>
+            <p class="text-text-secondary">Logs, events, performance metrics, and live ZFS monitoring</p>
         </div>
         <a href="/zfs/observability/download-all"
            class="btn-primary flex items-center gap-2"
@@ -48,8 +49,228 @@
     </div>
     {% endif %}
 
-    <!-- Quick Access Cards -->
+    {% set arc_total_hits = (arc_summary.get('mru_hits') or 0) + (arc_summary.get('mfu_hits') or 0) %}
+    {% set arc_mru_pct = (arc_summary.get('mru_hits') / arc_total_hits * 100) if arc_total_hits > 0 else 0 %}
+    {% set arc_mfu_pct = (arc_summary.get('mfu_hits') / arc_total_hits * 100) if arc_total_hits > 0 else 0 %}
+    {% set ghost_total = (arc_summary.get('mru_ghost_hits') or 0) + (arc_summary.get('mfu_ghost_hits') or 0) %}
+    {% set arc_misses = arc_summary.get('misses') or 0 %}
+    {% set ghost_rate = (ghost_total / arc_misses * 100) if arc_misses > 0 else 0 %}
+    {% set ghost_mru_pct = (arc_summary.get('mru_ghost_hits') / ghost_total * 100) if ghost_total > 0 else 0 %}
+    {% set ghost_mfu_pct = (arc_summary.get('mfu_ghost_hits') / ghost_total * 100) if ghost_total > 0 else 0 %}
+
+    <!--
+        Four rows of four cards. The grid layout is intentional and reads
+        from top-left to bottom-right by category:
+          Row 1 (Health):   ARC Hit Rate, Ghost Hit Rate, Disk Health,
+                            Pool Scrub Status
+          Row 2 (Inventory): Dataset Space Usage, Module Parameters,
+                             ZFS Processes, System I/O Statistics
+          Row 3 (Pool I/O):  Pool History, Pool Events, Pool I/O Stats,
+                             Per-VDEV I/O Stats
+          Row 4 (Logs):      Kernel Debug Log, System Log (Filtered),
+                             System Log (Full), Search Logs
+    -->
+
+    {# Pre-compute health and scrub variables once so we can use them in row order. #}
+    {% set has_health = latest_health is not none %}
+    {% set healthy_count = (latest_health.summary.healthy_disks | default(0)) if has_health else 0 %}
+    {% set warning_count = (latest_health.summary.warning_disks | default(0)) if has_health else 0 %}
+    {% set critical_count = (latest_health.summary.critical_disks | default(0)) if has_health else 0 %}
+    {% set scrub_color_class = 'text-success-400' %}
+    {% if scrub_known and scrub_overdue_count > 0 %}
+        {% set scrub_color_class = 'text-warning-400' %}
+    {% endif %}
+
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+
+        {# ============================================================== #}
+        {# Row 1: ARC Hit Rate, Ghost Hit Rate, Disk Health, Scrub Status   #}
+        {# ============================================================== #}
+
+        <a href="/zfs/observability/arc-summary" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-success-500/10 rounded-lg p-3 border border-success-500/20">
+                        <svg class="h-6 w-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4 min-w-0 flex-1">
+                        <p class="text-sm font-medium text-text-secondary">ARC Hit Rate</p>
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl font-semibold text-text-primary leading-none" id="arc-hit-rate-display">
+                                {% if arc_summary.get('hit_rate') is not none and arc_summary.get('hit_rate') %}
+                                    {{ "%.1f"|format(arc_summary.hit_rate) }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </span>
+                            <div class="text-xs text-text-tertiary leading-tight" id="arc-mru-mfu-display">
+                                {% if arc_total_hits > 0 %}
+                                    <div>MRU {{ "%.1f"|format(arc_mru_pct) }}%</div>
+                                    <div>MFU {{ "%.1f"|format(arc_mfu_pct) }}%</div>
+                                {% else %}
+                                    <div>MRU N/A</div>
+                                    <div>MFU N/A</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/zfs/observability/arc-summary" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-warning-500/10 rounded-lg p-3 border border-warning-500/20">
+                        <svg class="h-6 w-6 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4 min-w-0 flex-1">
+                        <p class="text-sm font-medium text-text-secondary">Ghost Hit Rate</p>
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl font-semibold text-text-primary leading-none" id="ghost-hit-rate-display">
+                                {% if arc_misses > 0 %}
+                                    {{ "%.1f"|format(ghost_rate) }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </span>
+                            <div class="text-xs text-text-tertiary leading-tight" id="ghost-mru-mfu-display">
+                                {% if ghost_total > 0 %}
+                                    <div>MRU {{ "%.1f"|format(ghost_mru_pct) }}%</div>
+                                    <div>MFU {{ "%.1f"|format(ghost_mfu_pct) }}%</div>
+                                {% else %}
+                                    <div>MRU N/A</div>
+                                    <div>MFU N/A</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% if has_health %}/utils/health/report/{{ latest_health.id }}{% else %}/utils/health{% endif %}"
+           class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1{% if not has_health %} opacity-50{% endif %}">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 {% if has_health %}bg-success-500/10 border-success-500/20{% else %}bg-bg-elevated-2 border-border-subtle{% endif %} rounded-lg p-3 border">
+                        <svg class="h-6 w-6 {% if has_health %}text-success-400{% else %}text-text-tertiary{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">Disk Health</p>
+                        <p class="text-lg font-semibold flex items-center gap-2 font-mono">
+                            <span class="text-success-400">H:{{ healthy_count }}</span>
+                            <span class="text-warning-400">W:{{ warning_count }}</span>
+                            <span class="text-danger-400">C:{{ critical_count }}</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/utils/scrub-scheduling"
+           class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1{% if not scrub_known %} opacity-50{% endif %}">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 {% if scrub_known and scrub_overdue_count > 0 %}bg-warning-500/10 border-warning-500/20{% elif scrub_known %}bg-success-500/10 border-success-500/20{% else %}bg-bg-elevated-2 border-border-subtle{% endif %} rounded-lg p-3 border">
+                        <svg class="h-6 w-6 {% if scrub_known and scrub_overdue_count > 0 %}text-warning-400{% elif scrub_known %}text-success-400{% else %}text-text-tertiary{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4 min-w-0 flex-1">
+                        <p class="text-sm font-medium text-text-secondary">Pool Scrub Status</p>
+                        {% if scrub_known %}
+                            <div class="flex items-center gap-2">
+                                <span class="text-2xl font-semibold {{ scrub_color_class }} leading-none">{{ scrub_overdue_count }}/{{ scrub_total_pools }}</span>
+                                <span class="text-xs text-text-tertiary leading-tight">not scrubbed<br/>in 30d</span>
+                            </div>
+                        {% else %}
+                            <p class="text-xs text-text-tertiary leading-tight">no pools detected</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        {# ============================================================== #}
+        {# Row 2: Dataset Space, Module Parameters, ZFS Processes, System IO #}
+        {# ============================================================== #}
+
+        <a href="/zfs/observability/dataset-space" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-success-500/10 rounded-lg p-3 border border-success-500/20">
+                        <svg class="h-6 w-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">Dataset Space Usage</p>
+                        <p class="text-lg font-semibold text-text-primary">View Usage</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/zfs/observability/module-parameters" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-info-500/10 rounded-lg p-3 border border-info-500/20">
+                        <svg class="h-6 w-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">Module Parameters</p>
+                        <p class="text-lg font-semibold text-text-primary">View Settings</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/zfs/observability/processes" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-purple-500/20 border border-purple-500/30 rounded-lg p-3">
+                        <svg class="h-6 w-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">ZFS Processes</p>
+                        <p class="text-lg font-semibold text-text-primary" id="process-count">{{ all_processes|length if all_processes else 'View' }}</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/zfs/observability/system-iostat" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-primary-500/10 rounded-lg p-3 border border-primary-500/20">
+                        <svg class="h-6 w-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">System I/O Statistics</p>
+                        <p class="text-lg font-semibold text-text-primary">Live Monitor</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        {# ============================================================== #}
+        {# Row 3: Pool History, Pool Events, Pool I/O Stats, Per-VDEV I/O   #}
+        {# ============================================================== #}
+
         <a href="/zfs/observability/pool-history" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
                 <div class="flex items-center">
@@ -60,7 +281,7 @@
                     </div>
                     <div class="ml-4">
                         <p class="text-sm font-medium text-text-secondary">Pool History</p>
-                        <p class="text-2xl font-semibold text-text-primary">{{ recent_history|length }}</p>
+                        <p class="text-lg font-semibold text-text-primary">View Commands</p>
                     </div>
                 </div>
             </div>
@@ -76,29 +297,91 @@
                     </div>
                     <div class="ml-4">
                         <p class="text-sm font-medium text-text-secondary">Pool Events</p>
-                        <p class="text-2xl font-semibold text-text-primary">{{ recent_events|length }}</p>
+                        <p class="text-lg font-semibold text-text-primary">View Events</p>
                     </div>
                 </div>
             </div>
         </a>
 
-        <a href="/zfs/observability/arc-summary" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+        <a href="/zfs/observability/pool-iostat" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
                 <div class="flex items-center">
-                    <div class="flex-shrink-0 bg-success-500/10 rounded-lg p-3 border border-success-500/20">
-                        <svg class="h-6 w-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    <div class="flex-shrink-0 bg-primary-500/20 border border-primary-500/30 rounded-lg p-3">
+                        <svg class="h-6 w-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 8 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                         </svg>
                     </div>
                     <div class="ml-4">
-                        <p class="text-sm font-medium text-text-secondary">ARC Hit Rate</p>
-                        <p class="text-2xl font-semibold text-text-primary">
-                            {% if arc_summary.get('hit_rate') %}
-                                {{ "%.1f"|format(arc_summary.hit_rate) }}%
-                            {% else %}
-                                N/A
-                            {% endif %}
-                        </p>
+                        <p class="text-sm font-medium text-text-secondary">Pool I/O Stats</p>
+                        <p class="text-lg font-semibold text-text-primary">Live Monitor</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/zfs/observability/vdev-stats" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-info-500/20 border border-info-500/30 rounded-lg p-3">
+                        <svg class="h-6 w-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">Per-VDEV I/O Stats</p>
+                        <p class="text-lg font-semibold text-text-primary">Live Monitor</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        {# ============================================================== #}
+        {# Row 4: Kernel Debug Log, Syslog (filter), Syslog (full), Search  #}
+        {# ============================================================== #}
+
+        <a href="/zfs/observability/kernel-log" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-info-500/10 rounded-lg p-3 border border-info-500/20">
+                        <svg class="h-6 w-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">Kernel Debug Log</p>
+                        <p class="text-lg font-semibold text-text-primary">View Log</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/zfs/observability/syslog" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-info-500/10 rounded-lg p-3 border border-info-500/20">
+                        <svg class="h-6 w-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">System Log</p>
+                        <p class="text-lg font-semibold text-text-primary">ZFS Filtered</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <a href="/zfs/observability/syslog-full" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+            <div class="card-body">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-info-500/10 rounded-lg p-3 border border-info-500/20">
+                        <svg class="h-6 w-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-text-secondary">System Log</p>
+                        <p class="text-lg font-semibold text-text-primary">Full Log</p>
                     </div>
                 </div>
             </div>
@@ -114,7 +397,7 @@
                     </div>
                     <div class="ml-4">
                         <p class="text-sm font-medium text-text-secondary">Search Logs</p>
-                        <p class="text-2xl font-semibold text-text-primary">All</p>
+                        <p class="text-lg font-semibold text-text-primary">All Sources</p>
                     </div>
                 </div>
             </div>
@@ -155,152 +438,97 @@
         </div>
     </div>
 
-    <!-- Recent Pool Events (loaded via HTMX for performance) -->
-    <div class="card mb-8">
-        <div class="px-6 py-4 border-b border-border-subtle">
-            <div class="flex justify-between items-center">
-                <h2 class="text-xl font-semibold text-text-primary flex items-center gap-2">
-                    <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                    </svg>
-                    Recent Pool Events
-                </h2>
-                <a href="/zfs/observability/pool-events" class="text-primary-400 hover:text-primary-300 text-sm font-medium transition-colors flex items-center gap-1">
-                    View All
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                </a>
-            </div>
-        </div>
-        <div class="p-6">
-            <div class="overflow-x-auto"
-                 hx-get="/zfs/observability/recent-events-partial"
-                 hx-trigger="load"
-                 hx-swap="innerHTML">
-                <div class="flex items-center justify-center py-8">
-                    <svg class="animate-spin h-8 w-8 text-warning-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span class="ml-3 text-text-secondary">Loading events...</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Additional Resources Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- More Log Sources -->
-        <div class="card">
-            <div class="px-6 py-4 border-b border-border-subtle">
-                <h3 class="text-lg font-semibold text-text-primary flex items-center gap-2">
-                    <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    More Log Sources
-                </h3>
-            </div>
-            <div class="p-6">
-                <ul class="space-y-3">
-                    <li>
-                        <a href="/zfs/observability/kernel-log" class="flex items-center text-primary-400 hover:text-primary-300 transition-colors group">
-                            <svg class="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                            Kernel Debug Log
-                        </a>
-                    </li>
-                    <li>
-                        <a href="/zfs/observability/syslog" class="flex items-center text-primary-400 hover:text-primary-300 transition-colors group">
-                            <svg class="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                            System Log (ZFS filtered)
-                        </a>
-                    </li>
-                    <li>
-                        <a href="/zfs/observability/syslog-full" class="flex items-center text-primary-400 hover:text-primary-300 transition-colors group">
-                            <svg class="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                            System Log (Full)
-                        </a>
-                    </li>
-                    <li>
-                        <a href="/zfs/observability/module-parameters" class="flex items-center text-primary-400 hover:text-primary-300 transition-colors group">
-                            <svg class="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                            Module Parameters
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- ARC Statistics -->
-        <div class="card">
-            <div class="px-6 py-4 border-b border-border-subtle">
-                <h3 class="text-lg font-semibold text-text-primary flex items-center gap-2">
-                    <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                    </svg>
-                    ARC Statistics
-                </h3>
-            </div>
-            <div class="p-6">
-                {% if arc_summary and arc_summary.get('size_human') and not arc_summary.get('error') %}
-                <dl class="space-y-3">
-                    <div class="flex justify-between items-center py-2 border-b border-border-subtle">
-                        <dt class="text-text-secondary">Current Size:</dt>
-                        <dd class="font-semibold text-text-primary">{{ arc_summary.size_human }}</dd>
-                    </div>
-                    <div class="flex justify-between items-center py-2 border-b border-border-subtle">
-                        <dt class="text-text-secondary">Max Size:</dt>
-                        <dd class="font-semibold text-text-primary">{{ arc_summary.c_max_human }}</dd>
-                    </div>
-                    {% if arc_summary.get('hit_rate') is not none %}
-                    <div class="flex justify-between items-center py-2">
-                        <dt class="text-text-secondary">Hit Rate:</dt>
-                        <dd class="font-semibold {% if arc_summary.hit_rate >= 80 %}text-success-400{% elif arc_summary.hit_rate >= 60 %}text-warning-400{% else %}text-danger-400{% endif %}">
-                            {{ "%.2f"|format(arc_summary.hit_rate) }}%
-                        </dd>
-                    </div>
-                    {% endif %}
-                </dl>
-                <div class="mt-4">
-                    <a href="/zfs/observability/arc-summary" class="text-primary-400 hover:text-primary-300 text-sm font-medium transition-colors flex items-center gap-1">
-                        View Detailed Statistics
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                    </a>
-                </div>
-                {% else %}
-                <div class="text-center py-4">
-                    <svg class="w-12 h-12 mx-auto text-text-tertiary mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <p class="text-text-secondary text-sm">
-                        {% if arc_summary.get('error') %}
-                            Error: {{ arc_summary.error }}
-                        {% else %}
-                            ARC statistics not available
-                        {% endif %}
-                    </p>
-                </div>
-                <div class="mt-4">
-                    <a href="/zfs/observability/arc-summary" class="text-primary-400 hover:text-primary-300 text-sm font-medium transition-colors flex items-center gap-1">
-                        View ARC Page
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                    </a>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
 </div>
+
+<script>
+    // Auto-refresh active processes table every 5 seconds
+    let autoRefreshActiveProcesses = true;
+    let refreshTimer;
+
+    async function refreshActiveProcesses() {
+        try {
+            // Update only the process count shown on the ZFS Processes card.
+            // The full process table is no longer rendered on this page; users
+            // can click the card to open the dedicated processes page.
+            const response = await fetch('/zfs/observability/api/processes');
+            if (response.ok) {
+                const data = await response.json();
+                const allProcesses = data.processes || [];
+                const countEl = document.getElementById('process-count');
+                if (countEl) countEl.textContent = allProcesses.length;
+            }
+
+            // Refresh ARC hit rate, MRU/MFU split, and Ghost Hit Rate displays
+            const arcResponse = await fetch('/zfs/observability/api/arc-stats');
+            if (arcResponse.ok) {
+                const arcData = await arcResponse.json();
+
+                const arcEl = document.getElementById('arc-hit-rate-display');
+                if (arcEl && arcData.hit_rate !== undefined && arcData.hit_rate !== null) {
+                    arcEl.textContent = arcData.hit_rate.toFixed(1) + '%';
+                }
+
+                const mruHits = Number(arcData.mru_hits || 0);
+                const mfuHits = Number(arcData.mfu_hits || 0);
+                const totalHits = mruHits + mfuHits;
+                const arcMruMfuEl = document.getElementById('arc-mru-mfu-display');
+                if (arcMruMfuEl) {
+                    if (totalHits > 0) {
+                        const mruPct = (mruHits / totalHits) * 100;
+                        const mfuPct = (mfuHits / totalHits) * 100;
+                        arcMruMfuEl.innerHTML = `<div>MRU ${mruPct.toFixed(1)}%</div><div>MFU ${mfuPct.toFixed(1)}%</div>`;
+                    } else {
+                        arcMruMfuEl.innerHTML = '<div>MRU N/A</div><div>MFU N/A</div>';
+                    }
+                }
+
+                const mruGhost = Number(arcData.mru_ghost_hits || 0);
+                const mfuGhost = Number(arcData.mfu_ghost_hits || 0);
+                const ghostTotal = mruGhost + mfuGhost;
+                const misses = Number(arcData.misses || 0);
+                const ghostRateEl = document.getElementById('ghost-hit-rate-display');
+                if (ghostRateEl) {
+                    if (misses > 0) {
+                        const rate = (ghostTotal / misses) * 100;
+                        ghostRateEl.textContent = rate.toFixed(1) + '%';
+                    } else {
+                        ghostRateEl.textContent = 'N/A';
+                    }
+                }
+                const ghostMruMfuEl = document.getElementById('ghost-mru-mfu-display');
+                if (ghostMruMfuEl) {
+                    if (ghostTotal > 0) {
+                        const mruPct = (mruGhost / ghostTotal) * 100;
+                        const mfuPct = (mfuGhost / ghostTotal) * 100;
+                        ghostMruMfuEl.innerHTML = `<div>MRU ${mruPct.toFixed(1)}%</div><div>MFU ${mfuPct.toFixed(1)}%</div>`;
+                    } else {
+                        ghostMruMfuEl.innerHTML = '<div>MRU N/A</div><div>MFU N/A</div>';
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error refreshing observability stats:', err);
+        }
+    }
+
+    function startRefreshTimer() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(refreshActiveProcesses, 5000);
+    }
+
+    if (autoRefreshActiveProcesses) startRefreshTimer();
+
+    // Pause when tab is hidden
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            if (refreshTimer) clearInterval(refreshTimer);
+        } else if (autoRefreshActiveProcesses) {
+            startRefreshTimer();
+        }
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (refreshTimer) clearInterval(refreshTimer);
+    });
+</script>
 {% endblock %}
