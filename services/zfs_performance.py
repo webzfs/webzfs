@@ -377,12 +377,17 @@ class ZFSPerformanceService:
         try:
             # -a all, -x include processes without a controlling terminal,
             # -w wide output (no truncation), -H show kernel threads.
-            # comm= with trailing equals suppresses the header, giving us a
-            # clean unpadded final column.
+            #
+            # Note on -o: BSD ps treats `colname=label` as a single column
+            # with a custom label that runs to the end of the argument
+            # token. So `pid=,user=,...` would be parsed as ONE column
+            # named pid with the label ",user=,...". We therefore use
+            # plain comma-separated column names (no `=`) and skip the
+            # header row in code below.
             result = subprocess.run(
                 [
                     'ps', '-axwH',
-                    '-o', 'pid=,user=,pcpu=,pmem=,stat=,comm=',
+                    '-o', 'pid,user,pcpu,pmem,stat,comm',
                 ],
                 capture_output=True,
                 text=True,
@@ -390,7 +395,7 @@ class ZFSPerformanceService:
                 timeout=10,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
-                FileNotFoundError) as e:
+                FileNotFoundError):
             # Fall back to psutil view (which only sees the parent procs)
             # so the page still renders something rather than failing hard.
             return self._get_zfs_processes_psutil()
@@ -408,6 +413,8 @@ class ZFSPerformanceService:
 
             pid_str, user, pcpu_str, pmem_str, stat, comm = parts
 
+            # Skip the header row that ps emits as the first line
+            # ("PID USER %CPU %MEM STAT COMMAND" or similar)
             try:
                 pid = int(pid_str)
             except ValueError:

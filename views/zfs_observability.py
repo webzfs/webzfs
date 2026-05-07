@@ -435,47 +435,102 @@ async def syslog_full(
     lines: int = 1000,
     severity: Optional[str] = None
 ):
-    """Display full unfiltered syslog entries"""
+    """Display full unfiltered syslog entries.
+
+    Source selection by platform:
+      - Linux: journalctl (systemd) -> dmesg -T fallback
+      - FreeBSD/NetBSD: /var/log/messages -> dmesg fallback (no -T flag)
+    """
     try:
-        # Get unfiltered syslog by calling get_syslog_zfs without ZFS filtering
         import subprocess
-        
-        cmd = ['journalctl', '-n', str(lines), '--no-pager']
-        
-        if severity:
-            priority_map = {
-                'error': 'err',
-                'warning': 'warning',
-                'info': 'info'
-            }
-            if severity.lower() in priority_map:
-                cmd.extend(['-p', priority_map[severity.lower()]])
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        
-        syslog_entries = []
-        if result.returncode == 0:
-            for line in result.stdout.split('\n'):
-                if line.strip():
-                    syslog_entries.append({'message': line.strip()})
+        from services.utils import is_freebsd, is_netbsd
+
+        syslog_entries: list = []
+
+        if is_freebsd() or is_netbsd():
+            # BSD: prefer /var/log/messages (full system log, all daemons),
+            # fall back to dmesg (kernel ring buffer) if missing/unreadable.
+            messages_path = '/var/log/messages'
+            try:
+                # tail -n N gives us the most recent N lines without
+                # slurping a multi-MB log into Python memory.
+                result = subprocess.run(
+                    ['tail', '-n', str(lines), messages_path],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            syslog_entries.append({'message': line.strip()})
+            except FileNotFoundError:
+                # tail itself missing (extremely unlikely)
+                pass
+
+            if not syslog_entries:
+                # Fall back to dmesg. BSD dmesg does not support -T.
+                try:
+                    result = subprocess.run(
+                        ['dmesg'],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n')[-lines:]:
+                            if line.strip():
+                                syslog_entries.append(
+                                    {'message': line.strip()}
+                                )
+                except FileNotFoundError:
+                    pass
         else:
-            # Fallback to dmesg
-            result = subprocess.run(
-                ['dmesg', '-T'],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            if result.returncode == 0:
-                for line in result.stdout.split('\n')[-lines:]:
-                    if line.strip():
-                        syslog_entries.append({'message': line.strip()})
-        
+            # Linux: try journalctl first, fall back to dmesg -T.
+            cmd = ['journalctl', '-n', str(lines), '--no-pager']
+
+            if severity:
+                priority_map = {
+                    'error': 'err',
+                    'warning': 'warning',
+                    'info': 'info',
+                }
+                if severity.lower() in priority_map:
+                    cmd.extend(['-p', priority_map[severity.lower()]])
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            syslog_entries.append({'message': line.strip()})
+            except FileNotFoundError:
+                # journalctl not installed (e.g. non-systemd Linux)
+                pass
+
+            if not syslog_entries:
+                # Fall back to dmesg with timestamps
+                try:
+                    result = subprocess.run(
+                        ['dmesg', '-T'],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n')[-lines:]:
+                            if line.strip():
+                                syslog_entries.append(
+                                    {'message': line.strip()}
+                                )
+                except FileNotFoundError:
+                    pass
+
         return templates.TemplateResponse(
             "zfs/observability/syslog.jinja",
             {
