@@ -1,0 +1,167 @@
+{# Fleet pools partial - displays summary stats, sort toggle, and all pools
+   (local + remote) in dashboard format.
+   Each pool dict has a 'server_name' field. Display name is "pool - server". #}
+
+{# Summary Stats Row - matches pool detail page badge style #}
+{% if summary %}
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+    <div class="card text-center">
+        <div class="text-text-tertiary text-xs uppercase mb-1">Total Size</div>
+        <div class="text-text-primary text-xl font-bold">{{ summary.total_size }}</div>
+    </div>
+    <div class="card text-center">
+        <div class="text-text-tertiary text-xs uppercase mb-1">Total Used</div>
+        <div class="text-text-primary text-xl font-bold">{{ summary.total_used }}</div>
+    </div>
+    <div class="card text-center">
+        <div class="text-text-tertiary text-xs uppercase mb-1">Total Available</div>
+        <div class="text-text-primary text-xl font-bold">{{ summary.total_avail }}</div>
+    </div>
+    <div class="card text-center">
+        <div class="text-text-tertiary text-xs uppercase mb-1">Total Disks</div>
+        <div class="text-text-primary text-xl font-bold">{{ summary.total_disks }}</div>
+    </div>
+    <div class="card text-center">
+        <div class="text-text-tertiary text-xs uppercase mb-1">Systems</div>
+        <div class="text-text-primary text-xl font-bold">{{ summary.system_count }}</div>
+    </div>
+</div>
+{% endif %}
+
+{# Sort Toggle #}
+<div class="flex items-center gap-2 mb-4 text-sm">
+    <span class="text-text-tertiary">Sort by:</span>
+    <button hx-get="/fleet/pools/data?sort=name"
+            hx-target="#fleet-pools-content"
+            hx-swap="innerHTML"
+            hx-indicator="#fleet-pools-spinner"
+            class="px-2.5 py-1 rounded text-xs font-medium transition-colors
+                   {% if sort_by == 'name' or not sort_by %}bg-primary-500/20 text-primary-400 border border-primary-500/30{% else %}bg-bg-elevated-2 text-text-secondary border border-border-subtle hover:text-text-primary{% endif %}">
+        Pool Name
+    </button>
+    <button hx-get="/fleet/pools/data?sort=total"
+            hx-target="#fleet-pools-content"
+            hx-swap="innerHTML"
+            hx-indicator="#fleet-pools-spinner"
+            class="px-2.5 py-1 rounded text-xs font-medium transition-colors
+                   {% if sort_by == 'total' %}bg-primary-500/20 text-primary-400 border border-primary-500/30{% else %}bg-bg-elevated-2 text-text-secondary border border-border-subtle hover:text-text-primary{% endif %}">
+        Total Space
+    </button>
+    <button hx-get="/fleet/pools/data?sort=used"
+            hx-target="#fleet-pools-content"
+            hx-swap="innerHTML"
+            hx-indicator="#fleet-pools-spinner"
+            class="px-2.5 py-1 rounded text-xs font-medium transition-colors
+                   {% if sort_by == 'used' %}bg-primary-500/20 text-primary-400 border border-primary-500/30{% else %}bg-bg-elevated-2 text-text-secondary border border-border-subtle hover:text-text-primary{% endif %}">
+        Used Space
+    </button>
+    <button hx-get="/fleet/pools/data?sort=avail"
+            hx-target="#fleet-pools-content"
+            hx-swap="innerHTML"
+            hx-indicator="#fleet-pools-spinner"
+            class="px-2.5 py-1 rounded text-xs font-medium transition-colors
+                   {% if sort_by == 'avail' %}bg-primary-500/20 text-primary-400 border border-primary-500/30{% else %}bg-bg-elevated-2 text-text-secondary border border-border-subtle hover:text-text-primary{% endif %}">
+        Available Space
+    </button>
+    <span class="ml-2 text-text-tertiary text-xs italic">Changing sort order re-polls all servers and may take a few seconds.</span>
+</div>
+
+{# Pool List #}
+{% if pools and pools|length > 0 %}
+<div class="space-y-3">
+    {% for pool in pools %}
+    {% set health = pool.health|default('UNKNOWN') %}
+    {% set is_degraded = health == 'DEGRADED' %}
+    {% set is_faulted = health in ('FAULTED', 'UNAVAIL', 'REMOVED', 'SUSPENDED') %}
+    {% set is_healthy = health == 'ONLINE' %}
+    {% set cap_pct = pool.cap|default('0%')|replace('%', '')|float %}
+
+    <div class="bg-bg-elevated rounded-lg p-4
+        {% if is_faulted %} pulse-border-danger
+        {% elif is_degraded %} pulse-border-warning
+        {% else %} border border-border-subtle
+        {% endif %}">
+
+        {# Line 1: Pool name - Server | Size info | BAR | Health badge #}
+        <div class="flex items-center gap-4 flex-wrap">
+            <!-- Pool name - Server -->
+            <span class="text-primary-400 font-semibold text-sm whitespace-nowrap min-w-[80px] cursor-default"
+                  title="{{ pool.server_name|default('Unknown server') }}">
+                {{ pool.name }} - {{ pool.server_name|default('Unknown') }}
+            </span>
+
+            <!-- Used / Avail / Total / Cap -->
+            <div class="flex gap-4 text-xs text-text-secondary">
+                <span>Used: <span class="text-text-primary font-medium">{{ pool.used|default(pool.alloc)|default('?') }}</span></span>
+                <span>Avail: <span class="text-text-primary font-medium">{{ pool.avail|default(pool.free)|default('?') }}</span></span>
+                <span>Total: <span class="text-text-primary font-medium">{{ pool.total|default(pool.size)|default('?') }}</span></span>
+                <span>Cap: <span class="font-medium {% if cap_pct >= 90 %}text-danger-400{% elif cap_pct >= 80 %}text-warning-400{% else %}text-text-primary{% endif %}">{{ pool.cap|default('?') }}</span></span>
+            </div>
+
+            <!-- Capacity bar -->
+            <div class="flex-1 min-w-[200px]">
+                <div class="w-full h-3 bg-bg-elevated-3 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-300
+                        {% if cap_pct >= 90 %} bg-danger-500
+                        {% elif cap_pct >= 80 %} bg-warning-500
+                        {% else %} bg-success-500
+                        {% endif %}"
+                        style="width: {{ cap_pct }}%"></div>
+                </div>
+            </div>
+
+            <!-- Health badge -->
+            <span class="px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap
+                {% if is_healthy %} bg-success-500/20 text-success-400
+                {% elif is_degraded %} bg-warning-500/20 text-warning-400
+                {% elif is_faulted %} bg-danger-500/20 text-danger-400
+                {% else %} bg-bg-elevated-3 text-text-secondary
+                {% endif %}">
+                {{ health }}
+            </span>
+        </div>
+
+        {# Line 2: Extended details - datasets, snapshots, vdevs, disks, errors #}
+        <div class="flex items-center gap-4 mt-2 pt-2 border-t border-border-subtle text-xs text-text-secondary flex-wrap">
+            <span title="Datasets">
+                <svg class="w-3.5 h-3.5 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                <span class="text-text-primary font-medium">{{ pool.dataset_count|default(0) }}</span> datasets
+            </span>
+            <span title="Snapshots">
+                <svg class="w-3.5 h-3.5 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span class="text-text-primary font-medium">{{ pool.snapshot_count|default(0) }}</span> snapshots
+            </span>
+            <span title="Virtual devices">
+                <svg class="w-3.5 h-3.5 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                <span class="text-text-primary font-medium">{{ pool.vdev_count|default(0) }}</span> vdevs
+            </span>
+            <span title="Physical disks">
+                <svg class="w-3.5 h-3.5 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+                <span class="text-text-primary font-medium">{{ pool.disk_count|default(0) }}</span> disks
+            </span>
+
+            <span class="ml-auto"></span>
+
+            <!-- Error counts -->
+            <span class="text-text-tertiary font-medium">Errors:</span>
+            <span title="Read errors" class="{% if pool.read_errors|default(0) > 0 %}text-danger-400 font-medium{% endif %}">
+                Read: {{ pool.read_errors|default(0) }}
+            </span>
+            <span title="Write errors" class="{% if pool.write_errors|default(0) > 0 %}text-danger-400 font-medium{% endif %}">
+                Write: {{ pool.write_errors|default(0) }}
+            </span>
+            <span title="Checksum errors" class="{% if pool.cksum_errors|default(0) > 0 %}text-danger-400 font-medium{% endif %}">
+                Cksum: {{ pool.cksum_errors|default(0) }}
+            </span>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-8 text-text-tertiary">
+    <svg class="mx-auto h-10 w-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+    </svg>
+    <p>No ZFS pools found</p>
+</div>
+{% endif %}

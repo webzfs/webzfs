@@ -258,7 +258,12 @@
         </div>
         <svg id="fleet-viz-svg" class="block w-full" style="display:none;" preserveAspectRatio="none"></svg>
       </div>
+      <div id="fleet-viz-tooltip"
+           class="hidden absolute z-30 bg-bg-elevated-2 border border-border-subtle rounded-lg shadow-lg px-3 py-2 text-xs text-text-primary pointer-events-none"
+           style="position: fixed; max-width: 320px;">
+      </div>
       <p class="text-xs text-text-tertiary mt-3">
+
         Each row is one level of dataset depth. Segment width is proportional to space used relative to the parent.
         Click a segment to drill in. The visualization shows up to four levels.
       </p>
@@ -266,11 +271,8 @@
   </div>
 </div>
 
-{# Floating tooltip lives outside the modal panel so it can position
-   anywhere over the document. #}
-<div id="fleet-viz-tooltip"
-     class="hidden fixed z-[60] bg-bg-elevated-2 border border-border-subtle rounded-lg shadow-lg px-3 py-2 text-xs text-text-primary pointer-events-none"
-     style="max-width: 320px;"></div>
+
+
 
 <script src="/static/js/space_visualizer.js"></script>
 <script>
@@ -278,7 +280,7 @@
     "use strict";
 
     var modal = document.getElementById("fleet-viz-modal");
-    if (!modal || !window.WebzfsSpaceVisualizer) return;
+    if (!modal) return;
 
     var titleEl = document.getElementById("fleet-viz-title");
     var subtitleEl = document.getElementById("fleet-viz-subtitle");
@@ -295,6 +297,50 @@
     var currentViz = null;
     var currentServerId = null;
     var currentPool = null;
+
+    // The page body uses hx-boost="true", so navigations into /fleet/
+    // happen via an htmx XHR + body-swap rather than a real page load.
+    // When htmx evaluates the swapped scripts in order, it creates a new
+    // <script src="space_visualizer.js"> element and appends it (which
+    // loads asynchronously) and then immediately creates and appends
+    // this inline <script> element which executes synchronously. The
+    // result is that on a boosted navigation window.WebzfsSpaceVisualizer
+    // is frequently still undefined when this IIFE runs. Previously we
+    // bailed out via `if (!window.WebzfsSpaceVisualizer) return;` which
+    // meant the document-level click handler for the visualize buttons
+    // never got attached, and clicks landed on dead space until some
+    // unrelated body swap re-ran this script with the global defined.
+    //
+    // Fix: always wire up the click / close / Escape listeners, and
+    // wait for the external library to finish loading inside the
+    // click handler instead. The hover highlight comes from CSS so it
+    // is unaffected; only the click path needed to be made tolerant
+    // of the external script still being in flight.
+    function whenVisualizerReady(callback) {
+        if (window.WebzfsSpaceVisualizer) {
+            callback();
+            return;
+        }
+        var attempts = 0;
+        var timer = setInterval(function() {
+            attempts += 1;
+            if (window.WebzfsSpaceVisualizer) {
+                clearInterval(timer);
+                callback();
+            } else if (attempts > 60) {
+                // ~3 seconds is plenty for a cached static asset.
+                clearInterval(timer);
+                if (loadingEl) {
+                    loadingEl.textContent = "Failed to load visualizer script.";
+                }
+                console.error(
+                    "space_visualizer.js did not load in time; "
+                    + "the dataset visualizer cannot open."
+                );
+            }
+        }, 50);
+    }
+
 
     function openModal() {
         modal.style.display = "flex";
@@ -374,35 +420,49 @@
         }
         svg.style.display = "none";
 
-        // Recreate the visualizer each time so view stack resets.
-        if (currentViz && currentViz.destroy) {
-            currentViz.destroy();
-        }
-        currentViz = window.WebzfsSpaceVisualizer.create({
-            container: container,
-            svg: svg,
-            loadingEl: loadingEl,
-            tooltip: tooltipEl,
-            breadcrumb: breadcrumbEl,
-            backButton: backBtn,
-            snapshotToggle: snapshotToggle,
-            collapseFreeToggle: collapseFreeToggle,
-            maxDepth: 4,
-            fetchTree: buildFetcher(serverId, poolName)
-        });
-
-        // Auto-refresh the server first so the SSH session is healthy
-        // and the pool list is current before the visualizer fetches
-        // the dataset tree.
-        refreshServer(serverId).then(function() {
+        // Wait for the external visualizer script to finish loading
+        // before instantiating it. On a boosted nav into /fleet/ this
+        // typically resolves on the very first tick because the asset
+        // is cached.
+        whenVisualizerReady(function() {
             if (currentServerId !== serverId || currentPool !== poolName) {
-                // User closed or switched pools while the refresh was
-                // in flight; do not stomp the new state.
+                // User closed or switched pools while we were waiting
+                // for the script to load.
                 return;
             }
-            currentViz.load();
+            // Recreate the visualizer each time so view stack resets.
+            if (currentViz && currentViz.destroy) {
+                currentViz.destroy();
+            }
+            currentViz = window.WebzfsSpaceVisualizer.create({
+                container: container,
+                svg: svg,
+                loadingEl: loadingEl,
+                tooltip: tooltipEl,
+                breadcrumb: breadcrumbEl,
+                backButton: backBtn,
+                snapshotToggle: snapshotToggle,
+                collapseFreeToggle: collapseFreeToggle,
+                maxDepth: 4,
+                fetchTree: buildFetcher(serverId, poolName)
+            });
+
+            // Auto-refresh the server first so the SSH session is
+            // healthy and the pool list is current before the
+            // visualizer fetches the dataset tree.
+            refreshServer(serverId).then(function() {
+                if (currentServerId !== serverId || currentPool !== poolName) {
+                    // User closed or switched pools while the refresh
+                    // was in flight; do not stomp the new state.
+                    return;
+                }
+                if (currentViz) {
+                    currentViz.load();
+                }
+            });
         });
     }
+
 
     document.addEventListener("click", function(ev) {
         var btn = ev.target.closest("[data-fleet-viz-pool]");

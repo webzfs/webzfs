@@ -2,6 +2,8 @@
 Fleet Monitoring Views
 Web interface for monitoring remote ZFS servers
 """
+import logging
+
 from fastapi import APIRouter, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from config.templates import templates
@@ -9,6 +11,8 @@ from auth.dependencies import get_current_user
 from services.fleet_monitoring import FleetMonitoringService
 from services.ssh_connection import SSHConnectionService
 from typing import Optional, Annotated
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fleet", tags=["fleet"], dependencies=[Depends(get_current_user)])
 fleet_service = FleetMonitoringService()
@@ -293,3 +297,120 @@ async def get_pool_space_tree(request: Request, server_id: str, pool_name: str):
             {"success": False, "error": str(e)},
             status_code=500,
         )
+
+
+# ---------------------------------------------------------------------------
+# Fleet Pools - aggregated view of all pools (local + remote)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pools", response_class=HTMLResponse)
+async def fleet_pools_page(request: Request):
+    """
+    Fleet pools page shell. Renders immediately with a loading spinner.
+    Pool data loads asynchronously via HTMX from /fleet/pools/data.
+    """
+    return templates.TemplateResponse(
+        "fleet/pools.jinja",
+        {
+            "request": request,
+            "active_page": "fleet",
+        }
+    )
+
+
+@router.get("/pools/data", response_class=HTMLResponse)
+async def fleet_pools_data(request: Request):
+    """
+    HTMX endpoint that gathers all pools from local server and remote
+    fleet servers, merges them into a single sorted list, and returns
+    the pool display partial with summary stats.
+
+    Each pool dict includes a 'server_name' field used in the display
+    name shown as "pool_name - server_name".
+
+    Accepts an optional 'sort' query parameter:
+      name (default), total, used, avail
+    """
+    import socket
+
+    all_pools = []
+    server_count = 0
+
+    # Gather local pools
+    try:
+        from services.dashboard import get_pool_info_extended
+        local_pools = get_pool_info_extended()
+        local_hostname = socket.gethostname()
+        for pool in local_pools:
+            pool["server_name"] = local_hostname + " (local)"
+            all_pools.append(pool)
+        server_count += 1
+    except Exception as exc:
+        logger.error(f"Failed to get local pools for fleet pools view: {exc}")
+
+    # Gather remote server pools
+    servers = fleet_service.list_servers()
+    for server in servers:
+        try:
+            remote_pools = fleet_service.fetch_server_pools_extended(server["id"])
+            for pool in remote_pools:
+                pool["server_name"] = server["name"]
+                all_pools.append(pool)
+            server_count += 1
+        except Exception as exc:
+            logger.error(
+                f"Failed to get pools from fleet server {server['name']}: {exc}"
+            )
+
+    # Compute summary stats
+    total_size_bytes = sum(p.get("total_bytes", 0) for p in all_pools)
+    total_used_bytes = sum(p.get("used_bytes", 0) for p in all_pools)
+    total_avail_bytes = sum(p.get("avail_bytes", 0) for p in all_pools)
+    total_disks = sum(p.get("disk_count", 0) for p in all_pools)
+
+    def format_bytes_human(val: int) -> str:
+        """Format bytes to human-readable string."""
+        if val == 0:
+            return "0B"
+        units = ["B", "K", "M", "G", "T", "P"]
+        idx = 0
+        fval = float(val)
+        while fval >= 1024 and idx < len(units) - 1:
+            fval /= 1024
+            idx += 1
+        if fval >= 100:
+            return f"{int(fval)}{units[idx]}"
+        elif fval >= 10:
+            return f"{fval:.1f}{units[idx]}"
+        else:
+            return f"{fval:.2f}{units[idx]}"
+
+    summary = {
+        "total_size": format_bytes_human(total_size_bytes),
+        "total_used": format_bytes_human(total_used_bytes),
+        "total_avail": format_bytes_human(total_avail_bytes),
+        "total_disks": total_disks,
+        "system_count": server_count,
+    }
+
+    # Sort pools based on query parameter
+    sort_by = request.query_params.get("sort", "name")
+    if sort_by == "total":
+        all_pools.sort(key=lambda p: p.get("total_bytes", 0), reverse=True)
+    elif sort_by == "used":
+        all_pools.sort(key=lambda p: p.get("used_bytes", 0), reverse=True)
+    elif sort_by == "avail":
+        all_pools.sort(key=lambda p: p.get("avail_bytes", 0), reverse=True)
+    else:
+        all_pools.sort(key=lambda p: p.get("name", "").lower())
+
+    return templates.TemplateResponse(
+        "fleet/partials/all_pools.jinja",
+        {
+            "request": request,
+            "pools": all_pools,
+            "summary": summary,
+            "sort_by": sort_by,
+        }
+    )
