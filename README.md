@@ -2,7 +2,7 @@
 
 A modern web-based management interface for ZFS pools, datasets, snapshots, and SMART disk monitoring built with Python FastAPI and HTMX.
 
-![webzfs dashboard](screenshots/0.70/dashboard-v0.70.jpg)
+![webzfs dashboard](screenshots/0.74/dashboard-v0.74.jpg)
 
 ***
 # Disclaimer
