@@ -350,24 +350,37 @@ async def clear_events(request: Request, pool: Optional[str] = Form(None)):
 async def kernel_debug_log(
     request: Request,
     lines: int = 1000,
-    filter: Optional[str] = None
+    filter: Optional[str] = None,
+    search: Optional[str] = None,
 ):
-    """Display ZFS kernel debug log"""
+    """Display ZFS kernel debug log.
+
+    `filter` is the existing regex filter applied at read time by the
+    service layer. `search` is an additional case-insensitive substring
+    filter applied to the returned lines.
+    """
     import platform
     from services.utils import is_freebsd, is_netbsd
-    
+
     # Determine the appropriate source description based on platform
     if is_freebsd() or is_netbsd():
         debug_source = "sysctl kstat.zfs.misc.dbgmsg"
     else:
         debug_source = "/proc/spl/kstat/zfs/dbgmsg"
-    
+
     try:
         log_lines = observability_service.get_kernel_debug_log(
             lines=lines,
             filter_pattern=filter
         )
-        
+
+        if search:
+            needle = search.lower()
+            log_lines = [
+                line for line in log_lines
+                if needle in (line or '').lower()
+            ]
+
         return templates.TemplateResponse(
             "zfs/observability/kernel_log.jinja",
             {
@@ -375,6 +388,7 @@ async def kernel_debug_log(
                 "log_lines": log_lines,
                 "lines": lines,
                 "filter": filter,
+                "search": search,
                 "debug_source": debug_source,
                 "page_title": "ZFS Kernel Debug Log"
             }
@@ -386,6 +400,7 @@ async def kernel_debug_log(
                 "request": request,
                 "log_lines": [f"Error: {str(e)}"],
                 "error": str(e),
+                "search": search,
                 "debug_source": debug_source,
                 "page_title": "ZFS Kernel Debug Log"
             }
@@ -396,15 +411,27 @@ async def kernel_debug_log(
 async def syslog_zfs(
     request: Request,
     lines: int = 1000,
-    severity: Optional[str] = None
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
 ):
-    """Display ZFS-related syslog entries"""
+    """Display ZFS-related syslog entries.
+
+    The optional `search` parameter performs case-insensitive substring
+    matching on the message body, applied after the ZFS keyword filter.
+    """
     try:
         syslog_entries = observability_service.get_syslog_zfs(
             lines=lines,
-            severity=severity
+            severity=severity,
         )
-        
+
+        if search:
+            needle = search.lower()
+            syslog_entries = [
+                e for e in syslog_entries
+                if needle in (e.get('message') or '').lower()
+            ]
+
         return templates.TemplateResponse(
             "zfs/observability/syslog.jinja",
             {
@@ -412,6 +439,7 @@ async def syslog_zfs(
                 "syslog_entries": syslog_entries,
                 "lines": lines,
                 "severity": severity,
+                "search": search,
                 "filtered": True,
                 "page_title": "ZFS System Log"
             }
@@ -423,6 +451,7 @@ async def syslog_zfs(
                 "request": request,
                 "syslog_entries": [],
                 "error": str(e),
+                "search": search,
                 "filtered": True,
                 "page_title": "ZFS System Log"
             }
@@ -433,49 +462,195 @@ async def syslog_zfs(
 async def syslog_full(
     request: Request,
     lines: int = 1000,
-    severity: Optional[str] = None
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
 ):
-    """Display full unfiltered syslog entries"""
+    """Display full unfiltered syslog entries.
+
+    Source selection by platform:
+      - Linux: journalctl (systemd) -> dmesg -T fallback
+      - FreeBSD/NetBSD: /var/log/messages -> dmesg fallback (no -T flag)
+
+    The optional `search` parameter performs case-insensitive substring
+    matching on the message body, applied after the source is read.
+    """
     try:
-        # Get unfiltered syslog by calling get_syslog_zfs without ZFS filtering
         import subprocess
-        
-        cmd = ['journalctl', '-n', str(lines), '--no-pager']
-        
-        if severity:
+        from services.utils import is_freebsd, is_netbsd
+
+        syslog_entries: list = []
+
+        if is_freebsd() or is_netbsd():
+            # BSD: prefer /var/log/messages (full system log, all daemons),
+            # fall back to dmesg (kernel ring buffer) if missing/unreadable.
+            messages_path = '/var/log/messages'
+            try:
+                # tail -n N gives us the most recent N lines without
+                # slurping a multi-MB log into Python memory.
+                result = subprocess.run(
+                    ['tail', '-n', str(lines), messages_path],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            syslog_entries.append({'message': line.strip()})
+            except FileNotFoundError:
+                # tail itself missing (extremely unlikely)
+                pass
+
+            if not syslog_entries:
+                # Fall back to dmesg. BSD dmesg does not support -T.
+                try:
+                    result = subprocess.run(
+                        ['dmesg'],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n')[-lines:]:
+                            if line.strip():
+                                syslog_entries.append(
+                                    {'message': line.strip()}
+                                )
+                except FileNotFoundError:
+                    pass
+        else:
+            # Linux: try journalctl (unprivileged, then sudo -n),
+            # plain-text syslog files (unprivileged, then sudo -n
+            # tail), then dmesg -T. Empty stdout from a successful
+            # journalctl is treated as "not really available" so we
+            # move on. We collect stderr from each failed attempt so
+            # we can surface a real error to the user instead of a
+            # silent empty page.
+            attempt_errors: list = []
+
             priority_map = {
                 'error': 'err',
                 'warning': 'warning',
-                'info': 'info'
+                'info': 'info',
             }
-            if severity.lower() in priority_map:
-                cmd.extend(['-p', priority_map[severity.lower()]])
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        
-        syslog_entries = []
-        if result.returncode == 0:
-            for line in result.stdout.split('\n'):
-                if line.strip():
-                    syslog_entries.append({'message': line.strip()})
-        else:
-            # Fallback to dmesg
-            result = subprocess.run(
-                ['dmesg', '-T'],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            if result.returncode == 0:
-                for line in result.stdout.split('\n')[-lines:]:
-                    if line.strip():
-                        syslog_entries.append({'message': line.strip()})
-        
+
+            def build_journalctl_cmd(prefix: list) -> list:
+                base = list(prefix) + ['journalctl', '-n', str(lines), '--no-pager']
+                if severity and severity.lower() in priority_map:
+                    base.extend(['-p', priority_map[severity.lower()]])
+                return base
+
+            for prefix in ([], ['sudo', '-n']):
+                try:
+                    result = subprocess.run(
+                        build_journalctl_cmd(prefix),
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                except FileNotFoundError:
+                    continue
+
+                if result.returncode == 0 and result.stdout.strip():
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            syslog_entries.append({'message': line.strip()})
+                    break
+
+                err = (result.stderr or '').strip()
+                if err:
+                    label = 'sudo journalctl' if prefix else 'journalctl'
+                    attempt_errors.append(
+                        f'{label}: {err.splitlines()[0]}'
+                    )
+
+            if not syslog_entries:
+                # Plain text syslog files. Try unprivileged then
+                # sudo -n tail before giving up on the path.
+                for path in ('/var/log/syslog', '/var/log/messages'):
+                    found = False
+                    for use_sudo in (False, True):
+                        argv = (
+                            ['sudo', '-n', 'tail', '-n', str(lines), path]
+                            if use_sudo
+                            else ['tail', '-n', str(lines), path]
+                        )
+                        try:
+                            result = subprocess.run(
+                                argv,
+                                capture_output=True,
+                                text=True,
+                                check=False,
+                            )
+                        except FileNotFoundError:
+                            break
+                        if result.returncode == 0 and result.stdout.strip():
+                            for line in result.stdout.split('\n'):
+                                if line.strip():
+                                    syslog_entries.append(
+                                        {'message': line.strip()}
+                                    )
+                            found = True
+                            break
+                        err = (result.stderr or '').strip()
+                        if err and 'No such file' not in err:
+                            label = (
+                                f'sudo tail {path}' if use_sudo
+                                else f'tail {path}'
+                            )
+                            attempt_errors.append(
+                                f'{label}: {err.splitlines()[0]}'
+                            )
+                    if found:
+                        break
+
+            if not syslog_entries:
+                # Fall back to dmesg with timestamps
+                try:
+                    result = subprocess.run(
+                        ['dmesg', '-T'],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        for line in result.stdout.split('\n')[-lines:]:
+                            if line.strip():
+                                syslog_entries.append(
+                                    {'message': line.strip()}
+                                )
+                    else:
+                        err = (result.stderr or '').strip()
+                        if err:
+                            attempt_errors.append(
+                                f'dmesg -T: {err.splitlines()[0]}'
+                            )
+                except FileNotFoundError:
+                    pass
+
+            if not syslog_entries and attempt_errors:
+                # Surface why every source failed so the user can
+                # actually fix it instead of staring at an empty page.
+                hint_lines = [
+                    'No system log source is readable. Tried:',
+                ] + ['  ' + msg for msg in attempt_errors] + [
+                    '',
+                    'Fixes:',
+                    '  - Add webzfs to the systemd-journal group:',
+                    '      sudo usermod -aG systemd-journal webzfs',
+                    '  - Or grant NOPASSWD sudo for journalctl:',
+                    '      webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl',
+                ]
+                for hint in hint_lines:
+                    syslog_entries.append({'message': hint})
+
+        if search:
+            needle = search.lower()
+            syslog_entries = [
+                e for e in syslog_entries
+                if needle in (e.get('message') or '').lower()
+            ]
+
         return templates.TemplateResponse(
             "zfs/observability/syslog.jinja",
             {
@@ -483,6 +658,7 @@ async def syslog_full(
                 "syslog_entries": syslog_entries,
                 "lines": lines,
                 "severity": severity,
+                "search": search,
                 "filtered": False,
                 "page_title": "Full System Log"
             }
@@ -494,6 +670,7 @@ async def syslog_full(
                 "request": request,
                 "syslog_entries": [],
                 "error": str(e),
+                "search": search,
                 "filtered": False,
                 "page_title": "Full System Log"
             }
@@ -879,7 +1056,8 @@ async def download_arc_summary():
 @router.get("/kernel-log/download", response_class=PlainTextResponse)
 async def download_kernel_log(
     lines: int = 1000,
-    filter: Optional[str] = None
+    filter: Optional[str] = None,
+    search: Optional[str] = None,
 ):
     """Download kernel debug log as text file"""
     try:
@@ -887,7 +1065,14 @@ async def download_kernel_log(
             lines=lines,
             filter_pattern=filter
         )
-        
+
+        if search:
+            needle = search.lower()
+            log_lines = [
+                line for line in log_lines
+                if needle in (line or '').lower()
+            ]
+
         # Build text output
         output_lines = []
         output_lines.append("=" * 80)
@@ -896,6 +1081,8 @@ async def download_kernel_log(
         output_lines.append(f"Lines: {lines}")
         if filter:
             output_lines.append(f"Filter: {filter}")
+        if search:
+            output_lines.append(f"Search: {search}")
         output_lines.append("=" * 80)
         output_lines.append("")
         
@@ -923,7 +1110,8 @@ async def download_kernel_log(
 @router.get("/syslog/download", response_class=PlainTextResponse)
 async def download_syslog(
     lines: int = 1000,
-    severity: Optional[str] = None
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
 ):
     """Download syslog as text file"""
     try:
@@ -931,7 +1119,14 @@ async def download_syslog(
             lines=lines,
             severity=severity
         )
-        
+
+        if search:
+            needle = search.lower()
+            syslog_entries = [
+                e for e in syslog_entries
+                if needle in (e.get('message') or '').lower()
+            ]
+
         # Build text output
         output_lines = []
         output_lines.append("=" * 80)
@@ -940,9 +1135,11 @@ async def download_syslog(
         output_lines.append(f"Lines: {lines}")
         if severity:
             output_lines.append(f"Severity: {severity}")
+        if search:
+            output_lines.append(f"Search:   {search}")
         output_lines.append("=" * 80)
         output_lines.append("")
-        
+
         for entry in syslog_entries:
             output_lines.append(entry.get('message', ''))
         

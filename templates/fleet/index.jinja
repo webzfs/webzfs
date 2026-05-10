@@ -154,123 +154,22 @@
     </div>
   </div>
 
-  {# Server List #}
+  {# Server List
+
+     Each card is rendered from `partials/server_card.jinja` with
+     `auto_refresh=true`, which embeds an `hx-trigger="load delay:Nms"`
+     directive on the card wrapper. After the page paints, HTMX fires
+     one request per card (staggered by `loop_index * 250ms` so they
+     don't all hit the SSH backend at the same time) to
+     `/fleet/servers/{id}/card`, which runs `fetch_server_pools` and
+     returns a fresh card. The card is swapped in via `outerHTML` with
+     `auto_refresh=false`, so the refresh does not loop. #}
   {% if servers %}
     <div class="space-y-3">
       {% for server in servers %}
-        {# Determine if the server card should pulse based on pool health or capacity #}
-        {% set ns = namespace(pulse_class='') %}
-        {% if server.pools %}
-          {% for pool in server.pools %}
-            {% if pool.health in ['FAULTED', 'SUSPENDED', 'UNAVAIL'] %}
-              {% set ns.pulse_class = 'pulse-border-danger' %}
-            {% endif %}
-            {% if pool.health == 'DEGRADED' and ns.pulse_class != 'pulse-border-danger' %}
-              {% set ns.pulse_class = 'pulse-border-warning' %}
-            {% endif %}
-            {% if pool.capacity.rstrip('%') | int > 95 and ns.pulse_class != 'pulse-border-danger' %}
-              {% set ns.pulse_class = 'pulse-border-warning' %}
-            {% endif %}
-          {% endfor %}
-        {% endif %}
-        <div class="card {% if ns.pulse_class %}{{ ns.pulse_class }}{% else %}border-l-4 {% if server.status == 'online' %}border-l-success-500{% elif server.status == 'error' %}border-l-danger-500{% elif server.status == 'offline' %}border-l-text-tertiary{% else %}border-l-purple-500{% endif %}{% endif %}">
-          {# Server Header Row #}
-          <div class="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-            <div class="flex items-center gap-4 flex-wrap min-w-0">
-              {# Server Name and Connection #}
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <h3 class="text-base font-semibold text-text-primary truncate">{{ server.name }}</h3>
-                  <span class="badge {% if server.status == 'online' %}badge-success{% elif server.status == 'offline' %}badge-secondary{% elif server.status == 'error' %}badge-danger{% else %}badge-info{% endif %}">
-                    {% if server.status == 'online' %}Online{% elif server.status == 'offline' %}Offline{% elif server.status == 'error' %}Error{% else %}Unknown{% endif %}
-                  </span>
-                </div>
-                <p class="text-xs text-text-tertiary font-mono">{{ server.username }}@{{ server.ip }}:{{ server.port }}</p>
-              </div>
-
-              {# Timestamps #}
-              <div class="hidden sm:flex items-center gap-4 text-xs text-text-tertiary">
-                <span>Added: {{ server.added_at[:10] if server.added_at else 'N/A' }}</span>
-                <span class="text-border-default">|</span>
-                <span>Checked: {{ server.last_checked[:19] if server.last_checked else 'Never' }}</span>
-              </div>
-            </div>
-
-            {# Refresh Button #}
-            <form action="/fleet/servers/{{ server.id }}/refresh" method="post" class="flex-shrink-0">
-              <button type="submit" class="btn-info btn-sm inline-flex items-center">
-                <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                </svg>
-                Refresh
-              </button>
-            </form>
-          </div>
-
-          {# Pool Table (inline, compact) #}
-          {% if server.pools %}
-          <div class="border-t border-border-subtle overflow-x-auto">
-            <table class="min-w-full text-sm">
-              <thead>
-                <tr class="bg-bg-elevated-2">
-                  <th class="px-4 py-1.5 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Pool</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Used</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Available</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Total</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Capacity</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Health</th>
-                  <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Visualize</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-border-subtle">
-                {% for pool in server.pools %}
-                  {% set cap_val = pool.capacity.rstrip('%') | int %}
-                  <tr class="{% if pool.health == 'SUSPENDED' or pool.health == 'FAULTED' or pool.health == 'UNAVAIL' %}bg-danger-500/10{% elif pool.health == 'DEGRADED' %}bg-warning-500/10{% endif %}">
-                    <td class="px-4 py-1.5 font-semibold text-purple-400 whitespace-nowrap">{{ pool.name }}</td>
-                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.used }}</td>
-                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.free }}</td>
-                    <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.total }}</td>
-                    <td class="px-3 py-1.5 text-center whitespace-nowrap">
-                      <div class="flex items-center justify-center gap-2">
-                        <span class="text-text-primary">{{ pool.capacity }}</span>
-                        <div class="w-16 bg-bg-elevated-3 rounded-full h-1.5">
-                          <div class="{% if cap_val > 90 %}bg-danger-500{% elif cap_val >= 80 %}bg-warning-500{% else %}bg-success-500{% endif %} h-1.5 rounded-full transition-all" style="width: {{ pool.capacity }}"></div>
-                        </div>
-                      </div>
-                    </td>
-                    <td class="px-3 py-1.5 text-center whitespace-nowrap">
-                      {% if pool.health == 'ONLINE' %}
-                        <span class="badge-success text-xs">{{ pool.health }}</span>
-                      {% elif pool.health == 'DEGRADED' %}
-                        <span class="badge-warning text-xs">{{ pool.health }}</span>
-                      {% else %}
-                        <span class="badge-danger text-xs">{{ pool.health }}</span>
-                      {% endif %}
-                    </td>
-                    <td class="px-3 py-1.5 text-center whitespace-nowrap">
-                      <button type="button"
-                              class="inline-flex items-center justify-center p-1.5 rounded-md text-text-tertiary hover:text-primary-400 hover:bg-bg-elevated-2 transition-colors"
-                              title="View dataset space usage"
-                              data-fleet-viz-server-id="{{ server.id }}"
-                              data-fleet-viz-server-name="{{ server.name }}"
-                              data-fleet-viz-pool="{{ pool.name }}">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-          <div class="border-t border-border-subtle px-4 py-2">
-            <p class="text-xs text-text-tertiary italic">No pool data available. Click refresh to fetch data.</p>
-          </div>
-          {% endif %}
-        </div>
+        {% with auto_refresh=True, loop_index=loop.index0, refresh_error=None %}
+          {% include "fleet/partials/server_card.jinja" %}
+        {% endwith %}
       {% endfor %}
     </div>
   {% else %}
@@ -325,6 +224,12 @@
                  class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
           <span>Show snapshot bands</span>
         </label>
+        <label class="inline-flex items-center gap-2 text-text-secondary cursor-pointer select-none text-sm"
+               title="Shrink the free-space block so dataset segments fill more of the row.">
+          <input type="checkbox" id="fleet-viz-collapse-free"
+                 class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+          <span>Collapse free space</span>
+        </label>
         <button type="button" id="fleet-viz-back"
                 class="btn-secondary text-sm inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled>
@@ -353,7 +258,12 @@
         </div>
         <svg id="fleet-viz-svg" class="block w-full" style="display:none;" preserveAspectRatio="none"></svg>
       </div>
+      <div id="fleet-viz-tooltip"
+           class="hidden absolute z-30 bg-bg-elevated-2 border border-border-subtle rounded-lg shadow-lg px-3 py-2 text-xs text-text-primary pointer-events-none"
+           style="position: fixed; max-width: 320px;">
+      </div>
       <p class="text-xs text-text-tertiary mt-3">
+
         Each row is one level of dataset depth. Segment width is proportional to space used relative to the parent.
         Click a segment to drill in. The visualization shows up to four levels.
       </p>
@@ -361,11 +271,8 @@
   </div>
 </div>
 
-{# Floating tooltip lives outside the modal panel so it can position
-   anywhere over the document. #}
-<div id="fleet-viz-tooltip"
-     class="hidden fixed z-[60] bg-bg-elevated-2 border border-border-subtle rounded-lg shadow-lg px-3 py-2 text-xs text-text-primary pointer-events-none"
-     style="max-width: 320px;"></div>
+
+
 
 <script src="/static/js/space_visualizer.js"></script>
 <script>
@@ -373,7 +280,7 @@
     "use strict";
 
     var modal = document.getElementById("fleet-viz-modal");
-    if (!modal || !window.WebzfsSpaceVisualizer) return;
+    if (!modal) return;
 
     var titleEl = document.getElementById("fleet-viz-title");
     var subtitleEl = document.getElementById("fleet-viz-subtitle");
@@ -385,10 +292,55 @@
     var breadcrumbEl = document.getElementById("fleet-viz-breadcrumb");
     var backBtn = document.getElementById("fleet-viz-back");
     var snapshotToggle = document.getElementById("fleet-viz-show-snapshots");
+    var collapseFreeToggle = document.getElementById("fleet-viz-collapse-free");
 
     var currentViz = null;
     var currentServerId = null;
     var currentPool = null;
+
+    // The page body uses hx-boost="true", so navigations into /fleet/
+    // happen via an htmx XHR + body-swap rather than a real page load.
+    // When htmx evaluates the swapped scripts in order, it creates a new
+    // <script src="space_visualizer.js"> element and appends it (which
+    // loads asynchronously) and then immediately creates and appends
+    // this inline <script> element which executes synchronously. The
+    // result is that on a boosted navigation window.WebzfsSpaceVisualizer
+    // is frequently still undefined when this IIFE runs. Previously we
+    // bailed out via `if (!window.WebzfsSpaceVisualizer) return;` which
+    // meant the document-level click handler for the visualize buttons
+    // never got attached, and clicks landed on dead space until some
+    // unrelated body swap re-ran this script with the global defined.
+    //
+    // Fix: always wire up the click / close / Escape listeners, and
+    // wait for the external library to finish loading inside the
+    // click handler instead. The hover highlight comes from CSS so it
+    // is unaffected; only the click path needed to be made tolerant
+    // of the external script still being in flight.
+    function whenVisualizerReady(callback) {
+        if (window.WebzfsSpaceVisualizer) {
+            callback();
+            return;
+        }
+        var attempts = 0;
+        var timer = setInterval(function() {
+            attempts += 1;
+            if (window.WebzfsSpaceVisualizer) {
+                clearInterval(timer);
+                callback();
+            } else if (attempts > 60) {
+                // ~3 seconds is plenty for a cached static asset.
+                clearInterval(timer);
+                if (loadingEl) {
+                    loadingEl.textContent = "Failed to load visualizer script.";
+                }
+                console.error(
+                    "space_visualizer.js did not load in time; "
+                    + "the dataset visualizer cannot open."
+                );
+            }
+        }, 50);
+    }
+
 
     function openModal() {
         modal.style.display = "flex";
@@ -434,6 +386,27 @@
         };
     }
 
+    function refreshServer(serverId) {
+        // Force the fleet service to re-establish the SSH session and
+        // re-fetch the pool list for this server before we ask for the
+        // space tree. Without this, a stale SSH client occasionally
+        // makes the first space-tree call fail silently and the user
+        // has to click the per-server "Refresh" button before the
+        // visualize button does anything. The refresh endpoint redirects
+        // to /fleet/ on success, but we only care that the server-side
+        // state is freshened, so we ignore the response body.
+        return fetch("/fleet/servers/" + encodeURIComponent(serverId) + "/refresh", {
+            method: "POST",
+            credentials: "same-origin",
+            redirect: "manual"
+        }).catch(function() {
+            // A failed refresh should not block the visualizer attempt;
+            // the space-tree request will surface its own error if the
+            // server is genuinely unreachable.
+            return null;
+        });
+    }
+
     function openForPool(serverId, serverName, poolName) {
         currentServerId = serverId;
         currentPool = poolName;
@@ -441,23 +414,55 @@
         subtitleEl.textContent = serverName + " (" + serverId.substring(0, 8) + ")";
         openModal();
 
-        // Recreate the visualizer each time so view stack resets.
-        if (currentViz && currentViz.destroy) {
-            currentViz.destroy();
+        if (loadingEl) {
+            loadingEl.textContent = "Refreshing server connection...";
+            loadingEl.style.display = "";
         }
-        currentViz = window.WebzfsSpaceVisualizer.create({
-            container: container,
-            svg: svg,
-            loadingEl: loadingEl,
-            tooltip: tooltipEl,
-            breadcrumb: breadcrumbEl,
-            backButton: backBtn,
-            snapshotToggle: snapshotToggle,
-            maxDepth: 4,
-            fetchTree: buildFetcher(serverId, poolName)
+        svg.style.display = "none";
+
+        // Wait for the external visualizer script to finish loading
+        // before instantiating it. On a boosted nav into /fleet/ this
+        // typically resolves on the very first tick because the asset
+        // is cached.
+        whenVisualizerReady(function() {
+            if (currentServerId !== serverId || currentPool !== poolName) {
+                // User closed or switched pools while we were waiting
+                // for the script to load.
+                return;
+            }
+            // Recreate the visualizer each time so view stack resets.
+            if (currentViz && currentViz.destroy) {
+                currentViz.destroy();
+            }
+            currentViz = window.WebzfsSpaceVisualizer.create({
+                container: container,
+                svg: svg,
+                loadingEl: loadingEl,
+                tooltip: tooltipEl,
+                breadcrumb: breadcrumbEl,
+                backButton: backBtn,
+                snapshotToggle: snapshotToggle,
+                collapseFreeToggle: collapseFreeToggle,
+                maxDepth: 4,
+                fetchTree: buildFetcher(serverId, poolName)
+            });
+
+            // Auto-refresh the server first so the SSH session is
+            // healthy and the pool list is current before the
+            // visualizer fetches the dataset tree.
+            refreshServer(serverId).then(function() {
+                if (currentServerId !== serverId || currentPool !== poolName) {
+                    // User closed or switched pools while the refresh
+                    // was in flight; do not stomp the new state.
+                    return;
+                }
+                if (currentViz) {
+                    currentViz.load();
+                }
+            });
         });
-        currentViz.load();
     }
+
 
     document.addEventListener("click", function(ev) {
         var btn = ev.target.closest("[data-fleet-viz-pool]");

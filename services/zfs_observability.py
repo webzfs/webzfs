@@ -340,44 +340,107 @@ class ZFSObservabilityService:
         if is_freebsd() or is_netbsd():
             # BSD uses syslog - grep /var/log/messages
             return self._read_bsd_syslog(lines, since, severity)
-        
-        try:
-            # Linux uses journalctl on systemd systems (default)
-            cmd = ['journalctl', '-n', str(lines), '--no-pager']
-            
-            # Add grep for ZFS-related messages
-            cmd.extend(['-t', 'kernel'])
-            
+
+        # Linux: walk through possible sources and grep for zfs/zpool.
+        # We try unprivileged journalctl, then sudo -n journalctl (in
+        # case the webzfs user is not in systemd-journal but does have
+        # NOPASSWD sudo for journalctl), then plain text syslog files
+        # (with sudo as a second pass), then dmesg. Each step records
+        # any stderr it produces so the caller can surface a real
+        # error if everything fails.
+        zfs_lines: List[Dict[str, Any]] = []
+        attempt_errors: List[str] = []
+
+        priority_map = {
+            'error': 'err',
+            'warning': 'warning',
+            'info': 'info',
+        }
+
+        def build_journalctl_cmd(prefix: List[str]) -> List[str]:
+            cmd = list(prefix) + ['journalctl', '-n', str(lines), '--no-pager']
             if since:
                 cmd.extend(['--since', since.isoformat()])
-            
-            if severity:
-                priority_map = {
-                    'error': 'err',
-                    'warning': 'warning',
-                    'info': 'info'
-                }
-                if severity.lower() in priority_map:
-                    cmd.extend(['-p', priority_map[severity.lower()]])
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            
-            # Filter for ZFS messages
-            zfs_lines = []
-            for line in result.stdout.split('\n'):
-                if 'zfs' in line.lower() or 'zpool' in line.lower():
-                    zfs_lines.append({'message': line.strip()})
-            
-            return zfs_lines
-            
-        except subprocess.CalledProcessError:
-            # Fallback to reading /var/log/messages or dmesg
-            return self._fallback_syslog_read(lines)
+            if severity and severity.lower() in priority_map:
+                cmd.extend(['-p', priority_map[severity.lower()]])
+            return cmd
+
+        for prefix in ([], ['sudo', '-n']):
+            try:
+                result = subprocess.run(
+                    build_journalctl_cmd(prefix),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except FileNotFoundError:
+                continue
+
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.split('\n'):
+                    low = line.lower()
+                    if 'zfs' in low or 'zpool' in low:
+                        zfs_lines.append({'message': line.strip()})
+                if zfs_lines:
+                    return zfs_lines
+                # journalctl worked but no ZFS lines found; do not
+                # fall through to syslog files in that case
+                return [{'message': 'No ZFS messages found in journalctl output'}]
+
+            err = (result.stderr or '').strip()
+            if err:
+                label = 'sudo journalctl' if prefix else 'journalctl'
+                attempt_errors.append(f'{label}: {err.splitlines()[0]}')
+
+        # Plain text syslog files (Debian/Ubuntu and old RHEL).
+        # Try unprivileged then sudo -n cat for each path.
+        for path in ('/var/log/syslog', '/var/log/messages'):
+            for use_sudo in (False, True):
+                argv = (
+                    ['sudo', '-n', 'tail', '-n', str(lines * 5), path]
+                    if use_sudo
+                    else ['tail', '-n', str(lines * 5), path]
+                )
+                try:
+                    result = subprocess.run(
+                        argv,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                except FileNotFoundError:
+                    break
+                if result.returncode == 0 and result.stdout.strip():
+                    for line in result.stdout.split('\n'):
+                        low = line.lower()
+                        if 'zfs' in low or 'zpool' in low:
+                            zfs_lines.append({'message': line.strip()})
+                    if zfs_lines:
+                        return zfs_lines[-lines:]
+                    # File readable but no ZFS lines; stop searching
+                    return [{'message': f'No ZFS messages found in {path}'}]
+                err = (result.stderr or '').strip()
+                if err and 'No such file' not in err:
+                    label = f'sudo tail {path}' if use_sudo else f'tail {path}'
+                    attempt_errors.append(f'{label}: {err.splitlines()[0]}')
+
+        # Last resort: dmesg ring buffer
+        fallback = self._fallback_syslog_read(lines)
+        if fallback and fallback[0].get('message') not in (
+            'Syslog not available',
+            'Error reading syslog',
+        ):
+            return fallback
+
+        if attempt_errors:
+            return [
+                {'message': 'Syslog not available. Tried:'},
+            ] + [{'message': '  ' + msg} for msg in attempt_errors] + [
+                {'message': ''},
+                {'message': 'Add journalctl to webzfs sudoers, or add the webzfs user to the systemd-journal group:'},
+                {'message': '  sudo usermod -aG systemd-journal webzfs'},
+            ]
+        return fallback
     
     def get_arc_summary(self) -> Dict[str, Any]:
         """

@@ -4,6 +4,7 @@ Manages remote server monitoring via SSH for ZFS pool status viewing
 """
 import json
 import os
+import re
 import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -386,6 +387,214 @@ class FleetMonitoringService:
             )
             return []
     
+    def fetch_server_pools_extended(self, server_id: str) -> List[Dict[str, Any]]:
+        """
+        Fetch extended pool information from a remote server, matching the
+        dashboard pool format. Includes dataset/snapshot counts, vdev/disk
+        counts, and error totals in addition to the basic size/health data.
+
+        Args:
+            server_id: Server UUID
+
+        Returns:
+            List of pool dicts with dashboard-compatible field names
+        """
+        try:
+            server = self._get_server_by_id(server_id)
+            client = self._create_ssh_client(server)
+
+            try:
+                # Basic pool list
+                command = self._build_zfs_command(
+                    server,
+                    "zpool list -H -p -o name,size,alloc,free,cap,health",
+                )
+                stdin, stdout, stderr = client.exec_command(command)
+                output = stdout.read().decode("utf-8")
+                error = stderr.read().decode("utf-8")
+
+                if error and not output:
+                    logger.error(
+                        f"Error fetching pools from {server_id}: {error}"
+                    )
+                    return []
+
+                # ZFS used/available from dataset layer
+                space_map = {}
+                try:
+                    space_cmd = self._build_zfs_command(
+                        server, "zfs list -H -p -o name,used,avail -d 0"
+                    )
+                    s_in, s_out, s_err = client.exec_command(space_cmd)
+                    for line in s_out.read().decode("utf-8").strip().split("\n"):
+                        if line:
+                            sp = line.split("\t")
+                            if len(sp) >= 3:
+                                try:
+                                    space_map[sp[0]] = {
+                                        "used": int(sp[1]),
+                                        "avail": int(sp[2]),
+                                    }
+                                except (ValueError, TypeError):
+                                    pass
+                except Exception:
+                    pass
+
+                # Dataset counts
+                dataset_counts: Dict[str, int] = {}
+                try:
+                    ds_cmd = self._build_zfs_command(
+                        server,
+                        "zfs list -H -t filesystem -o name",
+                    )
+                    d_in, d_out, d_err = client.exec_command(ds_cmd)
+                    for line in d_out.read().decode("utf-8").strip().split("\n"):
+                        name = line.strip()
+                        if name:
+                            pool = name.split("/")[0]
+                            dataset_counts[pool] = dataset_counts.get(pool, 0) + 1
+                except Exception:
+                    pass
+
+                # Snapshot counts
+                snapshot_counts: Dict[str, int] = {}
+                try:
+                    snap_cmd = self._build_zfs_command(
+                        server,
+                        "zfs list -H -t snapshot -o name",
+                    )
+                    sn_in, sn_out, sn_err = client.exec_command(snap_cmd)
+                    for line in sn_out.read().decode("utf-8").strip().split("\n"):
+                        name = line.strip()
+                        if name:
+                            pool = name.split("/")[0].split("@")[0]
+                            snapshot_counts[pool] = snapshot_counts.get(pool, 0) + 1
+                except Exception:
+                    pass
+
+                # Parse basic pool info
+                pools = []
+                for line in output.strip().split("\n"):
+                    if not line:
+                        continue
+                    parts = line.split("\t")
+                    if len(parts) < 6:
+                        continue
+                    name, size, alloc, free, cap, health = parts[:6]
+
+                    space = space_map.get(name)
+                    if space is not None:
+                        used_bytes = space["used"]
+                        avail_bytes = space["avail"]
+                        total_bytes = used_bytes + avail_bytes
+                        used_str = self._format_bytes(used_bytes)
+                        avail_str = self._format_bytes(avail_bytes)
+                        total_str = self._format_bytes(total_bytes)
+                        if total_bytes > 0:
+                            cap_str = f"{round((used_bytes / total_bytes) * 100)}%"
+                        else:
+                            cap_str = f"{cap}%"
+                    else:
+                        used_str = self._format_bytes(int(alloc))
+                        avail_str = self._format_bytes(int(free))
+                        total_str = self._format_bytes(int(size))
+                        cap_str = f"{cap}%"
+
+                    # Compute byte values for sorting/aggregation
+                    if space is not None:
+                        u_bytes = space["used"]
+                        a_bytes = space["avail"]
+                        t_bytes = u_bytes + a_bytes
+                    else:
+                        u_bytes = int(alloc)
+                        a_bytes = int(free)
+                        t_bytes = int(size)
+
+                    pools.append({
+                        "name": name,
+                        "used": used_str,
+                        "avail": avail_str,
+                        "total": total_str,
+                        "cap": cap_str,
+                        "health": health,
+                        "used_bytes": u_bytes,
+                        "avail_bytes": a_bytes,
+                        "total_bytes": t_bytes,
+                        "dataset_count": dataset_counts.get(name, 0),
+                        "snapshot_count": snapshot_counts.get(name, 0),
+                        "vdev_count": 0,
+                        "disk_count": 0,
+                        "read_errors": 0,
+                        "write_errors": 0,
+                        "cksum_errors": 0,
+                    })
+
+                # Fetch vdev/disk/error counts per pool via zpool status
+                vdev_keywords = {
+                    "mirror", "raidz", "raidz1", "raidz2", "raidz3",
+                    "spare", "cache", "log", "dedup", "special",
+                }
+                for pool in pools:
+                    try:
+                        status_cmd = self._build_zfs_command(
+                            server, f"zpool status {pool['name']}"
+                        )
+                        st_in, st_out, st_err = client.exec_command(status_cmd)
+                        status_output = st_out.read().decode("utf-8")
+
+                        in_config = False
+                        for sline in status_output.split("\n"):
+                            stripped = sline.strip()
+                            if stripped.lower().startswith("config:"):
+                                in_config = True
+                                continue
+                            if in_config and stripped.lower().startswith("errors:"):
+                                in_config = False
+                                continue
+                            if not in_config:
+                                continue
+                            if "NAME" in stripped and "STATE" in stripped:
+                                continue
+                            sp = stripped.split()
+                            if not sp:
+                                continue
+                            sname = sp[0]
+                            if sname == pool["name"]:
+                                continue
+
+                            base = re.sub(r"-\d+$", "", sname.lower())
+                            if base in vdev_keywords:
+                                pool["vdev_count"] += 1
+                            else:
+                                pool["disk_count"] += 1
+                                pool["read_errors"] += self._safe_int(sp[2]) if len(sp) > 2 else 0
+                                pool["write_errors"] += self._safe_int(sp[3]) if len(sp) > 3 else 0
+                                pool["cksum_errors"] += self._safe_int(sp[4]) if len(sp) > 4 else 0
+
+                        if pool["vdev_count"] == 0 and pool["disk_count"] > 0:
+                            pool["vdev_count"] = 1
+                    except Exception:
+                        pass
+
+                return pools
+
+            finally:
+                client.close()
+
+        except Exception as e:
+            logger.error(
+                f"Failed to fetch extended pools from server {server_id}: {e}"
+            )
+            return []
+
+    @staticmethod
+    def _safe_int(value: str) -> int:
+        """Convert a string to int, returning 0 on failure."""
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return 0
+
     def fetch_all_servers(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Fetch pool information from all servers

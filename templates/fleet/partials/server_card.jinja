@@ -1,0 +1,173 @@
+{# ===================================================================
+   Single fleet server card (shared partial)
+
+   Used in two places:
+
+   1. templates/fleet/index.jinja, on initial page render. Each card is
+      wrapped in a `<div hx-get=".../card" hx-trigger="load ...">` so
+      the cached pool data shows immediately while a fresh refresh
+      fires asynchronously in the background after the page paints.
+
+   2. views/fleet.py:get_server_card_partial, as the HTMX response
+      replacing the wrapper above. The response also wraps in a div
+      with the same id but WITHOUT hx-trigger="load", so the card
+      does not loop.
+
+   Variables expected in context:
+     server          dict from FleetMonitoringService.list_servers /
+                     get_server, possibly updated by fetch_server_pools.
+     auto_refresh    bool. True on initial page render; tells this
+                     partial to attach the lazy-load hx-* attrs.
+                     False (or unset) for the HTMX response so the
+                     refreshed card does not auto-refetch in a loop.
+     loop_index      int. Used to stagger the load delay per card so
+                     N servers do not all hit the SSH backend at the
+                     same instant. Optional; defaults to 0.
+     refresh_error   str | None. Optional error string from the most
+                     recent background fetch attempt. When set we
+                     surface it as a small inline error row inside the
+                     card so the user sees why data did not update.
+=================================================================== #}
+{% set _index = loop_index | default(0) %}
+{% set _delay = (_index * 250) %}
+{% set ns = namespace(pulse_class='') %}
+{% if server.pools %}
+  {% for pool in server.pools %}
+    {% if pool.health in ['FAULTED', 'SUSPENDED', 'UNAVAIL'] %}
+      {% set ns.pulse_class = 'pulse-border-danger' %}
+    {% endif %}
+    {% if pool.health == 'DEGRADED' and ns.pulse_class != 'pulse-border-danger' %}
+      {% set ns.pulse_class = 'pulse-border-warning' %}
+    {% endif %}
+    {% if pool.capacity and pool.capacity.rstrip('%') | int > 95 and ns.pulse_class != 'pulse-border-danger' %}
+      {% set ns.pulse_class = 'pulse-border-warning' %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+<div id="fleet-server-{{ server.id }}"
+     {% if auto_refresh %}
+     hx-get="/fleet/servers/{{ server.id }}/card"
+     hx-trigger="load delay:{{ _delay }}ms"
+     hx-swap="outerHTML"
+     {% endif %}
+     class="card {% if ns.pulse_class %}{{ ns.pulse_class }}{% else %}border-l-4 {% if server.status == 'online' %}border-l-success-500{% elif server.status == 'error' %}border-l-danger-500{% elif server.status == 'offline' %}border-l-text-tertiary{% else %}border-l-purple-500{% endif %}{% endif %}">
+  {# Server Header Row #}
+  <div class="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div class="flex items-center gap-4 flex-wrap min-w-0">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <h3 class="text-base font-semibold text-text-primary truncate">{{ server.name }}</h3>
+          <span class="badge {% if server.status == 'online' %}badge-success{% elif server.status == 'offline' %}badge-secondary{% elif server.status == 'error' %}badge-danger{% else %}badge-info{% endif %}">
+            {% if server.status == 'online' %}Online{% elif server.status == 'offline' %}Offline{% elif server.status == 'error' %}Error{% else %}Unknown{% endif %}
+          </span>
+          {# HTMX shows this only while the auto-refresh request for this
+             card is in flight. Class names match the standard HTMX
+             indicator pattern: visible only when the wrapper has the
+             `htmx-request` class. #}
+          <span class="htmx-indicator inline-flex items-center gap-1 text-xs text-text-tertiary">
+            <svg class="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            Refreshing...
+          </span>
+        </div>
+        <p class="text-xs text-text-tertiary font-mono">{{ server.username }}@{{ server.ip }}:{{ server.port }}</p>
+      </div>
+
+      <div class="hidden sm:flex items-center gap-4 text-xs text-text-tertiary">
+        <span>Added: {{ server.added_at[:10] if server.added_at else 'N/A' }}</span>
+        <span class="text-border-default">|</span>
+        <span>Checked: {{ server.last_checked[:19] if server.last_checked else 'Never' }}</span>
+      </div>
+    </div>
+
+    {# Manual refresh button. Uses HTMX so it swaps just this card
+       in place instead of doing a full page redirect. #}
+    <button type="button"
+            hx-get="/fleet/servers/{{ server.id }}/card"
+            hx-target="#fleet-server-{{ server.id }}"
+            hx-swap="outerHTML"
+            class="btn-info btn-sm inline-flex items-center flex-shrink-0">
+      <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+      </svg>
+      Refresh
+    </button>
+  </div>
+
+  {% if refresh_error %}
+  <div class="border-t border-border-subtle px-4 py-2 bg-danger-500/10">
+    <p class="text-xs text-danger-400">Background refresh failed: {{ refresh_error }}</p>
+  </div>
+  {% endif %}
+
+  {% if server.pools %}
+  <div class="border-t border-border-subtle overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="bg-bg-elevated-2">
+          <th class="px-4 py-1.5 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Pool</th>
+          <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Used</th>
+          <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Available</th>
+          <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Total</th>
+          <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Capacity</th>
+          <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Health</th>
+          <th class="px-3 py-1.5 text-center text-xs font-medium text-text-secondary uppercase tracking-wider">Visualize</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border-subtle">
+        {% for pool in server.pools %}
+          {% set cap_val = pool.capacity.rstrip('%') | int if pool.capacity else 0 %}
+          <tr class="{% if pool.health == 'SUSPENDED' or pool.health == 'FAULTED' or pool.health == 'UNAVAIL' %}bg-danger-500/10{% elif pool.health == 'DEGRADED' %}bg-warning-500/10{% endif %}">
+            <td class="px-4 py-1.5 font-semibold text-purple-400 whitespace-nowrap">{{ pool.name }}</td>
+            <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.used }}</td>
+            <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.free }}</td>
+            <td class="px-3 py-1.5 text-center text-text-primary whitespace-nowrap">{{ pool.total }}</td>
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+              <div class="flex items-center justify-center gap-2">
+                <span class="text-text-primary">{{ pool.capacity }}</span>
+                <div class="w-16 bg-bg-elevated-3 rounded-full h-1.5">
+                  <div class="{% if cap_val > 90 %}bg-danger-500{% elif cap_val >= 80 %}bg-warning-500{% else %}bg-success-500{% endif %} h-1.5 rounded-full transition-all" style="width: {{ pool.capacity }}"></div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+              {% if pool.health == 'ONLINE' %}
+                <span class="badge-success text-xs">{{ pool.health }}</span>
+              {% elif pool.health == 'DEGRADED' %}
+                <span class="badge-warning text-xs">{{ pool.health }}</span>
+              {% else %}
+                <span class="badge-danger text-xs">{{ pool.health }}</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+              <button type="button"
+                      class="inline-flex items-center justify-center p-1.5 rounded-md text-text-tertiary hover:text-primary-400 hover:bg-bg-elevated-2 transition-colors"
+                      title="View dataset space usage"
+                      data-fleet-viz-server-id="{{ server.id }}"
+                      data-fleet-viz-server-name="{{ server.name }}"
+                      data-fleet-viz-pool="{{ pool.name }}">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                </svg>
+              </button>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="border-t border-border-subtle px-4 py-2">
+    <p class="text-xs text-text-tertiary italic">
+      {% if auto_refresh %}
+        Connecting to server and loading pool data...
+      {% else %}
+        No pool data available. Click refresh to fetch data.
+      {% endif %}
+    </p>
+  </div>
+  {% endif %}
+</div>

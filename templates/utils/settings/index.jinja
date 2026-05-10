@@ -305,6 +305,155 @@
                 </div>
             </div>
         </div>
+
+        <!-- Backup and Restore Card -->
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-2 bg-success-500/10 border border-success-500/20 rounded-lg">
+                        <svg class="w-6 h-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-primary">Backup &amp; Restore Configuration</h2>
+                        <p class="text-sm text-text-secondary">
+                            Export every WebZFS setting, SSH key, and managed system file as an encrypted archive
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Export Panel -->
+                    <div class="card-nested">
+                        <h3 class="text-lg font-semibold text-text-primary mb-3">Export Configuration</h3>
+                        <p class="text-sm text-text-secondary mb-4">
+                            Build an encrypted archive containing your themes, session settings, SSH connections and keys, fleet servers, sanoid configuration, syncoid jobs, scrub schedules, SMART schedules, and (optionally) the application secret. The download is encrypted with AES-256-GCM using a key derived from your passphrase.
+                        </p>
+
+                        <form action="/utils/settings/backup/export" method="post" hx-boost="false" class="space-y-3">
+                            <div>
+                                <label for="export-passphrase" class="form-label">Passphrase</label>
+                                <input
+                                    type="password"
+                                    id="export-passphrase"
+                                    name="passphrase"
+                                    class="form-input w-full"
+                                    minlength="8"
+                                    autocomplete="new-password"
+                                    required
+                                />
+                                <p class="text-xs text-text-tertiary mt-1">Minimum 8 characters. You will need this passphrase to restore.</p>
+                            </div>
+
+                            <div>
+                                <label for="export-confirm-passphrase" class="form-label">Confirm Passphrase</label>
+                                <input
+                                    type="password"
+                                    id="export-confirm-passphrase"
+                                    name="confirm_passphrase"
+                                    class="form-input w-full"
+                                    minlength="8"
+                                    autocomplete="new-password"
+                                    required
+                                />
+                            </div>
+
+                            <div class="space-y-2 pt-2">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" name="include_system" value="1" class="form-checkbox mt-1" checked />
+                                    <span class="text-sm text-text-secondary">
+                                        <span class="text-text-primary font-medium">Include system config files</span>
+                                        <br>sanoid.conf and WebZFS-managed cron entries. Recommended.
+                                    </span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" name="include_secret" value="1" class="form-checkbox mt-1" checked />
+                                    <span class="text-sm text-text-secondary">
+                                        <span class="text-text-primary font-medium">Include application secret (.env)</span>
+                                        <br>Preserves issued login tokens across the restore.
+                                    </span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" name="include_history" value="1" class="form-checkbox mt-1" />
+                                    <span class="text-sm text-text-secondary">
+                                        <span class="text-text-primary font-medium">Include history records</span>
+                                        <br>Replication, SMART test, notification, and health report history.
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="pt-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"></path>
+                                    </svg>
+                                    Download Encrypted Backup
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Import Panel -->
+                    <div class="card-nested">
+                        <h3 class="text-lg font-semibold text-text-primary mb-3">Restore from Backup</h3>
+                        <p class="text-sm text-text-secondary mb-4">
+                            Upload a previously created backup archive. The archive is decrypted and you will see a confirmation page listing every file that would be written. Existing files are preserved with a <code>.pre-restore-&lt;timestamp&gt;</code> suffix instead of being deleted.
+                        </p>
+
+                        <form action="/utils/settings/backup/inspect" method="post" enctype="multipart/form-data" hx-boost="false" class="space-y-3">
+                            <div>
+                                <label for="restore-archive" class="form-label">Backup Archive</label>
+                                <input
+                                    type="file"
+                                    id="restore-archive"
+                                    name="archive"
+                                    class="form-input w-full"
+                                    accept=".wzbak,application/octet-stream"
+                                    required
+                                />
+                                <p class="text-xs text-text-tertiary mt-1">Select a <code>.wzbak</code> file produced by the export above.</p>
+                            </div>
+
+                            <div>
+                                <label for="restore-passphrase" class="form-label">Passphrase</label>
+                                <input
+                                    type="password"
+                                    id="restore-passphrase"
+                                    name="passphrase"
+                                    class="form-input w-full"
+                                    autocomplete="current-password"
+                                    required
+                                />
+                                <p class="text-xs text-text-tertiary mt-1">The passphrase used when this archive was created.</p>
+                            </div>
+
+                            <div class="pt-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                                    </svg>
+                                    Inspect Archive
+                                </button>
+                                <span class="text-sm text-text-tertiary ml-2">Nothing is written until you confirm on the next page</span>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card-nested mt-4">
+                    <div class="flex items-start gap-2">
+                        <svg class="w-4 h-4 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                        <div class="text-sm text-text-secondary">
+                            <p class="mb-1"><span class="text-text-primary font-medium">Treat the exported file as a secret.</span> Anyone who has both the file and the passphrase can recover every SSH private key, fleet password, and (if included) the application secret. Store the file somewhere safe and use a strong passphrase.</p>
+                            <p>The archive uses AES-256-GCM with PBKDF2-HMAC-SHA256 key derivation (600,000 iterations).</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
 {% endblock %}

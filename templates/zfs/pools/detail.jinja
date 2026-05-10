@@ -101,6 +101,12 @@
                            class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
                     <span>Show snapshot bands</span>
                 </label>
+                <label class="inline-flex items-center gap-2 text-text-secondary cursor-pointer select-none"
+                       title="Shrink the free-space block so dataset segments fill more of the row.">
+                    <input type="checkbox" id="space-viz-collapse-free"
+                           class="form-checkbox h-4 w-4 rounded border-border-subtle bg-bg-elevated-2 text-primary-500 focus:ring-primary-500">
+                    <span>Collapse free space</span>
+                </label>
                 <button type="button" id="space-viz-back"
                         class="btn-secondary text-sm inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled>
@@ -109,6 +115,14 @@
                     </svg>
                     Back
                 </button>
+                <a href="/zfs/datasets?focus={{ pool.name }}"
+                   class="btn-primary text-sm inline-flex items-center gap-1"
+                   title="Open the datasets page with this pool expanded">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path>
+                    </svg>
+                    View Datasets
+                </a>
             </div>
         </div>
         <div id="space-viz-container"
@@ -479,6 +493,70 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
     </div>
     {% endif %}
 
+    <!-- Pool Mountpoint Management -->
+    <div class="card">
+        <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+            </svg>
+            Pool Mountpoint
+        </h2>
+        <div class="card-nested mb-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <div class="text-text-tertiary text-xs uppercase">Current Mountpoint</div>
+                    <div class="text-text-primary text-lg font-mono mt-1 break-all">{{ mountpoint_value if mountpoint_value else '-' }}</div>
+                </div>
+                <div>
+                    <div class="text-text-tertiary text-xs uppercase">Source</div>
+                    <div class="text-text-primary text-lg font-mono mt-1">{{ mountpoint_source if mountpoint_source else '-' }}</div>
+                </div>
+            </div>
+        </div>
+        <form method="post" action="/zfs/pools/{{ pool.name }}/mountpoint" id="form-set-mountpoint" class="flex flex-col sm:flex-row gap-3 items-end">
+            <div class="flex-1 w-full">
+                <label for="pool_mountpoint" class="form-label">New Mountpoint</label>
+                <input type="text"
+                       id="pool_mountpoint"
+                       name="mountpoint"
+                       required
+                       placeholder="e.g., /mnt/{{ pool.name }} or /{{ pool.name }}"
+                       value="{{ mountpoint_value }}"
+                       class="form-input w-full font-mono">
+            </div>
+            <button type="button"
+                    class="btn-primary inline-flex items-center gap-2"
+                    onclick="showConfirm('confirm-set-mountpoint')">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                Apply
+            </button>
+        </form>
+        <div class="card-nested bg-warning-900/20 border-warning-900 mt-4">
+            <p class="text-xs text-text-secondary flex items-start gap-2">
+                <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <span>
+                    <strong class="text-warning-400">Warning:</strong>
+                    Changing the pool mountpoint moves the pool root dataset to a new path. All child datasets
+                    that inherit their mountpoint will be remounted under the new path
+                    (for example, <span class="font-mono">{{ pool.name }}/data</span> mounted at
+                    <span class="font-mono">{{ mountpoint_value if mountpoint_value else '/' ~ pool.name }}/data</span>
+                    will move accordingly). Child datasets with an explicit mountpoint of their own will keep
+                    their current mountpoint. This may break shares, services, scripts, or other workloads that
+                    depend on the existing paths.
+                </span>
+            </p>
+        </div>
+        <p class="text-xs text-text-tertiary mt-3">
+            Use an absolute path (must start with <span class="font-mono">/</span>), or the special values
+            <span class="font-mono">none</span> (do not mount) or <span class="font-mono">legacy</span>
+            (managed via <span class="font-mono">/etc/fstab</span> or <span class="font-mono">mount</span>).
+        </p>
+    </div>
+
     <!-- Full zpool status Output -->
     <div class="card">
         <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
@@ -516,6 +594,21 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 {% set confirm_text = 'Stop Scrub' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-stop").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-set-mountpoint' %}
+{% set title = 'Change Pool Mountpoint' %}
+{% set message = 'Change the mountpoint of pool <strong>' ~ pool.name ~ '</strong>?<br><br>' ~
+    'All child datasets that <em>inherit</em> their mountpoint will be remounted under the new path. ' ~
+    'For example, <span class="font-mono">' ~ pool.name ~ '/data</span> currently mounted at ' ~
+    '<span class="font-mono">' ~ (mountpoint_value if mountpoint_value else ('/' ~ pool.name)) ~ '/data</span> ' ~
+    'will move to the new path.<br><br>' ~
+    '<strong class="text-warning-400">Warning:</strong> This may break shares (NFS, SMB), services, ' ~
+    'cron jobs, scripts, or other workloads that depend on the existing mountpoints. ' ~
+    'Child datasets with their own explicitly-set mountpoint will retain their current mountpoint.' %}
+{% set confirm_text = 'Apply Mountpoint' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-set-mountpoint").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
 {% if checkpoint_supported %}
@@ -622,12 +715,20 @@ window.showConfirm = function(dialogId) {
     var breadcrumb = document.getElementById("space-viz-breadcrumb");
     var backButton = document.getElementById("space-viz-back");
     var snapshotToggle = document.getElementById("space-viz-show-snapshots");
+    var collapseFreeToggle = document.getElementById("space-viz-collapse-free");
 
     if (!container || !svg) return;
+
+    // When the user enables "Collapse free space", the free-space block
+    // on the pool row shrinks to roughly the width needed for its label
+    // so the dataset blocks can fill the rest of the row. Anything
+    // smaller hides the label without losing the space proportions.
+    var COLLAPSED_FREE_WIDTH = 140;
 
     var rootTree = null;
     var viewStack = [];
     var showSnapshotBands = true;
+    var collapseFreeSpace = false;
 
     function formatBytes(bytes) {
         if (bytes === null || bytes === undefined || isNaN(bytes)) return "-";
@@ -848,14 +949,26 @@ window.showConfirm = function(dialogId) {
         if (depth === 0 && node.available > 0) {
             var totalCapacity = node.used + node.available;
             if (totalCapacity > 0) {
-                var usedWidth = width * (node.used / totalCapacity);
+                var usedWidth;
+                var freeWidth;
+                if (collapseFreeSpace) {
+                    // Reserve a fixed slice for the free-space label and
+                    // give the rest of the row to the dataset segments.
+                    // Cap the slice at half the row so a tiny pool with
+                    // mostly-free space does not collapse to nothing.
+                    freeWidth = Math.min(COLLAPSED_FREE_WIDTH, width * 0.5);
+                    usedWidth = width - freeWidth;
+                } else {
+                    usedWidth = width * (node.used / totalCapacity);
+                    freeWidth = width - usedWidth;
+                }
                 drawSegment(parentSvg, node, x, y, usedWidth, depth, false);
                 drawSegment(
                     parentSvg,
                     { name: "free", used: node.available },
                     x + usedWidth,
                     y,
-                    width - usedWidth,
+                    freeWidth,
                     depth,
                     true
                 );
@@ -972,6 +1085,14 @@ window.showConfirm = function(dialogId) {
         showSnapshotBands = !!snapshotToggle.checked;
         draw();
     });
+
+    if (collapseFreeToggle) {
+        collapseFreeSpace = !!collapseFreeToggle.checked;
+        collapseFreeToggle.addEventListener("change", function() {
+            collapseFreeSpace = !!collapseFreeToggle.checked;
+            draw();
+        });
+    }
 
     var resizeTimer = null;
     window.addEventListener("resize", function() {

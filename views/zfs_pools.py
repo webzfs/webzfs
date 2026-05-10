@@ -206,11 +206,16 @@ async def pool_detail(request: Request, pool_name: str):
 
         # Get root dataset properties (reservation, available space, compression, etc.)
         reservation_value = 'none'
+        mountpoint_value = ''
+        mountpoint_source = ''
         dataset_props = {}
         try:
             dataset_props = dataset_service.get_properties(pool_name)
             if 'reservation' in dataset_props:
                 reservation_value = dataset_props['reservation'].get('value', 'none')
+            if 'mountpoint' in dataset_props:
+                mountpoint_value = dataset_props['mountpoint'].get('value', '')
+                mountpoint_source = dataset_props['mountpoint'].get('source', '')
         except Exception:
             pass
 
@@ -280,6 +285,8 @@ async def pool_detail(request: Request, pool_name: str):
                 "pool": pool_status,
                 "parsed": parsed,
                 "reservation_value": reservation_value,
+                "mountpoint_value": mountpoint_value,
+                "mountpoint_source": mountpoint_source,
                 "dataset_props": dataset_props,
                 "zfs_used": zfs_used,
                 "zfs_avail": zfs_avail,
@@ -1387,4 +1394,60 @@ async def set_pool_reservation(
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}?error={str(e)}",
             status_code=303
+        )
+
+
+@router.post("/{pool_name}/mountpoint", response_class=HTMLResponse)
+async def set_pool_mountpoint(
+    request: Request,
+    pool_name: str,
+    mountpoint: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Set the mountpoint on the pool's root dataset.
+
+    Setting the mountpoint on the root dataset will cause all child datasets
+    that inherit the mountpoint property to be remounted at the new path. Any
+    child dataset that has its own explicitly-set mountpoint will retain its
+    current mountpoint.
+    """
+    try:
+        value = mountpoint.strip()
+        if not value:
+            raise ValueError("Mountpoint cannot be empty")
+
+        # Allow special values 'none' and 'legacy'; otherwise the value must
+        # look like an absolute path.
+        if value not in ("none", "legacy") and not value.startswith("/"):
+            raise ValueError(
+                "Mountpoint must be an absolute path (start with /), "
+                "or one of the special values 'none' or 'legacy'"
+            )
+
+        dataset_service.set_property(pool_name, "mountpoint", value)
+        audit_logger.log_zfs_operation(
+            user=current_user,
+            operation="set_pool_mountpoint",
+            pool=pool_name,
+            value=value,
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?message=Mountpoint set to {value}. "
+                f"Child datasets that inherit the mountpoint property have been "
+                f"remounted under the new path.",
+            status_code=303,
+        )
+    except Exception as e:
+        audit_logger.log_zfs_operation(
+            user=current_user,
+            operation="set_pool_mountpoint",
+            pool=pool_name,
+            value=mountpoint,
+            success=False,
+            error=str(e),
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?error={str(e)}",
+            status_code=303,
         )

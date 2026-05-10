@@ -191,126 +191,302 @@ class ZFSPerformanceService:
     ) -> Dict[str, Any]:
         """
         Get I/O statistics (FreeBSD)
-        
+
+        FreeBSD's gstat does not support a sample-count argument. The -b
+        (batch) flag always collects one snapshot and exits, and -I sets
+        the sampling window. The count parameter is accepted for API
+        compatibility but is ignored.
+
         Args:
-            interval: Interval between samples
-            count: Number of samples
-            
+            interval: Sampling window in seconds
+            count: Unused, accepted for API compatibility
+
         Returns:
             Dictionary with gstat output
         """
         if self.system != 'FreeBSD':
             return {'error': 'gstat only available on FreeBSD'}
-        
+
         try:
-            cmd = ['gstat', '-b', '-I', str(interval) + 's', '-c', str(count)]
-            
+            # gstat usage: gstat [-abBcCdops] [-f filter] [-I interval]
+            # -b: batch mode (collect one sample, print, exit)
+            # -I 1s: sampling window of 1 second
+            # Note: -c on gstat is "show consumers", NOT a count flag
+            cmd = ['gstat', '-b', '-I', str(interval) + 's']
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 check=True
             )
-            
+
             return {
                 'timestamp': datetime.now().isoformat(),
                 'output': result.stdout
             }
-            
+
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get gstat: {e.stderr}")
     
-    def get_zfs_processes(self, min_cpu_percent: float = 0.0, sort_by_cpu: bool = False) -> List[Dict[str, Any]]:
+    # ZFS process/thread name patterns shared between Linux psutil enumeration
+    # and the FreeBSD ps-based enumeration. Matched as prefixes against the
+    # process name (Linux) or kernel thread name (FreeBSD).
+    ZFS_PROCESS_PATTERNS = [
+        'arc_evict', 'arc_flush', 'arc_prune', 'arc_reap',
+        'dbu_evict', 'dbuf_evict', 'dmu_objset_find',
+        'dp_sync_taskq', 'dp_zil_clean_taskq',
+        'dsl_scan_iss',
+        'l2arc_feed',
+        'metaslab_group_task',
+        'mmp',
+        'raidz_expand',
+        'receive_writer',
+        'redact_list', 'redact_merge', 'redact_traverse',
+        'send_merge', 'send_reader', 'send_traverse',
+        'spa_async', 'spa_vdev_remove',
+        'spl_delay_taskq', 'spl_dynamic_taskq', 'spl_kmem_cache', 'spl_system_taskq',
+        'sysevent',
+        'tx_commit_cb',
+        'txg_quiesce', 'txg_sync', 'txg_thread_enter',
+        'vdev_autotrim', 'vdev_initialize', 'vdev_load', 'vdev_open',
+        'vdev_rebuild', 'vdev_trim', 'vdev_validate',
+        'z_checkpoint_discard',
+        'z_cl',  # Matches z_cl_int, z_cl_iss, etc.
+        'z_flush',  # Matches z_flush_int, z_flush_iss, etc.
+        'z_fr',  # Matches z_fr_int_0, z_fr_iss_1, etc.
+        'z_indirect_condense',
+        'z_livelist_condense', 'z_livelist_destroy',
+        'z_metaslab',
+        'z_null',
+        'z_prefetch',
+        'z_rd',  # Matches z_rd_int_0, z_rd_iss_1, etc.
+        'z_send',
+        'z_trim',
+        'z_unlinked_drain',
+        'z_upgrade',
+        'z_vdev_file',
+        'z_wr',  # Matches z_wr_int_0, z_wr_iss_1, etc.
+        'z_zrele',
+        'z_zvol',
+        'zfsvfs',
+        'zpool',
+        'zfs',
+        'zfskern',
+        'zfsd',
+        'zed',
+    ]
+
+    def get_zfs_processes(
+        self,
+        min_cpu_percent: float = 0.0,
+        sort_by_cpu: bool = False,
+    ) -> List[Dict[str, Any]]:
         """
-        Get all ZFS-related processes with resource usage
-        
+        Get all ZFS-related processes/threads with resource usage.
+
+        On Linux, ZFS kernel workers are exposed as individual kernel threads
+        with their own PIDs (visible via psutil.process_iter).
+
+        On FreeBSD, ZFS workers are kernel threads inside the single
+        `zfskern` (PID 7) and `kernel` (PID 0) processes. psutil does not
+        enumerate kernel TIDs on FreeBSD, so we shell out to `ps -axwH` to
+        list every thread and filter by thread name.
+
         Args:
-            min_cpu_percent: Minimum CPU percentage to filter (default: 0.0 = all)
-            sort_by_cpu: Sort by CPU percentage descending (default: False)
-        
+            min_cpu_percent: Minimum CPU percentage to include
+            sort_by_cpu: Sort by CPU percentage descending
+
         Returns:
-            List of ZFS processes with stats
+            List of ZFS processes with stats. Each entry has the keys:
+            pid, name, username, cpu_percent, memory_percent, status.
+            On FreeBSD a `parent_pid` key is also included to indicate
+            which kernel-process container the thread lives in.
         """
-        # ZFS processes to monitor - includes both exact matches and prefixes
-        # Prefixes will match any process starting with that name
-        zfs_process_patterns = [
-            'arc_evict', 'arc_flush', 'arc_prune', 'arc_reap',
-            'dbu_evict', 'dbuf_evict', 'dmu_objset_find',
-            'dp_sync_taskq', 'dp_zil_clean_taskq',
-            'dsl_scan_iss',
-            'mmp',
-            'raidz_expand',
-            'receive_writer',
-            'redact_list', 'redact_merge', 'redact_traverse',
-            'send_merge', 'send_reader', 'send_traverse',
-            'spa_async', 'spa_vdev_remove',
-            'spl_delay_taskq', 'spl_dynamic_taskq', 'spl_kmem_cache', 'spl_system_taskq',
-            'tx_commit_cb',
-            'txg_quiesce', 'txg_sync',
-            'vdev_autotrim', 'vdev_initialize', 'vdev_load', 'vdev_open', 'vdev_rebuild', 'vdev_trim', 'vdev_validate',
-            'z_checkpoint_discard',
-            'z_cl',  # Matches z_cl_int, z_cl_iss, etc.
-            'z_flush',  # Matches z_flush_int, z_flush_iss, etc.
-            'z_fr',  # Matches z_fr_int_0, z_fr_iss_1, etc.
-            'z_indirect_condense',
-            'z_livelist_condense', 'z_livelist_destroy',
-            'z_metaslab',
-            'z_null',
-            'z_prefetch',
-            'z_rd',  # Matches z_rd_int_0, z_rd_iss_1, etc.
-            'z_send',
-            'z_trim',
-            'z_unlinked_drain',
-            'z_upgrade',
-            'z_vdev_file',
-            'z_wr',  # Matches z_wr_int_0, z_wr_iss_1, etc.
-            'z_zrele',
-            'z_zvol',
-            'zpool',
-            'zfs',
-            'zed'
-        ]
-        
-        zfs_processes = []
-        
         try:
-            for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'status']):
-                try:
-                    name = proc.info['name']
-                    
-                    # Check if process matches any of our ZFS process patterns
-                    is_zfs_process = False
-                    
-                    # Check if process name starts with any of our patterns
-                    for pattern in zfs_process_patterns:
-                        if name.startswith(pattern):
-                            is_zfs_process = True
-                            break
-                    
-                    if is_zfs_process:
-                        cpu_percent = proc.info['cpu_percent'] or 0.0
-                        
-                        # Apply CPU filter
-                        if cpu_percent >= min_cpu_percent:
-                            zfs_processes.append({
-                                'pid': proc.info['pid'],
-                                'name': name,
-                                'username': proc.info['username'],
-                                'cpu_percent': cpu_percent,
-                                'memory_percent': proc.info['memory_percent'] or 0.0,
-                                'status': proc.info['status']
-                            })
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-            
-            # Sort by CPU percentage if requested
+            if self.system == 'FreeBSD':
+                processes = self._get_zfs_processes_freebsd()
+            else:
+                processes = self._get_zfs_processes_psutil()
+
+            # Apply minimum CPU filter
+            if min_cpu_percent > 0.0:
+                processes = [
+                    p for p in processes
+                    if p.get('cpu_percent', 0.0) >= min_cpu_percent
+                ]
+
             if sort_by_cpu:
-                zfs_processes.sort(key=lambda x: x['cpu_percent'], reverse=True)
-            
-            return zfs_processes
-            
+                processes.sort(
+                    key=lambda x: x.get('cpu_percent', 0.0),
+                    reverse=True,
+                )
+
+            return processes
+
         except Exception as e:
             raise Exception(f"Failed to get ZFS processes: {str(e)}")
+
+    def _matches_zfs_pattern(self, thread_name: str) -> bool:
+        """Return True if the given name matches any ZFS process pattern."""
+        if not thread_name:
+            return False
+        for pattern in self.ZFS_PROCESS_PATTERNS:
+            if thread_name.startswith(pattern):
+                return True
+        return False
+
+    def _get_zfs_processes_psutil(self) -> List[Dict[str, Any]]:
+        """Enumerate ZFS processes via psutil (Linux and other non-BSD)."""
+        zfs_processes: List[Dict[str, Any]] = []
+
+        for proc in psutil.process_iter(
+            ['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'status']
+        ):
+            try:
+                name = proc.info['name'] or ''
+                if not self._matches_zfs_pattern(name):
+                    continue
+
+                zfs_processes.append({
+                    'pid': proc.info['pid'],
+                    'name': name,
+                    'username': proc.info['username'],
+                    'cpu_percent': proc.info['cpu_percent'] or 0.0,
+                    'memory_percent': proc.info['memory_percent'] or 0.0,
+                    'status': proc.info['status'],
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        return zfs_processes
+
+    def _get_zfs_processes_freebsd(self) -> List[Dict[str, Any]]:
+        """
+        Enumerate ZFS kernel threads on FreeBSD using `ps -axwH`.
+
+        FreeBSD's `ps -H` flag lists each thread on its own line. The `comm=`
+        column with no header produces an unpadded `procname/threadname`
+        string. We extract the thread name (after the slash) and match it
+        against ZFS_PROCESS_PATTERNS. Lines without a slash represent
+        single-threaded user processes (e.g. zfsd, zed) and are matched on
+        the bare process name.
+        """
+        zfs_processes: List[Dict[str, Any]] = []
+
+        try:
+            # -a all, -x include processes without a controlling terminal,
+            # -w wide output (no truncation), -H show kernel threads.
+            #
+            # Note on -o: BSD ps treats `colname=label` as a single column
+            # with a custom label that runs to the end of the argument
+            # token. So `pid=,user=,...` would be parsed as ONE column
+            # named pid with the label ",user=,...". We therefore use
+            # plain comma-separated column names (no `=`) and skip the
+            # header row in code below.
+            result = subprocess.run(
+                [
+                    'ps', '-axwH',
+                    '-o', 'pid,user,pcpu,pmem,stat,comm',
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+                FileNotFoundError):
+            # Fall back to psutil view (which only sees the parent procs)
+            # so the page still renders something rather than failing hard.
+            return self._get_zfs_processes_psutil()
+
+        for line in result.stdout.splitlines():
+            line = line.rstrip()
+            if not line.strip():
+                continue
+
+            # Split into 6 fields; comm may contain spaces but in practice
+            # FreeBSD thread names do not, so a 5-way split is safe.
+            parts = line.split(None, 5)
+            if len(parts) < 6:
+                continue
+
+            pid_str, user, pcpu_str, pmem_str, stat, comm = parts
+
+            # Skip the header row that ps emits as the first line
+            # ("PID USER %CPU %MEM STAT COMMAND" or similar)
+            try:
+                pid = int(pid_str)
+            except ValueError:
+                continue
+
+            # comm is "procname/threadname" for kernel threads, or just
+            # "procname" for ordinary user processes.
+            if '/' in comm:
+                proc_name, thread_name = comm.split('/', 1)
+                display_name = thread_name
+            else:
+                proc_name = comm
+                thread_name = comm
+                display_name = comm
+
+            # Match against thread name first (where the interesting ZFS
+            # workers live), then fall back to the parent process name so
+            # zfsd/zed/zfskern itself still show up.
+            if not (self._matches_zfs_pattern(thread_name)
+                    or self._matches_zfs_pattern(proc_name)):
+                continue
+
+            try:
+                cpu_percent = float(pcpu_str)
+            except ValueError:
+                cpu_percent = 0.0
+            try:
+                memory_percent = float(pmem_str)
+            except ValueError:
+                memory_percent = 0.0
+
+            zfs_processes.append({
+                'pid': pid,
+                'name': display_name,
+                'parent_name': proc_name,
+                'username': user,
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory_percent,
+                'status': self._normalize_freebsd_status(stat),
+                'raw_status': stat,
+            })
+
+        return zfs_processes
+
+    @staticmethod
+    def _normalize_freebsd_status(stat: str) -> str:
+        """
+        Map a FreeBSD ps STAT code to a psutil-style status string.
+
+        FreeBSD STAT first letter:
+          R = runnable      -> running
+          S = sleeping      -> sleeping
+          I = idle          -> sleeping
+          D = disk wait     -> disk-sleep
+          L = lock wait     -> disk-sleep
+          T = stopped       -> stopped
+          Z = zombie        -> zombie
+
+        Most ZFS kernel threads sit in "DL" (disk wait, lock held).
+        """
+        if not stat:
+            return 'unknown'
+        first = stat[0]
+        return {
+            'R': 'running',
+            'S': 'sleeping',
+            'I': 'sleeping',
+            'D': 'disk-sleep',
+            'L': 'disk-sleep',
+            'T': 'stopped',
+            'Z': 'zombie',
+        }.get(first, 'unknown')
     
     def get_pool_capacity_stats(
         self,
