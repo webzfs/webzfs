@@ -109,6 +109,21 @@ The installation script automatically:
 
 ### Running
 
+#### System Managed
+
+On Linux:
+```bash
+sudo systemctl enable --now webzfs
+```
+
+On FreeBSD:
+```bash
+Sudo service webzfs start
+```
+
+
+#### Manually (for dev usage)
+
 On Linux:
 ```bash
 # Start the application
@@ -153,30 +168,6 @@ Configuration is stored in `/opt/webzfs/.env`. Key settings:
 - `PORT` - Default: 26619
 
 See [BUILD_AND_RUN.md](BUILD_AND_RUN.md) for detailed configuration options.
-
-## System Service
-
-To run WebZFS as a system service that starts on boot, see the complete service setup instructions in [BUILD_AND_RUN.md](BUILD_AND_RUN.md#system-service-setup).
-
-
-## Project Structure
-
-```
-├── auth/               # Authentication and authorization
-├── config/             # Application configuration and settings
-├── services/           # Core business logic and ZFS/SMART services
-├── templates/          # Jinja2 HTML templates
-├── views/              # FastAPI route handlers
-├── static/             # Generated static assets
-└── src/                # Source CSS files
-```
-
-## Technology Stack
-
-- **Backend**: Python 3.11, FastAPI, Uvicorn/Gunicorn
-- **Frontend**: HTMX, Tailwind CSS, Jinja2 templates
-- **ZFS Integration**: Shell command execution with privilege management
-- **Authentication**: PAM-based authentication
 
 ## Security Considerations
 
@@ -228,15 +219,6 @@ source .venv/bin/activate
 
 For adding new features, see [add_feature_demo/README.md](add_feature_demo/README.md).
 
-### CSS Development
-
-To automatically rebuild CSS when modifying Tailwind classes:
-
-```bash
-source .venv/bin/activate
-npm run watch:css
-```
-
 ## Contributing
 
 Contributions are welcome! Please submit issues or pull requests.
@@ -253,14 +235,9 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 ## Support
 
-- **GitHub**: https://github.com/q5sys/webzfs
-- **Issues**: Use the GitHub issue tracker
+- **GitHub**: [https://github.com/q5sys/webzfs](https://github.com/webzfs/webzfs/issues)
 
 ---
-
-**For detailed installation, configuration, troubleshooting, and system service setup, see [BUILD_AND_RUN.md](BUILD_AND_RUN.md).**
-
-
 
 ## AI Usage Disclosure
 
