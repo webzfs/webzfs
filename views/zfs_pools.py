@@ -198,8 +198,19 @@ async def pools_index(request: Request):
 @router.get("/{pool_name}", response_class=HTMLResponse)
 async def pool_detail(request: Request, pool_name: str):
     """Display detailed pool information"""
+    # If the pool is not imported (e.g. it was exported outside of WebZFS),
+    # redirect back to the pools overview instead of crashing.
+    try:
+        if not pool_service.pool_exists(pool_name):
+            return RedirectResponse(
+                url=f"/zfs/pools?error=Pool '{pool_name}' is not imported and cannot be displayed.",
+                status_code=303
+            )
+    except Exception:
+        pass
     try:
         pool_status = pool_service.get_pool_status(pool_name)
+
 
         # Parse structured data from status output
         parsed = parse_pool_status(pool_status.get('status_output', ''))
@@ -330,7 +341,16 @@ async def pool_space_tree(request: Request, pool_name: str):
 async def pool_history(request: Request, pool_name: str):
     """Display pool command history"""
     try:
+        if not pool_service.pool_exists(pool_name):
+            return RedirectResponse(
+                url=f"/zfs/pools?error=Pool '{pool_name}' is not imported and cannot be displayed.",
+                status_code=303
+            )
+    except Exception:
+        pass
+    try:
         history = pool_service.get_pool_history(pool_name, internal=False, limit=1000)
+
         
         return templates.TemplateResponse(
             "zfs/pools/history.jinja",
@@ -682,8 +702,17 @@ async def import_pool(
 async def pool_properties(request: Request, pool_name: str):
     """Display pool properties"""
     try:
+        if not pool_service.pool_exists(pool_name):
+            return RedirectResponse(
+                url=f"/zfs/pools?error=Pool '{pool_name}' is not imported and cannot be displayed.",
+                status_code=303
+            )
+    except Exception:
+        pass
+    try:
         pool_status = pool_service.get_pool_status(pool_name)
         properties = pool_status.get('properties', {})
+
         
         return templates.TemplateResponse(
             "zfs/pools/properties.jinja",
@@ -875,7 +904,16 @@ async def download_pool_diagnostics(pool_name: str):
 @router.get("/{pool_name}/vdevs", response_class=HTMLResponse)
 async def vdev_management(request: Request, pool_name: str):
     """Display vdev management page shell (data loaded async via JS)"""
+    try:
+        if not pool_service.pool_exists(pool_name):
+            return RedirectResponse(
+                url=f"/zfs/pools?error=Pool '{pool_name}' is not imported and cannot be displayed.",
+                status_code=303
+            )
+    except Exception:
+        pass
     return templates.TemplateResponse(
+
         "zfs/pools/vdevs.jinja",
         {
             "request": request,

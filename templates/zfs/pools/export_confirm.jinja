@@ -139,18 +139,47 @@
     </div>
 </div>
 
+<!-- Export In-Progress Overlay -->
+<div id="export-progress-overlay" class="modal-overlay" style="display: none;">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="modal modal-sm text-center">
+                <div class="flex items-center justify-center mb-4">
+                    <div class="loading-spinner"></div>
+                </div>
+                <h3 class="text-xl font-semibold text-text-primary mb-2">Exporting Pool</h3>
+                <p class="text-text-secondary">
+                    Exporting pool <strong class="font-mono text-text-primary">{{ pool_name }}</strong>.
+                    This may take a moment while all datasets are unmounted. Please wait.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Confirmation Modal -->
 {% set id = 'confirm-export-pool' %}
 {% set title = 'Export ZFS Pool' %}
 {% set message = 'Are you sure you want to export ' ~ pool_name ~ '? All datasets will be unmounted and the pool will no longer be accessible until re-imported.' %}
 {% set confirm_text = 'Export Pool' %}
 {% set confirm_class = 'danger' %}
-{% set confirm_action = 'document.getElementById("form-export-pool").submit()' %}
+{% set confirm_action = 'showExportProgress(); document.getElementById("form-export-pool").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
+
 <script>
+// Show the export in-progress overlay so the user knows the operation is running.
+window.showExportProgress = function() {
+    const overlay = document.getElementById('export-progress-overlay');
+    if (overlay) {
+        overlay.style.display = 'block';
+    }
+};
+
 // Ensure showConfirm function is available
 window.showConfirm = function(dialogId) {
+
     const dialog = document.getElementById(dialogId);
     
     if (!dialog) {

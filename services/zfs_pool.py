@@ -216,9 +216,36 @@ class ZFSPoolService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to list pools: {e.stderr}")
     
+    def pool_exists(self, pool_name: str) -> bool:
+        """
+        Check whether a pool is currently imported on the system.
+
+        Args:
+            pool_name: Name of the pool to check
+
+        Returns:
+            True if the pool is imported and available, False otherwise
+        """
+        try:
+            self.validate_pool_name(pool_name)
+        except ValueError:
+            return False
+        timeout = self.timeouts.get('list', self.timeouts['default'])
+        try:
+            run_zfs_command(
+                ['zpool', 'list', '-H', '-o', 'name', pool_name],
+                timeout=timeout
+            )
+            return True
+        except subprocess.CalledProcessError:
+            return False
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool list command timed out after {timeout} seconds. The system may be unresponsive or pools unavailable.")
+
     def get_pool_status(self, pool_name: str) -> Dict[str, Any]:
         """
         Get detailed status for a specific pool
+
         
         Args:
             pool_name: Name of the pool
