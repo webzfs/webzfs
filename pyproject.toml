@@ -18,7 +18,7 @@ humanize = "^4.12.3"
 python-jose = "^3.4.0"
 python-pam = "^2.0.2"
 paramiko = "3.5.0"
-cryptography = "44.0.0"
+cryptography = "48.0.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
