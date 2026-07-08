@@ -7,7 +7,7 @@ authors = ["q5sys <jt@obs-sec.com>"]
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = "^0.115.12"
-python-multipart = "^0.0.20"
+python-multipart = "^0.0.32"
 uvicorn = "^0.42.0"
 gunicorn = "^25.3.0"
 typer = "^0.24.1"
@@ -18,7 +18,7 @@ humanize = "^4.12.3"
 python-jose = "^3.4.0"
 python-pam = "^2.0.2"
 paramiko = "3.5.0"
-cryptography = "44.0.0"
+cryptography = "48.0.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
