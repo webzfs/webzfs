@@ -27,9 +27,9 @@ async def health_index(request: Request):
         pass
 
     return templates.TemplateResponse(
-        "utils/health/index.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/health/index.jinja",
+        context={
             "page_title": "Health Analysis",
             "disk_count": disk_count,
         },
@@ -42,9 +42,9 @@ async def health_content_partial(request: Request):
     try:
         reports = health_service.list_reports()
         return templates.TemplateResponse(
-            "utils/health/content_partial.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/health/content_partial.jinja",
+            context={
                 "reports": reports,
             },
         )
@@ -113,9 +113,9 @@ async def health_report_detail(request: Request, report_id: str):
             pass
 
     return templates.TemplateResponse(
-        "utils/health/report.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/health/report.jinja",
+        context={
             "report": report,
             "page_title": f"Health Report - {display_date}",
         },
@@ -133,9 +133,9 @@ async def health_report_content_partial(request: Request, report_id: str):
         )
 
     return templates.TemplateResponse(
-        "utils/health/report_content_partial.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/health/report_content_partial.jinja",
+        context={
             "report": report,
         },
     )

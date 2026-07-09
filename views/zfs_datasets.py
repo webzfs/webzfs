@@ -60,9 +60,9 @@ async def datasets_index(
         pools = sorted(pools_dict.items())
         
         return templates.TemplateResponse(
-            "zfs/datasets/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/index.jinja",
+            context={
                 "datasets": datasets,  # Keep original list for count
                 "pools": pools,  # Grouped datasets by pool
                 "selected_pool": pool,
@@ -71,9 +71,9 @@ async def datasets_index(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/datasets/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/index.jinja",
+            context={
                 "datasets": [],
                 "pools": [],
                 "error": str(e),
@@ -114,9 +114,9 @@ async def create_dataset_form(
     supports_encryption = not is_netbsd()
     
     return templates.TemplateResponse(
-        "zfs/datasets/create.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/datasets/create.jinja",
+        context={
             "pool": pool,
             "parent": parent,
             "pool_datasets": pool_datasets,
@@ -204,9 +204,9 @@ async def create_dataset(
         # NetBSD ZFS does not support encryption
         supports_encryption = not is_netbsd()
         return templates.TemplateResponse(
-            "zfs/datasets/create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/create.jinja",
+            context={
                 "error": str(e),
                 "dataset_name": dataset_name,
                 "dataset_type": dataset_type,
@@ -233,9 +233,9 @@ async def dataset_properties(
         openzfs_man_url = get_openzfs_man_page_url()
         
         return templates.TemplateResponse(
-            "zfs/datasets/properties.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/properties.jinja",
+            context={
                 "dataset_name": dataset_path,
                 "properties": properties,
                 "openzfs_man_url": openzfs_man_url,
@@ -245,9 +245,9 @@ async def dataset_properties(
     except Exception as e:
         # Return full page with error for HTMX compatibility
         return templates.TemplateResponse(
-            "zfs/datasets/properties.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/properties.jinja",
+            context={
                 "dataset_name": dataset_path,
                 "properties": None,
                 "openzfs_man_url": None,
@@ -391,9 +391,9 @@ async def rename_dataset_form(
 ):
     """Display rename form"""
     return templates.TemplateResponse(
-        "zfs/datasets/rename.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/datasets/rename.jinja",
+        context={
             "dataset_name": dataset_path,
             "page_title": f"Rename Dataset: {dataset_path}"
         }
@@ -419,9 +419,9 @@ async def rename_dataset(
     except Exception as e:
         audit_logger.log_dataset_rename(user=current_user, old_name=dataset_path, new_name=new_name, success=False, error=str(e))
         return templates.TemplateResponse(
-            "zfs/datasets/rename.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/rename.jinja",
+            context={
                 "dataset_name": dataset_path,
                 "new_name": new_name,
                 "error": str(e),
@@ -568,9 +568,9 @@ async def set_dataset_quota(
             except Exception:
                 pass
             return templates.TemplateResponse(
-                "zfs/datasets/detail.jinja",
-                {
-                    "request": request,
+                request,
+                name="zfs/datasets/detail.jinja",
+                context={
                     "dataset": dataset,
                     "space_usage": space_usage,
                     "error": error_msg,
@@ -603,9 +603,9 @@ async def dataset_detail(
             pass
         
         return templates.TemplateResponse(
-            "zfs/datasets/detail.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/detail.jinja",
+            context={
                 "dataset": dataset,
                 "space_usage": space_usage,
                 "page_title": f"Dataset: {dataset_path}"
@@ -613,9 +613,9 @@ async def dataset_detail(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/datasets/detail.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/datasets/detail.jinja",
+            context={
                 "dataset": None,
                 "space_usage": [],
                 "error": str(e),

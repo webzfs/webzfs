@@ -51,9 +51,9 @@ async def pool_iostat_page(
         )
 
         return templates.TemplateResponse(
-            "zfs/observability/pool_iostat.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/pool_iostat.jinja",
+            context={
                 "all_pools": pool_names,
                 "selected_pool": pool,
                 "interval": interval,
@@ -66,9 +66,9 @@ async def pool_iostat_page(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/pool_iostat.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/pool_iostat.jinja",
+            context={
                 "all_pools": [],
                 "iostat_data": {},
                 "error": str(e),
@@ -220,9 +220,9 @@ async def arc_realtime_page(
         system = performance_service.system
 
         return templates.TemplateResponse(
-            "zfs/observability/arc_realtime.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/arc_realtime.jinja",
+            context={
                 "raw_arcstats": raw_arcstats,
                 "system": system,
                 "interval": interval,
@@ -231,9 +231,9 @@ async def arc_realtime_page(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/arc_realtime.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/arc_realtime.jinja",
+            context={
                 "raw_arcstats": {},
                 "system": performance_service.system,
                 "error": str(e),
@@ -281,9 +281,9 @@ async def zfs_processes_page(request: Request, interval: int = 5):
         processes = performance_service.get_zfs_processes(sort_by_cpu=True)
 
         return templates.TemplateResponse(
-            "zfs/observability/processes.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/processes.jinja",
+            context={
                 "processes": processes,
                 "interval": interval,
                 "page_title": "ZFS Processes",
@@ -291,9 +291,9 @@ async def zfs_processes_page(request: Request, interval: int = 5):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/processes.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/processes.jinja",
+            context={
                 "processes": [],
                 "interval": interval,
                 "error": str(e),
@@ -463,9 +463,9 @@ async def dataset_space_page(
         )
 
         return templates.TemplateResponse(
-            "zfs/observability/dataset_space.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/dataset_space.jinja",
+            context={
                 "all_datasets": dataset_names,
                 "selected_dataset": dataset,
                 "recursive": recursive,
@@ -475,9 +475,9 @@ async def dataset_space_page(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/dataset_space.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/dataset_space.jinja",
+            context={
                 "all_datasets": [],
                 "space_usage": [],
                 "error": str(e),
@@ -525,9 +525,9 @@ async def vdev_stats_page(
             vdev_stats = performance_service.get_vdev_stats(selected_pool)
 
         return templates.TemplateResponse(
-            "zfs/observability/vdev_stats.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/vdev_stats.jinja",
+            context={
                 "all_pools": pool_names,
                 "selected_pool": selected_pool,
                 "vdev_stats": vdev_stats,
@@ -536,9 +536,9 @@ async def vdev_stats_page(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/vdev_stats.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/vdev_stats.jinja",
+            context={
                 "all_pools": [],
                 "vdev_stats": [],
                 "error": str(e),
@@ -653,9 +653,9 @@ async def system_iostat_page(
             iostat_data = {'error': f'System I/O stats not available on {system}'}
 
         return templates.TemplateResponse(
-            "zfs/observability/system_iostat.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/system_iostat.jinja",
+            context={
                 "system": system,
                 "interval": interval,
                 "extended": extended,
@@ -665,9 +665,9 @@ async def system_iostat_page(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/system_iostat.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/system_iostat.jinja",
+            context={
                 "system": performance_service.system,
                 "iostat_data": {},
                 "error": str(e),

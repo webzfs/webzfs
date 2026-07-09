@@ -1,25 +1,26 @@
-[tool.poetry]
-name = "WebZFS"
-version = "0.70.0"
-description = ""
+[tool.poetry] 
+name = "WebZFS" 
+version = "0.70.0" 
+description = "" 
 authors = ["q5sys <jt@obs-sec.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-fastapi = "^0.121.2"
+fastapi = ">=0.139.0,<0.140.0"
 
 python-multipart = "^0.0.32"
 uvicorn = "^0.42.0"
 gunicorn = "^25.3.0"
 typer = "^0.24.1"
-pydantic-settings = "^2.9.1"
+pydantic-settings = ">=2.14.2,<3.0.0"
 jinja2 = "^3.1.6"
 psutil = "^7.0.0"
 humanize = "^4.12.3"
-python-jose = "^3.4.0"
+python-jose = { version = "^3.5.0", extras = ["cryptography"] }
+pyasn1 = ">=0.6.3,<0.7.0"
 python-pam = "^2.0.2"
-paramiko = "3.5.0"
-cryptography = "48.0.1"
+paramiko = ">=5.0.0,<6.0.0"
+cryptography = ">=48.0.1,<50.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
@@ -38,7 +39,7 @@ coverage = "^7.6.0"
 httpx = "^0.28.0"
 djhtml = "^3.0.6"
 faker = "^40.11.0"
-setuptools = "^75.0.0"
+setuptools = ">=83.0.0,<84.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

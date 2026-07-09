@@ -42,9 +42,9 @@ async def replication_index(request: Request):
         system = platform.system()
         
         return templates.TemplateResponse(
-            "zfs/replication/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/index.jinja",
+            context={
                 "jobs": jobs,
                 "syncoid_status": syncoid_status,
                 "active_executions": active_executions,
@@ -54,9 +54,9 @@ async def replication_index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/replication/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/index.jinja",
+            context={
                 "jobs": [],
                 "syncoid_status": {'installed': False},
                 "active_executions": [],
@@ -75,9 +75,9 @@ async def create_job_form(request: Request):
         datasets = dataset_service.list_datasets()
         
         return templates.TemplateResponse(
-            "zfs/replication/job_create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/job_create.jinja",
+            context={
                 "datasets": datasets,
                 "replication_types": [t.value for t in ReplicationType],
                 "compression_methods": [c.value for c in CompressionMethod],
@@ -86,9 +86,9 @@ async def create_job_form(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/replication/job_create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/job_create.jinja",
+            context={
                 "datasets": [],
                 "error": str(e),
                 "page_title": "Create Replication Job"
@@ -139,9 +139,9 @@ async def create_job(
     except Exception as e:
         datasets = dataset_service.list_datasets()
         return templates.TemplateResponse(
-            "zfs/replication/job_create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/job_create.jinja",
+            context={
                 "datasets": datasets,
                 "replication_types": [t.value for t in ReplicationType],
                 "compression_methods": [c.value for c in CompressionMethod],
@@ -160,9 +160,9 @@ async def job_detail(request: Request, job_id: str):
         history = replication_service.get_replication_history(job_id=job_id, limit=20)
         
         return templates.TemplateResponse(
-            "zfs/replication/job_detail.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/job_detail.jinja",
+            context={
                 "job": job,
                 "status": status,
                 "history": history,
@@ -171,9 +171,9 @@ async def job_detail(request: Request, job_id: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/zfs/replication"
             }
@@ -218,18 +218,18 @@ async def delete_job_confirm(request: Request, job_id: str):
     try:
         job = replication_service.get_replication_job(job_id)
         return templates.TemplateResponse(
-            "zfs/replication/job_delete_confirm.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/job_delete_confirm.jinja",
+            context={
                 "job": job,
                 "page_title": f"Delete Replication Job: {job['name']}"
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/zfs/replication"
             }
@@ -267,9 +267,9 @@ async def send_receive_form(request: Request):
         zfs_receive_man_url = get_openzfs_man_page_section_url(8, "zfs-receive.8")
         
         return templates.TemplateResponse(
-            "zfs/replication/send_receive.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/send_receive.jinja",
+            context={
                 "datasets": datasets,
                 "snapshots": snapshots,
                 "ssh_connections": ssh_connections,
@@ -281,9 +281,9 @@ async def send_receive_form(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/replication/send_receive.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/send_receive.jinja",
+            context={
                 "datasets": [],
                 "snapshots": [],
                 "ssh_connections": [],
@@ -365,9 +365,9 @@ async def send_receive_execute(
         datasets = dataset_service.list_datasets()
         snapshots = snapshot_service.list_snapshots()
         return templates.TemplateResponse(
-            "zfs/replication/send_receive.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/send_receive.jinja",
+            context={
                 "datasets": datasets,
                 "snapshots": snapshots,
                 "compression_methods": [c.value for c in CompressionMethod],
@@ -393,18 +393,18 @@ async def estimate_size(
         )
         
         return templates.TemplateResponse(
-            "zfs/replication/estimate_result.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/estimate_result.jinja",
+            context={
                 "estimate": estimate,
                 "page_title": "Transfer Size Estimate"
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/zfs/replication/send-receive/form"
             }
@@ -425,9 +425,9 @@ async def syncoid_index(request: Request):
         system = platform.system()
         
         return templates.TemplateResponse(
-            "zfs/replication/syncoid.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/syncoid.jinja",
+            context={
                 "syncoid_status": syncoid_status,
                 "datasets": datasets,
                 "ssh_connections": ssh_connections,
@@ -437,9 +437,9 @@ async def syncoid_index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/replication/syncoid.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/syncoid.jinja",
+            context={
                 "syncoid_status": {'installed': False},
                 "datasets": [],
                 "ssh_connections": [],
@@ -488,9 +488,9 @@ async def syncoid_execute(
         )
         
         return templates.TemplateResponse(
-            "zfs/replication/syncoid_result.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/syncoid_result.jinja",
+            context={
                 "result": result,
                 "page_title": "Syncoid Result"
             }
@@ -499,9 +499,9 @@ async def syncoid_execute(
         syncoid_status = syncoid_service.check_syncoid_status()
         datasets = dataset_service.list_datasets()
         return templates.TemplateResponse(
-            "zfs/replication/syncoid.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/syncoid.jinja",
+            context={
                 "syncoid_status": syncoid_status,
                 "datasets": datasets,
                 "error": str(e),
@@ -559,9 +559,9 @@ async def syncoid_common_snapshots(
         )
         
         return templates.TemplateResponse(
-            "zfs/replication/common_snapshots.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/common_snapshots.jinja",
+            context={
                 "result": result,
                 "source": source,
                 "target": target,
@@ -570,9 +570,9 @@ async def syncoid_common_snapshots(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/zfs/replication/syncoid"
             }
@@ -759,9 +759,9 @@ async def replication_history(request: Request, limit: int = 50, offset: int = 0
         active_executions = replication_service.get_active_executions()
         
         return templates.TemplateResponse(
-            "zfs/replication/history.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/history.jinja",
+            context={
                 "history": history,
                 "active_executions": active_executions,
                 "limit": limit,
@@ -771,9 +771,9 @@ async def replication_history(request: Request, limit: int = 50, offset: int = 0
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/replication/history.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/history.jinja",
+            context={
                 "history": [],
                 "active_executions": [],
                 "error": str(e),
@@ -790,27 +790,27 @@ async def execution_detail(request: Request, execution_id: int):
         
         if not execution:
             return templates.TemplateResponse(
-                "partials/error.jinja",
-                {
-                    "request": request,
+                request,
+                name="partials/error.jinja",
+                context={
                     "error": f"Execution {execution_id} not found",
                     "back_url": "/zfs/replication/history"
                 }
             )
         
         return templates.TemplateResponse(
-            "zfs/replication/execution_detail.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/execution_detail.jinja",
+            context={
                 "execution": execution,
                 "page_title": f"Execution #{execution_id}"
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/zfs/replication/history"
             }
@@ -1066,9 +1066,9 @@ async def notification_settings(request: Request):
         is_configured = email_service.is_configured()
         
         return templates.TemplateResponse(
-            "zfs/replication/notification_settings.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/notification_settings.jinja",
+            context={
                 "is_configured": is_configured,
                 "smtp_enabled": email_service.smtp_enabled,
                 "smtp_host": email_service.smtp_host,
@@ -1080,9 +1080,9 @@ async def notification_settings(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/replication/notification_settings.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/replication/notification_settings.jinja",
+            context={
                 "is_configured": False,
                 "error": str(e),
                 "page_title": "Notification Settings"

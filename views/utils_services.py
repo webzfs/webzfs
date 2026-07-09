@@ -18,9 +18,9 @@ services_service = SystemServicesService()
 async def services_index(request: Request):
     """Render the page shell immediately. Service data is loaded via HTMX."""
     return templates.TemplateResponse(
-        "utils/services/index.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/services/index.jinja",
+        context={
             "page_title": "System Services",
         },
     )
@@ -43,9 +43,9 @@ async def services_content_partial(request: Request):
         }
 
         return templates.TemplateResponse(
-            "utils/services/content_partial.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/services/content_partial.jinja",
+            context={
                 "services": all_services,
                 "summary": summary,
             },
@@ -67,9 +67,9 @@ async def service_detail(request: Request, service_name: str):
     try:
         detail = services_service.get_service_detail(service_name)
         return templates.TemplateResponse(
-            "utils/services/detail.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/services/detail.jinja",
+            context={
                 "service_name": service_name,
                 "detail": detail,
                 "page_title": f"Service: {service_name}",
@@ -77,9 +77,9 @@ async def service_detail(request: Request, service_name: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/utils/services",
             },

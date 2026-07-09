@@ -32,9 +32,9 @@ async def index(request: Request):
         time_info = ntp_service.get_time_info()
         
         return templates.TemplateResponse(
-            "utils/ntp/index.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/ntp/index.jinja",
+            context={
                 "status": status,
                 "servers": servers,
                 "time_info": time_info,
@@ -43,9 +43,9 @@ async def index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/utils"
             }
@@ -60,9 +60,9 @@ async def view_config(request: Request):
         config_path = str(ntp_service.config_path)
         
         return templates.TemplateResponse(
-            "utils/ntp/config.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/ntp/config.jinja",
+            context={
                 "config": config,
                 "config_path": config_path,
                 "page_title": "Edit NTP Configuration"
@@ -70,9 +70,9 @@ async def view_config(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/utils/ntp"
             }
@@ -159,18 +159,18 @@ async def refresh_status(request: Request):
         time_info = ntp_service.get_time_info()
         
         return templates.TemplateResponse(
-            "utils/ntp/status_partial.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/ntp/status_partial.jinja",
+            context={
                 "status": status,
                 "time_info": time_info
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e)
             }
         )

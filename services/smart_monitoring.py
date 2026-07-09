@@ -99,12 +99,23 @@ class SMARTMonitoringService:
             return {}
     
     def _write_json(self, file_path: Path, data: Dict[str, Any]) -> None:
-        """Write JSON file atomically"""
+        """Write JSON file atomically.
+
+        Uses a unique temp file via tempfile.mkstemp so concurrent workers
+        do not collide on a shared temp name during startup initialization.
+        """
+        import os
         import tempfile
-        temp_file = file_path.with_suffix('.tmp')
-        with open(temp_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        temp_file.replace(file_path)
+        fd, temp_name = tempfile.mkstemp(dir=str(file_path.parent), suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(data, f, indent=2)
+            os.replace(temp_name, file_path)
+        except BaseException:
+            if os.path.exists(temp_name):
+                os.unlink(temp_name)
+            raise
+
     
     def list_disks(self) -> List[Dict[str, Any]]:
         """

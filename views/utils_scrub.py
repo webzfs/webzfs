@@ -42,11 +42,24 @@ class ScrubScheduleStorage:
             return {'schedules': [], 'next_id': 1}
     
     def _write_json(self, data: dict) -> None:
-        """Write JSON file atomically"""
-        temp_file = self.schedules_file.with_suffix('.tmp')
-        with open(temp_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        temp_file.replace(self.schedules_file)
+        """Write JSON file atomically.
+
+        Uses a unique temp file via tempfile.mkstemp so concurrent workers
+        do not collide on a shared temp name during startup initialization.
+        """
+        import os
+        import tempfile
+        file_path = self.schedules_file
+        fd, temp_name = tempfile.mkstemp(dir=str(file_path.parent), suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(data, f, indent=2)
+            os.replace(temp_name, file_path)
+        except BaseException:
+            if os.path.exists(temp_name):
+                os.unlink(temp_name)
+            raise
+
     
     def list_schedules(self) -> list:
         """Get all schedules"""

@@ -176,18 +176,18 @@ async def pools_index(request: Request):
     try:
         pools = pool_service.list_pools()
         return templates.TemplateResponse(
-            "zfs/pools/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/index.jinja",
+            context={
                 "pools": pools,
                 "page_title": "ZFS Pools"
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/pools/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/index.jinja",
+            context={
                 "pools": [],
                 "error": str(e),
                 "page_title": "ZFS Pools"
@@ -290,9 +290,9 @@ async def pool_detail(request: Request, pool_name: str):
                 checkpoint_info = None
 
         return templates.TemplateResponse(
-            "zfs/pools/detail.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/detail.jinja",
+            context={
                 "pool": pool_status,
                 "parsed": parsed,
                 "reservation_value": reservation_value,
@@ -310,9 +310,9 @@ async def pool_detail(request: Request, pool_name: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/zfs/pools"
             }
@@ -353,9 +353,9 @@ async def pool_history(request: Request, pool_name: str):
 
         
         return templates.TemplateResponse(
-            "zfs/pools/history.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/history.jinja",
+            context={
                 "pool_name": pool_name,
                 "history": history,
                 "page_title": f"Pool History: {pool_name}"
@@ -363,9 +363,9 @@ async def pool_history(request: Request, pool_name: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/zfs/pools/{pool_name}"
             }
@@ -466,9 +466,9 @@ async def create_pool_form(request: Request):
         ssds = [d for d in available_disks if d['type'] == 'SSD']
         
         return templates.TemplateResponse(
-            "zfs/pools/create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/create.jinja",
+            context={
                 "available_disks": available_disks,
                 "hdds": hdds,
                 "ssds": ssds,
@@ -477,9 +477,9 @@ async def create_pool_form(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/pools/create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/create.jinja",
+            context={
                 "available_disks": [],
                 "hdds": [],
                 "ssds": [],
@@ -601,9 +601,9 @@ async def create_pool(
         audit_logger.log_pool_create(user=current_user, pool_name=pool_name, vdevs=vdevs, success=False, error=str(e))
         
         return templates.TemplateResponse(
-            "zfs/pools/create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/create.jinja",
+            context={
                 "error": str(e),
                 "pool_name": pool_name,
                 "vdev_type": vdev_type,
@@ -618,9 +618,9 @@ async def create_pool(
 async def export_pool_confirm(request: Request, pool_name: str):
     """Display export confirmation page"""
     return templates.TemplateResponse(
-        "zfs/pools/export_confirm.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/pools/export_confirm.jinja",
+        context={
             "pool_name": pool_name,
             "page_title": f"Export Pool: {pool_name}"
         }
@@ -656,18 +656,18 @@ async def import_pools_list(request: Request):
     try:
         importable_pools = pool_service.get_importable_pools()
         return templates.TemplateResponse(
-            "zfs/pools/import.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/import.jinja",
+            context={
                 "importable_pools": importable_pools,
                 "page_title": "Import ZFS Pools"
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/pools/import.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/import.jinja",
+            context={
                 "importable_pools": [],
                 "error": str(e),
                 "page_title": "Import ZFS Pools"
@@ -715,9 +715,9 @@ async def pool_properties(request: Request, pool_name: str):
 
         
         return templates.TemplateResponse(
-            "zfs/pools/properties.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/pools/properties.jinja",
+            context={
                 "pool_name": pool_name,
                 "properties": properties,
                 "page_title": f"Pool Properties: {pool_name}"
@@ -725,9 +725,9 @@ async def pool_properties(request: Request, pool_name: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/zfs/pools/{pool_name}"
             }
@@ -913,10 +913,9 @@ async def vdev_management(request: Request, pool_name: str):
     except Exception:
         pass
     return templates.TemplateResponse(
-
-        "zfs/pools/vdevs.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/pools/vdevs.jinja",
+        context={
             "pool_name": pool_name,
             "page_title": f"VDev Management: {pool_name}"
         }

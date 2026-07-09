@@ -62,9 +62,9 @@ async def settings_index(request: Request, message: str = "", error: str = ""):
     corner_styles = get_all_corner_styles_for_template()
 
     response = templates.TemplateResponse(
-        "utils/settings/index.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/settings/index.jinja",
+        context={
             "active_theme": active_theme,
             "active_theme_name": THEME_REGISTRY.get(active_theme, active_theme),
             "theme_families": theme_families,
@@ -152,9 +152,9 @@ async def theme_preview(request: Request, theme_id: str):
     theme_name = THEME_REGISTRY.get(theme_id, theme_id)
 
     return templates.TemplateResponse(
-        "utils/settings/preview_partial.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/settings/preview_partial.jinja",
+        context={
             "preview_theme_id": theme_id,
             "preview_theme_name": theme_name,
             "theme_variables": theme_variables,
@@ -299,9 +299,9 @@ async def backup_inspect(
         files_by_category.setdefault(cat, []).append(entry)
 
     return templates.TemplateResponse(
-        "utils/settings/restore_confirm.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/settings/restore_confirm.jinja",
+        context={
             "token": token,
             "header": info["header"],
             "manifest": info["manifest"],
