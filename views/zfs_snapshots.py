@@ -24,7 +24,23 @@ async def snapshots_index(
     request: Request,
     dataset: Optional[str] = None
 ):
-    """Display all snapshots and bookmarks"""
+    """Render the page shell immediately. Snapshot data loads via HTMX."""
+    return templates.TemplateResponse(
+        "zfs/snapshots/index.jinja",
+        {
+            "request": request,
+            "selected_dataset": dataset,
+            "page_title": "ZFS Snapshots"
+        }
+    )
+
+
+@router.get("/content-partial", response_class=HTMLResponse)
+async def snapshots_content_partial(
+    request: Request,
+    dataset: Optional[str] = None
+):
+    """HTMX partial: fetch snapshots and bookmarks and return the content fragment."""
     try:
         snapshots = snapshot_service.list_snapshots(dataset=dataset)
 
@@ -40,28 +56,28 @@ async def snapshots_index(
             bookmark_set.add(f"{bm['dataset']}#{bm['bookmark']}")
 
         return templates.TemplateResponse(
-            "zfs/snapshots/index.jinja",
+            "zfs/snapshots/content_partial.jinja",
             {
                 "request": request,
                 "snapshots": snapshots,
                 "bookmarks": bookmarks,
                 "bookmark_set": bookmark_set,
                 "selected_dataset": dataset,
-                "page_title": "ZFS Snapshots"
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/snapshots/index.jinja",
+            "zfs/snapshots/content_partial.jinja",
             {
                 "request": request,
                 "snapshots": [],
                 "bookmarks": [],
                 "bookmark_set": set(),
+                "selected_dataset": dataset,
                 "error": str(e),
-                "page_title": "ZFS Snapshots"
             }
         )
+
 
 
 @router.get("/create/form", response_class=HTMLResponse)
