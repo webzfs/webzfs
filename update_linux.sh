@@ -87,6 +87,55 @@ chown -R "$WEBZFS_USER:$WEBZFS_USER" "$INSTALL_DIR"
 echo -e "${GREEN}✓${NC} Application files updated"
 echo
 
+# Refresh sudo permissions so new privileged commands (for example grep and
+# dmesg used by the support bundle log collectors) are whitelisted on existing
+# installations. Writing the file on every update keeps it in sync with the
+# installer.
+SUDOERS_FILE="/etc/sudoers.d/webzfs"
+echo "Refreshing sudo permissions..."
+
+cat > "$SUDOERS_FILE" << 'SUDO_EOF'
+# WebZFS sudo permissions
+# Allow webzfs user to execute ZFS and SMART commands
+
+# ZFS commands (multiple paths for different distributions)
+webzfs ALL=(ALL) NOPASSWD: /usr/sbin/zpool, /usr/sbin/zfs, /usr/sbin/zdb -l *, /usr/bin/zpool, /usr/bin/zfs, /usr/bin/zdb -l *, /sbin/zpool, /sbin/zfs, /sbin/zdb -l *
+
+# SMART monitoring (multiple paths for different distributions)
+webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /sbin/smartctl
+
+# Disk utilities
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
+
+# Sanoid/Syncoid (optional)
+webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid, /usr/bin/syncoid, /usr/local/sbin/sanoid, /usr/local/sbin/syncoid
+
+# Service management (systemctl for system services page)
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
+
+# Crontab editing
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/crontab
+
+# File editing (for config files like smartd.conf, sanoid.conf)
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
+
+# Read system journal and plain-text syslog files for the
+# Observability -> System Log page. journalctl needs sudo (or
+# systemd-journal group) on most distros. tail covers Debian/Ubuntu
+# (/var/log/syslog) and old RHEL (/var/log/messages).
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl, /usr/bin/tail, /bin/tail
+
+# Support bundle log collection. Reading /var/log/messages and
+# /var/log/syslog (typically mode 640 root:adm) and the kernel ring
+# buffer requires elevated privileges for the unprivileged webzfs user.
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/grep, /bin/grep, /usr/bin/dmesg, /bin/dmesg
+SUDO_EOF
+
+chmod 0440 "$SUDOERS_FILE"
+echo -e "${GREEN}✓${NC} Sudo permissions refreshed"
+echo
+
+
 # Update CAPTION in .env from .env.example
 ENV_FILE="${INSTALL_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then

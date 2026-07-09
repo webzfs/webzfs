@@ -93,7 +93,12 @@ PRIVILEGED_COMMANDS = {
     'lsblk', 'blkid', 'blockdev',
     # Crontab
     'crontab',
+    # Log reading (support bundle / syslog collection). On Linux the
+    # webzfs user cannot read /var/log/messages, /var/log/syslog, or the
+    # kernel ring buffer without elevated privileges.
+    'journalctl', 'grep', 'cat', 'tail', 'dmesg',
 }
+
 
 
 def build_privileged_command(cmd: List[str], use_sudo: Optional[bool] = None) -> List[str]:

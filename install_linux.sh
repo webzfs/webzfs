@@ -331,7 +331,13 @@ webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
 # systemd-journal group) on most distros. tail covers Debian/Ubuntu
 # (/var/log/syslog) and old RHEL (/var/log/messages).
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl, /usr/bin/tail, /bin/tail
+
+# Support bundle log collection. Reading /var/log/messages and
+# /var/log/syslog (typically mode 640 root:adm) and the kernel ring
+# buffer requires elevated privileges for the unprivileged webzfs user.
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/grep, /bin/grep, /usr/bin/dmesg, /bin/dmesg
 SUDO_EOF
+
 
 chmod 0440 "$SUDOERS_FILE"
 echo -e "${GREEN}✓${NC} Sudo permissions configured"
