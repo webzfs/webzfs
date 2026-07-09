@@ -35,9 +35,9 @@ async def fleet_index(request: Request):
     servers = fleet_service.list_servers()
 
     return templates.TemplateResponse(
-        "fleet/index.jinja",
-        {
-            "request": request,
+        request,
+        name="fleet/index.jinja",
+        context={
             "servers": servers,
             "active_page": "fleet"
         }
@@ -77,9 +77,9 @@ async def get_server_card_partial(request: Request, server_id: str):
         raise HTTPException(status_code=404, detail="Server not found")
 
     return templates.TemplateResponse(
-        "fleet/partials/server_card.jinja",
-        {
-            "request": request,
+        request,
+        name="fleet/partials/server_card.jinja",
+        context={
             "server": server,
             "auto_refresh": False,
             "loop_index": 0,
@@ -96,9 +96,9 @@ async def add_server_form(request: Request):
     ssh_connections = ssh_service.list_connections()
     
     return templates.TemplateResponse(
-        "fleet/add_server.jinja",
-        {
-            "request": request,
+        request,
+        name="fleet/add_server.jinja",
+        context={
             "active_page": "fleet",
             "ssh_connections": ssh_connections
         }
@@ -150,9 +150,9 @@ async def add_server_submit(
         # list_connections() reloads from disk to get latest connections
         ssh_connections = ssh_service.list_connections()
         return templates.TemplateResponse(
-            "fleet/add_server.jinja",
-            {
-                "request": request,
+            request,
+            name="fleet/add_server.jinja",
+            context={
                 "active_page": "fleet",
                 "ssh_connections": ssh_connections,
                 "error": str(e),
@@ -170,9 +170,9 @@ async def remove_server_list(request: Request):
     servers = fleet_service.list_servers()
     
     return templates.TemplateResponse(
-        "fleet/remove_server.jinja",
-        {
-            "request": request,
+        request,
+        name="fleet/remove_server.jinja",
+        context={
             "servers": servers,
             "active_page": "fleet"
         }
@@ -209,9 +209,9 @@ async def test_server_connection(request: Request, server_id: str):
     try:
         result = fleet_service.test_connection(server_id)
         return templates.TemplateResponse(
-            "partials/success.jinja" if result.get("status") == "success" else "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/success.jinja" if result.get("status") == "success" else "partials/error.jinja",
+            context={
                 "message": result.get("message", "Connection test completed")
             }
         )
@@ -219,9 +219,9 @@ async def test_server_connection(request: Request, server_id: str):
         raise HTTPException(status_code=404, detail="Server not found")
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "message": str(e)
             }
         )
@@ -259,9 +259,9 @@ async def get_server_pools_partial(request: Request, server_id: str):
         pools = fleet_service.fetch_server_pools(server_id)
         
         return templates.TemplateResponse(
-            "fleet/partials/server_pools.jinja",
-            {
-                "request": request,
+            request,
+            name="fleet/partials/server_pools.jinja",
+            context={
                 "server": server,
                 "pools": pools
             }
@@ -311,9 +311,9 @@ async def fleet_pools_page(request: Request):
     Pool data loads asynchronously via HTMX from /fleet/pools/data.
     """
     return templates.TemplateResponse(
-        "fleet/pools.jinja",
-        {
-            "request": request,
+        request,
+        name="fleet/pools.jinja",
+        context={
             "active_page": "fleet",
         }
     )
@@ -406,9 +406,9 @@ async def fleet_pools_data(request: Request):
         all_pools.sort(key=lambda p: p.get("name", "").lower())
 
     return templates.TemplateResponse(
-        "fleet/partials/all_pools.jinja",
-        {
-            "request": request,
+        request,
+        name="fleet/partials/all_pools.jinja",
+        context={
             "pools": all_pools,
             "summary": summary,
             "sort_by": sort_by,

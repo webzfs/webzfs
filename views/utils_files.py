@@ -14,7 +14,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 @router.get("/")
 def index(request: Request):
-    return templates.TemplateResponse("utils/files/index.jinja", {"request": request})
+    return templates.TemplateResponse(request, name="utils/files/index.jinja")
 
 
 @router.post("/list")
@@ -24,8 +24,9 @@ def list_files(request: Request, directory: Annotated[str, Form()], current_user
         if not directory_path.exists() or not directory_path.is_dir():
             audit_logger.log_directory_list(user=current_user, directory_path=directory, success=False, error="Directory does not exist or is not a directory")
             return templates.TemplateResponse(
-                "partials/error.jinja", 
-                {"request": request, "error": f"Directory {directory} does not exist or is not a directory"}
+                request,
+                name="partials/error.jinja",
+                context={"error": f"Directory {directory} does not exist or is not a directory"},
             )
         
         files = []
@@ -54,13 +55,14 @@ def list_files(request: Request, directory: Annotated[str, Form()], current_user
         
         audit_logger.log_directory_list(user=current_user, directory_path=directory)
         return templates.TemplateResponse(
-            "utils/files/list.jinja",
-            {"request": request, "files": files, "directory": directory}
+            request,
+            name="utils/files/list.jinja",
+            context={"files": files, "directory": directory},
         )
     except Exception as exc:
         audit_logger.log_directory_list(user=current_user, directory_path=directory, success=False, error=str(exc))
         return templates.TemplateResponse(
-            "partials/error.jinja", {"request": request, "error": str(exc)}
+            request, name="partials/error.jinja", context={"error": str(exc)}
         )
 
 
@@ -74,12 +76,13 @@ def read(request: Request, file_path: Annotated[str, Form()], current_user: str 
     except Exception as exc:
         audit_logger.log_file_read(user=current_user, file_path=file_path, success=False, error=str(exc))
         return templates.TemplateResponse(
-            "partials/error.jinja", {"request": request, "error": str(exc)}
+            request, name="partials/error.jinja", context={"error": str(exc)}
         )
 
     return templates.TemplateResponse(
-        "utils/files/edit.jinja",
-        {"request": request, "content": content, "file_path": file_path, "needs_sudo": use_sudo},
+        request,
+        name="utils/files/edit.jinja",
+        context={"content": content, "file_path": file_path, "needs_sudo": use_sudo},
     )
 
 
@@ -102,5 +105,5 @@ def save(
         context["success"] = True
 
     return templates.TemplateResponse(
-        "utils/files/edit.jinja", {"request": request, **context}
+        request, name="utils/files/edit.jinja", context=context
     )

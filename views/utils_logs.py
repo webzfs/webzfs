@@ -196,9 +196,9 @@ async def logs_index(
             }
         
         return templates.TemplateResponse(
-            "utils/logs/index.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/logs/index.jinja",
+            context={
                 "logs_info": logs_info,
                 "log_dir": str(audit_logger.log_dir),
                 "page_title": "Audit Logs"
@@ -206,9 +206,9 @@ async def logs_index(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "utils/logs/index.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/logs/index.jinja",
+            context={
                 "logs_info": {},
                 "log_dir": "",
                 "error": str(e),
@@ -231,9 +231,9 @@ async def view_log(
         valid_categories = [c.value for c in LogCategory]
         if category not in valid_categories:
             return templates.TemplateResponse(
-                "partials/error.jinja",
-                {
-                    "request": request,
+                request,
+                name="partials/error.jinja",
+                context={
                     "error": f"Invalid log category: {category}. Valid categories: {', '.join(valid_categories)}",
                     "back_url": "/utils/logs"
                 }
@@ -251,9 +251,9 @@ async def view_log(
         }
         
         return templates.TemplateResponse(
-            "utils/logs/view.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/logs/view.jinja",
+            context={
                 "category": category,
                 "category_name": category_names.get(category, category),
                 "entries": entries,
@@ -265,9 +265,9 @@ async def view_log(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "utils/logs/view.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/logs/view.jinja",
+            context={
                 "category": category,
                 "category_name": category,
                 "entries": [],
@@ -345,9 +345,9 @@ async def get_log_entries_partial(
         entries = read_log_file(log_path, lines=lines, search=search)
         
         return templates.TemplateResponse(
-            "utils/logs/entries.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/logs/entries.jinja",
+            context={
                 "entries": entries,
                 "category": category,
                 "search": search or ""

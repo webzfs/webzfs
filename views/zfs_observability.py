@@ -74,9 +74,9 @@ async def observability_index(request: Request):
             scrub_total_pools = 0
 
         return templates.TemplateResponse(
-            "zfs/observability/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/index.jinja",
+            context={
                 "recent_history": [],  # Loaded via HTMX partial for performance
                 "recent_events": [],   # Loaded via HTMX partial for performance
                 "arc_summary": arc_summary,
@@ -91,9 +91,9 @@ async def observability_index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/index.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/index.jinja",
+            context={
                 "recent_history": [],
                 "recent_events": [],
                 "arc_summary": {},
@@ -255,9 +255,9 @@ async def pool_history(
                 pool_histories[pool_name] = []
     
     return templates.TemplateResponse(
-        "zfs/observability/pool_history.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/observability/pool_history.jinja",
+        context={
             "pool_histories": pool_histories,
             "total_entries": total_entries,
             "all_pools": pool_names,
@@ -316,9 +316,9 @@ async def pool_events(
                 pool_events_dict[pool_name] = []
     
     return templates.TemplateResponse(
-        "zfs/observability/pool_events.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/observability/pool_events.jinja",
+        context={
             "pool_events": pool_events_dict,
             "total_events": total_events,
             "all_pools": pool_names,
@@ -382,9 +382,9 @@ async def kernel_debug_log(
             ]
 
         return templates.TemplateResponse(
-            "zfs/observability/kernel_log.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/kernel_log.jinja",
+            context={
                 "log_lines": log_lines,
                 "lines": lines,
                 "filter": filter,
@@ -395,9 +395,9 @@ async def kernel_debug_log(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/kernel_log.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/kernel_log.jinja",
+            context={
                 "log_lines": [f"Error: {str(e)}"],
                 "error": str(e),
                 "search": search,
@@ -433,9 +433,9 @@ async def syslog_zfs(
             ]
 
         return templates.TemplateResponse(
-            "zfs/observability/syslog.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/syslog.jinja",
+            context={
                 "syslog_entries": syslog_entries,
                 "lines": lines,
                 "severity": severity,
@@ -446,9 +446,9 @@ async def syslog_zfs(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/syslog.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/syslog.jinja",
+            context={
                 "syslog_entries": [],
                 "error": str(e),
                 "search": search,
@@ -652,9 +652,9 @@ async def syslog_full(
             ]
 
         return templates.TemplateResponse(
-            "zfs/observability/syslog.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/syslog.jinja",
+            context={
                 "syslog_entries": syslog_entries,
                 "lines": lines,
                 "severity": severity,
@@ -665,9 +665,9 @@ async def syslog_full(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/syslog.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/syslog.jinja",
+            context={
                 "syslog_entries": [],
                 "error": str(e),
                 "search": search,
@@ -690,9 +690,9 @@ async def arc_summary(request: Request):
         arc_stats = observability_service.get_arc_summary()
         
         return templates.TemplateResponse(
-            "zfs/observability/arc_summary.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/arc_summary.jinja",
+            context={
                 "arc_stats": arc_stats,
                 "system": system,
                 "page_title": "ARC Summary"
@@ -701,9 +701,9 @@ async def arc_summary(request: Request):
     except Exception as e:
         import platform
         return templates.TemplateResponse(
-            "zfs/observability/arc_summary.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/arc_summary.jinja",
+            context={
                 "arc_stats": {},
                 "system": platform.system(),
                 "error": str(e),
@@ -720,9 +720,9 @@ async def module_parameters(request: Request):
         openzfs_man_url = get_openzfs_man_page_url()
         
         return templates.TemplateResponse(
-            "zfs/observability/module_parameters.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/module_parameters.jinja",
+            context={
                 "parameters": parameters,
                 "openzfs_man_url": openzfs_man_url,
                 "page_title": "ZFS Module Parameters"
@@ -730,9 +730,9 @@ async def module_parameters(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/module_parameters.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/module_parameters.jinja",
+            context={
                 "parameters": {},
                 "openzfs_man_url": None,
                 "error": str(e),
@@ -809,9 +809,9 @@ async def search_logs(
             )
         
         return templates.TemplateResponse(
-            "zfs/observability/search.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/search.jinja",
+            context={
                 "results": results,
                 "query": query,
                 "source": source,
@@ -821,9 +821,9 @@ async def search_logs(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/observability/search.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/observability/search.jinja",
+            context={
                 "results": [],
                 "query": query,
                 "error": str(e),

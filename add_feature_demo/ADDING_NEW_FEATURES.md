@@ -181,18 +181,18 @@ async def index(request: Request):
         
         # Render template with data
         return templates.TemplateResponse(
-            "utils/your-feature/index.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/your-feature/index.jinja",
+            context={
                 "data": data,
                 "page_title": "Your Feature"
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/utils"
             }

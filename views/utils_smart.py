@@ -21,9 +21,9 @@ smart_service = SMARTMonitoringService()
 async def smart_index(request: Request):
     """Render the page shell immediately. Disk data is loaded via HTMX."""
     return templates.TemplateResponse(
-        "utils/smart/index.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/smart/index.jinja",
+        context={
             "page_title": "SMART Disk Monitoring"
         }
     )
@@ -35,9 +35,9 @@ async def smart_content_partial(request: Request):
     try:
         disks = smart_service.list_disks()
         return templates.TemplateResponse(
-            "utils/smart/content_partial.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/content_partial.jinja",
+            context={
                 "disks": disks,
             }
         )
@@ -63,9 +63,9 @@ async def disk_attributes(request: Request, disk_path: str):
         disk_info = smart_service.get_disk_info(disk_path)
         
         return templates.TemplateResponse(
-            "utils/smart/attributes.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/attributes.jinja",
+            context={
                 "disk_path": disk_path,
                 "attributes": attributes,
                 "disk_info": disk_info,
@@ -74,9 +74,9 @@ async def disk_attributes(request: Request, disk_path: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/utils/smart/disk/{disk_path}"
             }
@@ -93,9 +93,9 @@ async def disk_health(request: Request, disk_path: str):
         health = smart_service.get_smart_health(disk_path)
         
         return templates.TemplateResponse(
-            "utils/smart/health.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/health.jinja",
+            context={
                 "disk_path": disk_path,
                 "health": health,
                 "page_title": f"Health Status: {disk_path}"
@@ -103,9 +103,9 @@ async def disk_health(request: Request, disk_path: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/utils/smart/disk/{disk_path}"
             }
@@ -122,9 +122,9 @@ async def disk_temperature(request: Request, disk_path: str):
         temperature = smart_service.get_temperature(disk_path)
         
         return templates.TemplateResponse(
-            "utils/smart/temperature.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/temperature.jinja",
+            context={
                 "disk_path": disk_path,
                 "temperature": temperature,
                 "page_title": f"Temperature: {disk_path}"
@@ -132,9 +132,9 @@ async def disk_temperature(request: Request, disk_path: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/utils/smart/disk/{disk_path}"
             }
@@ -151,9 +151,9 @@ async def disk_tests(request: Request, disk_path: str):
         test_status = smart_service.get_test_status(disk_path)
         
         return templates.TemplateResponse(
-            "utils/smart/tests.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/tests.jinja",
+            context={
                 "disk_path": disk_path,
                 "test_status": test_status,
                 "page_title": f"SMART Tests: {disk_path}"
@@ -161,9 +161,9 @@ async def disk_tests(request: Request, disk_path: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/utils/smart/disk/{disk_path}"
             }
@@ -237,9 +237,9 @@ async def disk_errors(request: Request, disk_path: str):
         errors = smart_service.get_error_log(disk_path)
         
         return templates.TemplateResponse(
-            "utils/smart/errors.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/errors.jinja",
+            context={
                 "disk_path": disk_path,
                 "errors": errors,
                 "page_title": f"Error Log: {disk_path}"
@@ -247,9 +247,9 @@ async def disk_errors(request: Request, disk_path: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/utils/smart/disk/{disk_path}"
             }
@@ -323,9 +323,9 @@ async def download_smart_data(request: Request, disk_path: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": f"/utils/smart/disk/{disk_path}"
             }
@@ -344,9 +344,9 @@ async def disk_detail(request: Request, disk_path: str):
         smart_data = smart_service.get_smart_data(disk_path)
         
         return templates.TemplateResponse(
-            "utils/smart/disk_detail.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/disk_detail.jinja",
+            context={
                 "disk_path": disk_path,
                 "smart_data": smart_data,
                 "page_title": f"SMART Data: {disk_path}"
@@ -354,9 +354,9 @@ async def disk_detail(request: Request, disk_path: str):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "error": str(e),
                 "back_url": "/utils/smart"
             }
@@ -505,9 +505,9 @@ async def smartd_index(request: Request):
         config = smart_service.get_smartd_config()
         
         return templates.TemplateResponse(
-            "utils/smart/smartd.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/smartd.jinja",
+            context={
                 "status": status,
                 "config": config,
                 "page_title": "Smartd Configuration"
@@ -515,9 +515,9 @@ async def smartd_index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "utils/smart/smartd.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/smartd.jinja",
+            context={
                 "status": {"error": str(e)},
                 "config": "",
                 "error": str(e),
@@ -572,9 +572,9 @@ async def scheduled_tests(request: Request):
         disks = smart_service.list_disks()
         
         return templates.TemplateResponse(
-            "utils/smart/scheduled.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/scheduled.jinja",
+            context={
                 "scheduled_tests": scheduled,
                 "disks": disks,
                 "page_title": "Scheduled SMART Tests"
@@ -582,9 +582,9 @@ async def scheduled_tests(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "utils/smart/scheduled.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/smart/scheduled.jinja",
+            context={
                 "scheduled_tests": [],
                 "disks": [],
                 "error": str(e),

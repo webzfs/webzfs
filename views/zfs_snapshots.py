@@ -26,9 +26,9 @@ async def snapshots_index(
 ):
     """Render the page shell immediately. Snapshot data loads via HTMX."""
     return templates.TemplateResponse(
-        "zfs/snapshots/index.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/index.jinja",
+        context={
             "selected_dataset": dataset,
             "page_title": "ZFS Snapshots"
         }
@@ -56,9 +56,9 @@ async def snapshots_content_partial(
             bookmark_set.add(f"{bm['dataset']}#{bm['bookmark']}")
 
         return templates.TemplateResponse(
-            "zfs/snapshots/content_partial.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/content_partial.jinja",
+            context={
                 "snapshots": snapshots,
                 "bookmarks": bookmarks,
                 "bookmark_set": bookmark_set,
@@ -67,9 +67,9 @@ async def snapshots_content_partial(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/snapshots/content_partial.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/content_partial.jinja",
+            context={
                 "snapshots": [],
                 "bookmarks": [],
                 "bookmark_set": set(),
@@ -96,9 +96,9 @@ async def create_snapshot_form(
         default_snapshot_name = now.strftime("manual-%Y-%m-%d_%H-%M")
         
         return templates.TemplateResponse(
-            "zfs/snapshots/create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/create.jinja",
+            context={
                 "dataset": dataset,
                 "datasets": datasets,
                 "default_snapshot_name": default_snapshot_name,
@@ -107,9 +107,9 @@ async def create_snapshot_form(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/snapshots/create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/create.jinja",
+            context={
                 "dataset": dataset,
                 "datasets": [],
                 "error": f"Failed to load datasets: {str(e)}",
@@ -191,9 +191,9 @@ async def create_snapshot(
             recursive=recursive, success=False, error=str(e)
         )
         return templates.TemplateResponse(
-            "zfs/snapshots/create.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/create.jinja",
+            context={
                 "dataset": dataset_name,
                 "snapshot_name": snapshot_name,
                 "recursive": recursive,
@@ -270,9 +270,9 @@ async def snapshot_detail(
     dataset_name = snapshot_path.rsplit('@', 1)[0] if '@' in snapshot_path else ""
 
     return templates.TemplateResponse(
-        "zfs/snapshots/detail.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/detail.jinja",
+        context={
             "snapshot_path": snapshot_path,
             "snap_name": snap_name,
             "dataset_name": dataset_name,
@@ -307,9 +307,9 @@ async def snapshot_detail_data(
             pass
 
         return templates.TemplateResponse(
-            "zfs/snapshots/detail_data.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/detail_data.jinja",
+            context={
                 "snapshot": snapshot,
                 "snapshot_path": snapshot_path,
                 "space": space,
@@ -332,9 +332,9 @@ async def destroy_snapshot_confirm(
 ):
     """Display destroy confirmation page"""
     return templates.TemplateResponse(
-        "zfs/snapshots/destroy_confirm.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/destroy_confirm.jinja",
+        context={
             "snapshot_name": snapshot_path,
             "page_title": f"Destroy Snapshot: {snapshot_path}"
         }
@@ -354,9 +354,9 @@ async def destroy_snapshot(
         # Require user to type snapshot name to confirm
         if confirm != snapshot_path:
             return templates.TemplateResponse(
-                "zfs/snapshots/destroy_confirm.jinja",
-                {
-                    "request": request,
+                request,
+                name="zfs/snapshots/destroy_confirm.jinja",
+                context={
                     "snapshot_name": snapshot_path,
                     "error": "Snapshot name confirmation does not match. Please type the exact snapshot name.",
                     "page_title": f"Destroy Snapshot: {snapshot_path}"
@@ -372,9 +372,9 @@ async def destroy_snapshot(
     except Exception as e:
         audit_logger.log_snapshot_destroy(user=current_user, snapshot_name=snapshot_path, success=False, error=str(e))
         return templates.TemplateResponse(
-            "zfs/snapshots/destroy_confirm.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/destroy_confirm.jinja",
+            context={
                 "snapshot_name": snapshot_path,
                 "error": str(e),
                 "page_title": f"Destroy Snapshot: {snapshot_path}"
@@ -389,9 +389,9 @@ async def rollback_snapshot_confirm(
 ):
     """Display rollback confirmation page"""
     return templates.TemplateResponse(
-        "zfs/snapshots/rollback_confirm.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/rollback_confirm.jinja",
+        context={
             "snapshot_name": snapshot_path,
             "page_title": f"Rollback to Snapshot: {snapshot_path}"
         }
@@ -411,9 +411,9 @@ async def rollback_snapshot(
         # Require user to type snapshot name to confirm
         if confirm != snapshot_path:
             return templates.TemplateResponse(
-                "zfs/snapshots/rollback_confirm.jinja",
-                {
-                    "request": request,
+                request,
+                name="zfs/snapshots/rollback_confirm.jinja",
+                context={
                     "snapshot_name": snapshot_path,
                     "error": "Snapshot name confirmation does not match. Please type the exact snapshot name.",
                     "page_title": f"Rollback to Snapshot: {snapshot_path}"
@@ -430,9 +430,9 @@ async def rollback_snapshot(
     except Exception as e:
         audit_logger.log_snapshot_rollback(user=current_user, snapshot_name=snapshot_path, force=force, success=False, error=str(e))
         return templates.TemplateResponse(
-            "zfs/snapshots/rollback_confirm.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/rollback_confirm.jinja",
+            context={
                 "snapshot_name": snapshot_path,
                 "error": str(e),
                 "page_title": f"Rollback to Snapshot: {snapshot_path}"
@@ -447,9 +447,9 @@ async def clone_snapshot_form(
 ):
     """Display clone form"""
     return templates.TemplateResponse(
-        "zfs/snapshots/clone.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/clone.jinja",
+        context={
             "snapshot_name": snapshot_path,
             "page_title": f"Clone Snapshot: {snapshot_path}"
         }
@@ -475,9 +475,9 @@ async def clone_snapshot(
     except Exception as e:
         audit_logger.log_snapshot_clone(user=current_user, snapshot_name=snapshot_path, target_dataset=target_dataset, success=False, error=str(e))
         return templates.TemplateResponse(
-            "zfs/snapshots/clone.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/clone.jinja",
+            context={
                 "snapshot_name": snapshot_path,
                 "target_dataset": target_dataset,
                 "error": str(e),
@@ -496,9 +496,9 @@ async def rename_snapshot_form(
     _, snap_name = snapshot_path.rsplit('@', 1)
     
     return templates.TemplateResponse(
-        "zfs/snapshots/rename.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/rename.jinja",
+        context={
             "snapshot_name": snapshot_path,
             "current_name": snap_name,
             "page_title": f"Rename Snapshot: {snapshot_path}"
@@ -528,9 +528,9 @@ async def rename_snapshot(
     except Exception as e:
         _, snap_name = snapshot_path.rsplit('@', 1)
         return templates.TemplateResponse(
-            "zfs/snapshots/rename.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/rename.jinja",
+            context={
                 "snapshot_name": snapshot_path,
                 "current_name": snap_name,
                 "new_name": new_name,
@@ -551,9 +551,9 @@ async def diff_snapshots_form(
         snapshots = snapshot_service.list_snapshots()
         
         return templates.TemplateResponse(
-            "zfs/snapshots/diff.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/diff.jinja",
+            context={
                 "snapshot1": snapshot1,
                 "snapshots": snapshots,
                 "page_title": "Compare Snapshots"
@@ -561,9 +561,9 @@ async def diff_snapshots_form(
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/snapshots/diff.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/diff.jinja",
+            context={
                 "snapshot1": snapshot1,
                 "snapshots": [],
                 "error": f"Failed to load snapshots: {str(e)}",
@@ -640,9 +640,9 @@ async def diff_snapshots(
             snapshots = []
 
         return templates.TemplateResponse(
-            "zfs/snapshots/diff.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/diff.jinja",
+            context={
                 "snapshot1": "",
                 "snapshot2": snapshot2,
                 "snapshots": snapshots,
@@ -663,9 +663,9 @@ async def diff_snapshots(
                     snapshots = []
 
                 return templates.TemplateResponse(
-                    "zfs/snapshots/diff.jinja",
-                    {
-                        "request": request,
+                    request,
+                    name="zfs/snapshots/diff.jinja",
+                    context={
                         "snapshot1": snapshot1,
                         "snapshot2": snapshot2,
                         "snapshots": snapshots,
@@ -678,9 +678,9 @@ async def diff_snapshots(
 
     # Render the result page skeleton immediately - diff computes async via HTMX
     return templates.TemplateResponse(
-        "zfs/snapshots/diff_result.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/diff_result.jinja",
+        context={
             "snapshot1": snapshot1,
             "snapshot2": snapshot2 if snapshot2 else "current state",
             "snapshot2_raw": snapshot2,
@@ -724,9 +724,9 @@ async def diff_snapshots_htmx(
                     renames += 1
 
         return templates.TemplateResponse(
-            "zfs/snapshots/diff_result_data.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/diff_result_data.jinja",
+            context={
                 "snapshot1": snapshot1,
                 "snapshot2": snapshot2 if snapshot2 else "current state",
                 "diff_output": diff_output,
@@ -793,9 +793,9 @@ async def sanoid_index(request: Request):
         
         if not status['installed']:
             return templates.TemplateResponse(
-                "zfs/snapshots/sanoid.jinja",
-                {
-                    "request": request,
+                request,
+                name="zfs/snapshots/sanoid.jinja",
+                context={
                     "status": status,
                     "datasets": {},
                     "templates": {},
@@ -807,9 +807,9 @@ async def sanoid_index(request: Request):
         config = sanoid_service.get_config()
         
         return templates.TemplateResponse(
-            "zfs/snapshots/sanoid.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/sanoid.jinja",
+            context={
                 "status": status,
                 "datasets": config.get('datasets', {}),
                 "templates": config.get('templates', {}),
@@ -818,9 +818,9 @@ async def sanoid_index(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/snapshots/sanoid.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/sanoid.jinja",
+            context={
                 "status": {},
                 "datasets": {},
                 "templates": {},
@@ -915,9 +915,9 @@ async def add_sanoid_dataset_form(request: Request):
         sanoid_templates = config.get('templates', {})
         
         return templates.TemplateResponse(
-            "zfs/snapshots/sanoid_dataset_add.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/sanoid_dataset_add.jinja",
+            context={
                 "datasets": datasets,
                 "templates": sanoid_templates,
                 "page_title": "Add Dataset to Sanoid"
@@ -925,9 +925,9 @@ async def add_sanoid_dataset_form(request: Request):
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "zfs/snapshots/sanoid_dataset_add.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/sanoid_dataset_add.jinja",
+            context={
                 "datasets": [],
                 "templates": {},
                 "error": str(e),
@@ -965,9 +965,9 @@ async def add_sanoid_dataset(
 async def create_sanoid_template_form(request: Request):
     """Display create template form"""
     return templates.TemplateResponse(
-        "zfs/snapshots/sanoid_template_create.jinja",
-        {
-            "request": request,
+        request,
+        name="zfs/snapshots/sanoid_template_create.jinja",
+        context={
             "page_title": "Create Snapshot Policy Template"
         }
     )
@@ -1031,9 +1031,9 @@ async def edit_sanoid_template_form(request: Request, template_name: str):
         display_name = template_name.replace('template_', '')
         
         return templates.TemplateResponse(
-            "zfs/snapshots/sanoid_template_edit.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/sanoid_template_edit.jinja",
+            context={
                 "template_name": template_name,
                 "display_name": display_name,
                 "template_data": template_data,
@@ -1104,9 +1104,9 @@ async def edit_sanoid_dataset_form(request: Request, dataset_name: str):
             )
         
         return templates.TemplateResponse(
-            "zfs/snapshots/sanoid_dataset_edit.jinja",
-            {
-                "request": request,
+            request,
+            name="zfs/snapshots/sanoid_dataset_edit.jinja",
+            context={
                 "dataset_name": dataset_name,
                 "dataset_data": dataset_data,
                 "templates": sanoid_templates,

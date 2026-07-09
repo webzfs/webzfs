@@ -35,9 +35,9 @@ async def support_bundle_index(request: Request):
         categories[cat].append(item)
 
     return templates.TemplateResponse(
-        "utils/support_bundle/index.jinja",
-        {
-            "request": request,
+        request,
+        name="utils/support_bundle/index.jinja",
+        context={
             "categories": categories,
             "page_title": "Support Bundle",
         },
@@ -62,9 +62,9 @@ async def generate_support_bundle(request: Request):
     if not selected_keys:
         # Nothing selected -- redirect back with error
         return templates.TemplateResponse(
-            "utils/support_bundle/index.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/support_bundle/index.jinja",
+            context={
                 "categories": _grouped_items(),
                 "page_title": "Support Bundle",
                 "error": "No items were selected. Please select at least one item.",

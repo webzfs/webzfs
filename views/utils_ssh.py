@@ -18,17 +18,17 @@ async def ssh_index(request: Request):
     try:
         connections = ssh_service.list_connections()
         return templates.TemplateResponse(
-            "utils/ssh/index.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/ssh/index.jinja",
+            context={
                 "connections": connections
             }
         )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "message": f"Failed to load connections: {str(e)}"
             }
         )
@@ -38,8 +38,7 @@ async def ssh_index(request: Request):
 async def ssh_add_form(request: Request):
     """Add SSH connection form"""
     return templates.TemplateResponse(
-        "utils/ssh/add.jinja",
-        {"request": request}
+        request, name="utils/ssh/add.jinja"
     )
 
 
@@ -70,9 +69,9 @@ async def ssh_add_submit(
     except Exception as e:
         # Return error page
         return templates.TemplateResponse(
-            "utils/ssh/add.jinja",
-            {
-                "request": request,
+            request,
+            name="utils/ssh/add.jinja",
+            context={
                 "error": f"Failed to create connection: {str(e)}"
             },
             status_code=400
@@ -137,25 +136,25 @@ async def ssh_test(request: Request, connection_id: str):
         
         if result['status'] == 'success':
             return templates.TemplateResponse(
-                "partials/success.jinja",
-                {
-                    "request": request,
+                request,
+                name="partials/success.jinja",
+                context={
                     "message": result['message']
                 }
             )
         else:
             return templates.TemplateResponse(
-                "partials/error.jinja",
-                {
-                    "request": request,
+                request,
+                name="partials/error.jinja",
+                context={
                     "message": result['message']
                 }
             )
     except Exception as e:
         return templates.TemplateResponse(
-            "partials/error.jinja",
-            {
-                "request": request,
+            request,
+            name="partials/error.jinja",
+            context={
                 "message": f"Connection test failed: {str(e)}"
             }
         )
