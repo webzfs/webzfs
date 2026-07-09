@@ -6,7 +6,7 @@ authors = ["q5sys <jt@obs-sec.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-fastapi = "^0.121.2"
+fastapi = ">=0.139.0,<0.140.0"
 
 python-multipart = "^0.0.32"
 uvicorn = "^0.42.0"

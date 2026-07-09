@@ -204,13 +204,13 @@ if [ ! -f "${DATA_DIR}/syncoid_jobs.json" ]; then
     echo '{"jobs": [], "next_id": 1}' > "${DATA_DIR}/syncoid_jobs.json"
 fi
 if [ ! -f "${DATA_DIR}/scrub_schedules.json" ]; then
-    echo '{"schedules": []}' > "${DATA_DIR}/scrub_schedules.json"
+    echo '{"schedules": [], "next_id": 1}' > "${DATA_DIR}/scrub_schedules.json"
 fi
 if [ ! -f "${DATA_DIR}/smart_test_history.json" ]; then
     echo '{"history": []}' > "${DATA_DIR}/smart_test_history.json"
 fi
-if [ ! -f "${DATA_DIR}/scheduled_tests.json" ]; then
-    echo '{}' > "${DATA_DIR}/scheduled_tests.json"
+if [ ! -f "${DATA_DIR}/smart_scheduled_tests.json" ]; then
+    echo '{}' > "${DATA_DIR}/smart_scheduled_tests.json"
 fi
 if [ ! -f "${DATA_DIR}/health_reports.json" ]; then
     echo '{"reports": []}' > "${DATA_DIR}/health_reports.json"
