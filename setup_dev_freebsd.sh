@@ -67,7 +67,7 @@ PYTHON_CMD=$(find_python)
 if [ -z "$PYTHON_CMD" ]; then
     printf "${RED}Error: Python 3 is not installed${NC}\n"
     echo "Please install Python 3.11+ first:"
-    echo "  pkg install python311 py311-pip"
+    echo "  pkg install python311"
     exit 1
 fi
 
