@@ -22,7 +22,7 @@ Before wiring anything into WebZFS, I wanted to prove the data was even reliably
 
 That tool is the proof-of-concept. It confirmed I could pull the per-dataset counters I needed and compute meaningful rates from them. It is Python only for now, and honestly it started as a scratchpad to make sure the whole thing was actually possible before I committed to it.
 
-That tool started as a proof-of-concept. It confirmed I could pull the per-dataset counters I needed and compute meaningful rates from them. It is Python only for now, and honestly it started as a scratchpad to make sure the whole thing was actually possible before I committed to it. 
+Once I had proven that the idea was sound, I fleshed it out to be a fully usable CLI program. It can even output JSON so it can be consumed by other tools.
 
 I do plan a C++ version of that utility soon. I would write a native C version and try to get it merged upstream into OpenZFS itself, because that is where it really belongs. But I will be the first to admit I suck at C, so realistically this is going to live as an extra utility people can add and build on their own rather than something I push into the core project.
 
