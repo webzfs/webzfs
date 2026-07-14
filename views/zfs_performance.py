@@ -13,7 +13,9 @@ from typing import Optional
 from datetime import datetime
 from config.templates import templates
 from services.zfs_performance import ZFSPerformanceService
+from services.dataset_iostat import DatasetIostatService
 from auth.dependencies import get_current_user
+
 
 
 router = APIRouter(
@@ -22,6 +24,8 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 performance_service = ZFSPerformanceService()
+dataset_iostat_service = DatasetIostatService()
+
 
 
 @router.get("/pool-iostat", response_class=HTMLResponse)
@@ -741,3 +745,74 @@ async def system_iostat_output(
 
     except Exception as e:
         return HTMLResponse(content=f'<span class="text-danger-400">Error: {str(e)}</span>')
+
+
+@router.get("/dataset-stats", response_class=HTMLResponse)
+async def dataset_stats_page(
+    request: Request,
+    dataset: Optional[str] = None,
+    children: bool = False,
+    mode: str = "default",
+    sort: str = "total",
+):
+    """Display per-dataset I/O statistics (zfs-iostat style)."""
+    try:
+        from services.zfs_dataset import ZFSDatasetService
+        dataset_service = ZFSDatasetService()
+        all_datasets = [d['name'] for d in dataset_service.list_datasets()]
+    except Exception:
+        all_datasets = []
+
+    if mode not in ("default", "top", "files"):
+        mode = "default"
+
+    stats = dataset_iostat_service.get_stats(
+        dataset_filter=dataset,
+        include_children=children,
+        mode=mode,
+        sort_column=sort,
+    )
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/dataset_stats.jinja",
+        context={
+            "all_datasets": all_datasets,
+            "selected_dataset": dataset or "",
+            "include_children": children,
+            "mode": mode,
+            "sort": sort,
+            "stats": stats,
+            "page_title": "Per-Dataset I/O Statistics",
+        },
+    )
+
+
+@router.get("/dataset-stats-table", response_class=HTMLResponse)
+async def dataset_stats_table(
+    request: Request,
+    dataset: Optional[str] = None,
+    children: bool = False,
+    mode: str = "default",
+    sort: str = "total",
+):
+    """HTMX partial endpoint for the per-dataset I/O statistics table."""
+    if mode not in ("default", "top", "files"):
+        mode = "default"
+
+    stats = dataset_iostat_service.get_stats(
+        dataset_filter=dataset,
+        include_children=children,
+        mode=mode,
+        sort_column=sort,
+    )
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/dataset_stats_table.jinja",
+        context={
+            "mode": mode,
+            "stats": stats,
+        },
+    )
+

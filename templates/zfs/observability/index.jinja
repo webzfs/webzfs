@@ -66,7 +66,8 @@
           Row 2 (Inventory): Dataset Space Usage, Module Parameters,
                              ZFS Processes, System I/O Statistics
           Row 3 (Pool I/O):  Pool History, Pool Events, Pool I/O Stats,
-                             Per-VDEV I/O Stats
+                             Per-Dataset I/O Stats
+
           Row 4 (Logs):      Kernel Debug Log, System Log (Filtered),
                              System Log (Full), Search Logs
     -->
@@ -268,8 +269,9 @@
         </a>
 
         {# ============================================================== #}
-        {# Row 3: Pool History, Pool Events, Pool I/O Stats, Per-VDEV I/O   #}
+        {# Row 3: Pool History, Pool Events, Pool I/O Stats, Per-Dataset IO #}
         {# ============================================================== #}
+
 
         <a href="/zfs/observability/pool-history" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
@@ -319,16 +321,17 @@
             </div>
         </a>
 
-        <a href="/zfs/observability/vdev-stats" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
+        <a href="/zfs/observability/dataset-stats" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
                 <div class="flex items-center">
                     <div class="flex-shrink-0 bg-info-500/20 border border-info-500/30 rounded-lg p-3">
                         <svg class="h-6 w-6 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+
                         </svg>
                     </div>
                     <div class="ml-4">
-                        <p class="text-sm font-medium text-text-secondary">Per-VDEV I/O Stats</p>
+                        <p class="text-sm font-medium text-text-secondary">Per-Dataset I/O Stats</p>
                         <p class="text-lg font-semibold text-text-primary">Live Monitor</p>
                     </div>
                 </div>
@@ -338,6 +341,7 @@
         {# ============================================================== #}
         {# Row 4: Kernel Debug Log, Syslog (filter), Syslog (full), Search  #}
         {# ============================================================== #}
+
 
         <a href="/zfs/observability/kernel-log" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
