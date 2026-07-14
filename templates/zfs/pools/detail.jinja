@@ -62,11 +62,122 @@
             {% include "partials/success.jinja" %}
         {% endwith %}
     {% endif %}
-    {% if request.query_params.get('error') %}
+    {% set error_text = (request.query_params.get('error') or '')|lower %}
+    {% set is_busy_error = ('busy' in error_text or 'in use' in error_text or 'pool is busy' in error_text or 'unmount' in error_text) %}
+    {% if request.query_params.get('error') and not is_busy_error %}
         {% with message=request.query_params.get('error') %}
             {% include "partials/error.jinja" %}
         {% endwith %}
     {% endif %}
+
+    <!-- Export Failed Error Modal (busy pool) -->
+    {% if request.query_params.get('error') and is_busy_error %}
+    <div id="export-error-modal-overlay" class="fixed inset-0 z-50">
+        <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
+        <div class="fixed inset-0 overflow-y-auto">
+            <div class="flex min-h-full items-center justify-center p-4">
+                <div class="modal modal-sm w-full max-w-lg border-2 border-danger-500">
+                    <!-- Danger Icon -->
+                    <div class="flex items-center justify-center w-14 h-14 mx-auto mb-4 rounded-full bg-danger-900/50 border-2 border-danger-500">
+                        <svg class="w-7 h-7 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-danger-400 text-center mb-3">Export Failed</h3>
+                    <p class="text-text-secondary text-center mb-2">
+                        The pool <strong class="font-mono text-text-primary">{{ pool.name }}</strong>
+                        could not be exported because it is still in use.
+                    </p>
+                    <div class="bg-danger-900/20 border border-danger-900 rounded-lg p-3 mb-5">
+                        <p class="text-sm text-danger-300 font-mono break-words text-center">{{ request.query_params.get('error') }}</p>
+                    </div>
+                    <p class="text-sm text-text-secondary text-center mb-5">
+                        You can investigate the system to find the open files and shells
+                        that are holding the pool busy, then try to export it again.
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <a href="/zfs/pools/{{ pool.name }}" class="btn-secondary flex-1 text-center">
+                            Accept and Return to Pool
+                        </a>
+                        <button type="button"
+                                class="btn-danger flex-1 inline-flex items-center justify-center gap-2"
+                                onclick="closeExportErrorModal(); openInvestigateModal();">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            Investigate
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+    window.closeExportErrorModal = function() {
+        const overlay = document.getElementById('export-error-modal-overlay');
+        if (overlay) { overlay.remove(); }
+    };
+    </script>
+    {% endif %}
+
+    <!-- Export Investigation Modal -->
+    <div id="investigate-modal-overlay" class="fixed inset-0 z-50 hidden">
+        <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" onclick="closeInvestigateModal()"></div>
+        <div class="fixed inset-0 overflow-y-auto">
+            <div class="flex min-h-full items-center justify-center p-4">
+                <div class="modal modal-lg w-full max-w-3xl">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-text-primary flex items-center gap-2">
+                            <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            Export Blocked: What Is Using {{ pool.name }}?
+                        </h3>
+                        <button type="button" class="text-text-tertiary hover:text-text-primary" onclick="closeInvestigateModal()">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="investigate-modal-body" class="max-h-[70vh] overflow-y-auto">
+                        <div class="flex flex-col items-center justify-center py-12 gap-4">
+                            <div class="w-12 h-12 rounded-full border-4 border-danger-900 border-t-danger-500 animate-spin"></div>
+                            <span class="text-text-secondary">Scanning the system for open files and locks...</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 pt-4 mt-4 border-t border-border-subtle">
+                        <button type="button" class="btn-secondary" onclick="closeInvestigateModal()">Close</button>
+                        <a href="/zfs/pools/{{ pool.name }}/export/confirm" class="btn-danger">Try Export Again</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    window.openInvestigateModal = function() {
+        const overlay = document.getElementById('investigate-modal-overlay');
+        const body = document.getElementById('investigate-modal-body');
+        if (!overlay || !body) { return; }
+        overlay.classList.remove('hidden');
+        body.innerHTML = '<div class="flex flex-col items-center justify-center py-12 gap-4">'
+            + '<div class="w-12 h-12 rounded-full border-4 border-danger-900 border-t-danger-500 animate-spin"></div>'
+            + '<span class="text-text-secondary">Scanning the system for open files and locks...</span></div>';
+        fetch('/zfs/pools/{{ pool.name }}/export/investigate')
+            .then(function(response) { return response.text(); })
+            .then(function(html) { body.innerHTML = html; })
+            .catch(function(err) {
+                body.innerHTML = '<div class="alert-danger" role="alert">'
+                    + '<p class="text-sm text-danger-300">Could not run the investigation: '
+                    + err + '</p></div>';
+            });
+    };
+
+    window.closeInvestigateModal = function() {
+        const overlay = document.getElementById('investigate-modal-overlay');
+        if (overlay) { overlay.classList.add('hidden'); }
+    };
+    </script>
 
     <!-- Capacity Bar -->
     {% set cap_val = (zfs_cap if zfs_cap else props.get('capacity', {}).get('value', '0%'))|replace('%', '')|int %}

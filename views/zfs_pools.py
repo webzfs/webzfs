@@ -11,6 +11,7 @@ from services.zfs_pool import ZFSPoolService
 from services.zfs_dataset import ZFSDatasetService
 from services.disk_utils import DiskUtilsService
 from services.diagnostics import collect_pool_diagnostics
+from services.pool_usage import PoolUsageService
 from services.audit_logger import audit_logger
 from auth.dependencies import get_current_user
 
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/zfs/pools", tags=["zfs-pools"], dependencies=[Depend
 pool_service = ZFSPoolService()
 dataset_service = ZFSDatasetService()
 disk_service = DiskUtilsService()
+pool_usage_service = PoolUsageService()
 
 
 def _get_min_data_device_size(topology: dict, disk_size_lookup: dict) -> int:
@@ -647,6 +649,38 @@ async def export_pool(
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}?error={str(e)}",
             status_code=303
+        )
+
+
+@router.get("/{pool_name}/export/investigate", response_class=HTMLResponse)
+async def investigate_pool_usage(request: Request, pool_name: str):
+    """
+    Investigate why a pool cannot be exported.
+
+    Scans the system for open files, processes whose current working directory
+    is inside the pool, and advisory file locks. The results are rendered as an
+    HTML fragment for display inside the export investigation modal.
+    """
+    try:
+        pool_service.validate_pool_name(pool_name)
+        findings = pool_usage_service.investigate(pool_name)
+        return templates.TemplateResponse(
+            request,
+            name="zfs/pools/export_investigate_partial.jinja",
+            context={
+                "pool_name": pool_name,
+                "findings": findings,
+            },
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request,
+            name="zfs/pools/export_investigate_partial.jinja",
+            context={
+                "pool_name": pool_name,
+                "findings": None,
+                "error": str(e),
+            },
         )
 
 
