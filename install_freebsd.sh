@@ -19,7 +19,8 @@ WHEELS_DIR="${INSTALL_DIR}/.wheels"
 WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
 
 # Wheel packages to download (these require compilation without pre-built wheels)
-WHEEL_PACKAGES="cryptography-44.0.0 markupsafe-3.0.3 psutil-7.1.3 pydantic_core-2.41.5 bcrypt-4.3.0 cffi-1.17.1 pynacl-1.5.0"
+# Versions must match the pins in requirements.txt.
+WHEEL_PACKAGES="cryptography-49.0.0 markupsafe-3.0.3 psutil-7.2.2 pydantic_core-2.46.4 bcrypt-5.0.0 cffi-2.1.0 pynacl-1.6.2"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -87,11 +88,22 @@ detect_freebsd_version() {
             ;;
         14.4)
             WHEEL_SUBDIR="freebsd14-4"
-            WHEEL_PLATFORM="freebsd_14_4_release_amd64"
+            WHEEL_PLATFORM="freebsd_14_4_release_p1_amd64"
             ;;
-        15.*)
+        15.0)
             WHEEL_SUBDIR="freebsd15-0"
             WHEEL_PLATFORM="freebsd_15_0_release_amd64"
+            ;;
+        15.1)
+            WHEEL_SUBDIR="freebsd15-1"
+            WHEEL_PLATFORM="freebsd_15_1_release_p1_amd64"
+            ;;
+        15.*)
+            # Newer 15.x minor releases: fall back to the latest 15.x wheels we build
+            printf "${YELLOW}Warning: FreeBSD ${MAJOR_VERSION}.${MINOR_VERSION} wheels not published yet.${NC}\n"
+            printf "${YELLOW}Falling back to FreeBSD 15.1 wheels (should be compatible).${NC}\n"
+            WHEEL_SUBDIR="freebsd15-1"
+            WHEEL_PLATFORM="freebsd_15_1_release_p1_amd64"
             ;;
         *)
             printf "${YELLOW}Warning: FreeBSD ${MAJOR_VERSION}.${MINOR_VERSION} is not directly supported.${NC}\n"
@@ -118,11 +130,13 @@ download_wheels() {
         version=$(echo "$pkg_version" | sed 's/.*-//')
         wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
         
-        # Determine ABI tag based on package
-        # cryptography uses stable ABI (abi3) tag; all others use cp311
+        # Determine ABI tag based on package.
+        # cryptography publishes a stable-ABI (abi3) wheel; from 45.x onward
+        # its minimum interpreter tag is cp311.  All other packages ship
+        # version-specific cp311 wheels.
         case "$pkg_name" in
             cryptography)
-                ABI_TAG="cp37-abi3"
+                ABI_TAG="cp311-abi3"
                 ;;
             *)
                 ABI_TAG="cp311-cp311"
@@ -175,14 +189,15 @@ echo "(This may take a few minutes on first run...)"
 echo
 
 # Install packages via pkg
-# python311 - Python runtime
-# py311-pip - pip for installing Python packages
+# python311 - Python runtime (bundles pip via ensurepip, so a separate
+#             py311-pip package is not required and is not built for the
+#             default Python flavor on FreeBSD 15.x)
 # node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
 # libsodium - runtime dependency of pynacl (used by paramiko for SSH)
 # Note: rust, gmake are NOT needed when using pre-compiled wheels
-pkg install -y python311 py311-pip node npm smartmontools sanoid libsodium
+pkg install -y python311 node npm smartmontools sanoid libsodium
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -348,8 +363,18 @@ else
     $PYTHON_PATH -m venv .venv
 fi
 
+# Verify pip was seeded into the venv by ensurepip (bundled with python311).
+# The py311-pip system package is not required and does not exist for the
+# default Python flavor on FreeBSD 15.x, so we bootstrap pip here if needed
+# instead of relying on that package.
+if [ ! -x ".venv/bin/pip" ] && [ ! -x ".venv/bin/pip3" ]; then
+    echo "pip not found in virtual environment, bootstrapping with ensurepip..."
+    .venv/bin/python3 -m ensurepip --upgrade > install_log.txt 2>&1
+fi
+
 echo "Installing/upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > install_log.txt 2>&1
+
 
 echo "Installing Python dependencies (using pre-compiled wheels)..."
 if ! .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1; then
