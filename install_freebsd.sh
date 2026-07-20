@@ -58,11 +58,20 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Function to find Python 3.11+ on FreeBSD
-# FreeBSD installs python311 as python3.11, not python3
+# Function to find Python 3.11 on FreeBSD
+# FreeBSD installs python311 as python3.11, not python3.
+#
+# IMPORTANT: python3.11 must be preferred over any other version. The
+# pre-compiled wheels WebZFS downloads are built for the cp311 ABI. On
+# FreeBSD 15.x the default Python flavor is 3.12, so python3.12 is commonly
+# present as a dependency of other packages (node, npm, etc.). If the venv is
+# created with python3.12 the version-specific cp311 wheels (pydantic-core,
+# bcrypt, cffi, markupsafe, psutil, pynacl) do not match and pip falls back to
+# building from source, which fails without Rust. Searching python3.11 first
+# guarantees the venv matches the wheels.
 find_python() {
-    # Check for specific versions first (FreeBSD style)
-    for py in python3.13 python3.12 python3.11 python3; do
+    # Prefer python3.11 to match the cp311 pre-compiled wheels.
+    for py in python3.11 python3.12 python3.13 python3; do
         if command_exists "$py"; then
             echo "$py"
             return 0
@@ -70,6 +79,7 @@ find_python() {
     done
     return 1
 }
+
 
 # Function to detect FreeBSD version and determine wheel directory
 detect_freebsd_version() {
@@ -356,12 +366,29 @@ cd "$INSTALL_DIR"
 export HOME="$INSTALL_DIR"
 
 # Create virtual environment
+# If a venv already exists but was built with a different Python version than
+# the one selected here, it must be recreated. A common failure mode on
+# FreeBSD 15.x is a leftover venv created with python3.12 that does not match
+# the cp311 pre-compiled wheels, which forces pip to compile from source.
 if [ -d ".venv" ]; then
-    echo "Virtual environment already exists"
+    EXPECTED_VERSION="$PYTHON_VERSION"
+    EXISTING_VERSION=""
+    if [ -x ".venv/bin/python3" ]; then
+        EXISTING_VERSION=$(.venv/bin/python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))' 2>/dev/null)
+    fi
+    if [ "$EXISTING_VERSION" != "$EXPECTED_VERSION" ]; then
+        printf "${YELLOW}Existing virtual environment uses Python '${EXISTING_VERSION}', expected '${EXPECTED_VERSION}'.${NC}\n"
+        echo "Recreating virtual environment to match the pre-compiled wheels..."
+        rm -rf .venv
+        $PYTHON_PATH -m venv .venv
+    else
+        echo "Virtual environment already exists"
+    fi
 else
     echo "Creating Python virtual environment..."
     $PYTHON_PATH -m venv .venv
 fi
+
 
 # Verify pip was seeded into the venv by ensurepip (bundled with python311).
 # The py311-pip system package is not required and does not exist for the

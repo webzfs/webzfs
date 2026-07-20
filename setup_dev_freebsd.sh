@@ -49,9 +49,15 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Function to find Python 3.11+ on FreeBSD
+# Function to find Python 3.11 on FreeBSD
+#
+# IMPORTANT: python3.11 is preferred over other versions because the
+# pre-compiled cp311 wheels used elsewhere target Python 3.11. On FreeBSD 15.x
+# the default Python flavor is 3.12, which is commonly present as a dependency
+# of other packages, so searching python3.11 first keeps the venv consistent
+# with the wheels.
 find_python() {
-    for py in python3.13 python3.12 python3.11 python3; do
+    for py in python3.11 python3.12 python3.13 python3; do
         if command_exists "$py"; then
             echo "$py"
             return 0
@@ -59,6 +65,7 @@ find_python() {
     done
     return 1
 }
+
 
 # Check prerequisites
 echo "Checking prerequisites..."
