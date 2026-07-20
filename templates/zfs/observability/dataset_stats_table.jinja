@@ -1,0 +1,89 @@
+{# Per-Dataset I/O statistics table partial. Rendered on the page and refreshed
+   over HTMX. The layout depends on the current mode (default, top, files). #}
+
+{% if not stats.available %}
+<div class="bg-warning-900/20 border border-warning-500/40 text-warning-300 px-4 py-3 rounded-lg">
+    <p class="text-sm">
+        Per-dataset statistics are not available on this system.
+    </p>
+    {% for note in stats.notes %}
+    <p class="text-xs mt-2 text-text-secondary">{{ note }}</p>
+    {% endfor %}
+</div>
+{% elif mode == 'files' %}
+    {% if stats.files %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full">
+            <thead class="bg-bg-elevated-2 text-text-primary">
+                <tr>
+                    <th class="px-4 py-3 text-left text-sm font-semibold">Dataset</th>
+                    <th class="px-4 py-3 text-left text-sm font-semibold">PID</th>
+                    <th class="px-4 py-3 text-left text-sm font-semibold">User</th>
+                    <th class="px-4 py-3 text-left text-sm font-semibold">Command</th>
+                    <th class="px-4 py-3 text-left text-sm font-semibold">FD</th>
+                    <th class="px-4 py-3 text-left text-sm font-semibold">Open File</th>
+                </tr>
+            </thead>
+            <tbody class="bg-bg-elevated font-mono text-sm">
+                {% for f in stats.files %}
+                <tr class="hover:bg-bg-elevated-2 border-t border-border-subtle">
+                    <td class="px-4 py-2 text-primary-300 font-semibold">{{ f.dataset }}</td>
+                    <td class="px-4 py-2 text-text-secondary">{{ f.pid }}</td>
+                    <td class="px-4 py-2 text-text-secondary">{{ f.user }}</td>
+                    <td class="px-4 py-2 text-text-primary">{{ f.command }}</td>
+                    <td class="px-4 py-2 text-text-secondary">{{ f.fd }}</td>
+                    <td class="px-4 py-2 text-text-primary break-all">{{ f.path }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-text-secondary text-center py-8">No open files were found on the matching datasets.</p>
+    {% endif %}
+{% else %}
+    {% if stats.datasets %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full">
+            <thead class="bg-bg-elevated-2 text-text-primary">
+                <tr>
+                    {% if mode == 'top' %}
+                    <th class="px-4 py-3 text-left text-sm font-semibold">#</th>
+                    {% endif %}
+                    <th class="px-4 py-3 text-left text-sm font-semibold">Dataset</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold">Read Ops/s</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold">Write Ops/s</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold">Read BW/s</th>
+                    <th class="px-4 py-3 text-right text-sm font-semibold">Write BW/s</th>
+                </tr>
+            </thead>
+            <tbody class="bg-bg-elevated font-mono text-sm">
+                {% for d in stats.datasets %}
+                <tr class="hover:bg-bg-elevated-2 border-t border-border-subtle">
+                    {% if mode == 'top' %}
+                    <td class="px-4 py-2 text-text-tertiary">{{ loop.index }}</td>
+                    {% endif %}
+                    <td class="px-4 py-2 font-semibold text-text-primary">{{ d.dataset }}</td>
+                    <td class="px-4 py-2 text-right {% if d.read_ops > 0 %}text-primary-400 font-semibold{% else %}text-text-secondary{% endif %}">{{ d.read_ops_h }}</td>
+                    <td class="px-4 py-2 text-right {% if d.write_ops > 0 %}text-success-400 font-semibold{% else %}text-text-secondary{% endif %}">{{ d.write_ops_h }}</td>
+                    <td class="px-4 py-2 text-right {% if d.read_bytes > 0 %}text-primary-400 font-bold{% else %}text-text-secondary{% endif %}">{{ d.read_bw_h }}</td>
+                    <td class="px-4 py-2 text-right {% if d.write_bytes > 0 %}text-success-400 font-bold{% else %}text-text-secondary{% endif %}">{{ d.write_bw_h }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-text-secondary text-center py-8">
+        No datasets matched the current filter, or no I/O activity was recorded during the sample interval.
+    </p>
+    {% endif %}
+{% endif %}
+
+{% if stats.available and stats.notes %}
+<div class="mt-4 p-3 bg-bg-elevated-2 border border-border-subtle rounded-lg">
+    {% for note in stats.notes %}
+    <p class="text-xs text-text-secondary">{{ note }}</p>
+    {% endfor %}
+</div>
+{% endif %}

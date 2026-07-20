@@ -1,0 +1,151 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6"
+     x-data="{ autoRefresh: {{ 'false' if mode == 'files' else 'true' }} }"
+     x-init="window.autoRefresh = autoRefresh">
+    <!-- Breadcrumb -->
+    <nav class="text-sm mb-4">
+        <ol class="list-none p-0 inline-flex">
+            <li class="flex items-center">
+                <a href="/" class="text-primary-400 hover:text-primary-300">Home</a>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li class="flex items-center">
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300">Observability</a>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li>
+                <span class="text-text-secondary">Per-Dataset I/O Statistics</span>
+            </li>
+        </ol>
+    </nav>
+
+    <h1 class="text-3xl font-bold mb-6">Per-Dataset I/O Statistics</h1>
+
+    <!-- Mode selector -->
+    <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
+        <div class="flex flex-wrap gap-2 mb-4">
+            <a href="/zfs/observability/dataset-stats?mode=default&dataset={{ selected_dataset }}&children={{ 'true' if include_children else 'false' }}"
+               class="px-4 py-2 rounded transition-colors {% if mode == 'default' %}btn-primary{% else %}btn-secondary{% endif %}">
+                All Datasets
+            </a>
+            <a href="/zfs/observability/dataset-stats?mode=top&dataset={{ selected_dataset }}&children={{ 'true' if include_children else 'false' }}"
+               class="px-4 py-2 rounded transition-colors {% if mode == 'top' %}btn-primary{% else %}btn-secondary{% endif %}">
+                Top by Bandwidth
+            </a>
+            <a href="/zfs/observability/dataset-stats?mode=files&dataset={{ selected_dataset }}&children={{ 'true' if include_children else 'false' }}"
+               class="px-4 py-2 rounded transition-colors {% if mode == 'files' %}btn-primary{% else %}btn-secondary{% endif %}">
+                Open Files
+            </a>
+        </div>
+
+        <form method="get" action="/zfs/observability/dataset-stats" class="flex flex-wrap gap-4 items-end">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <div class="flex-1 min-w-[240px]">
+                <label for="dataset" class="block text-sm font-medium text-text-secondary mb-1">Filter by Dataset</label>
+                <select name="dataset" id="dataset" class="form-input focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">All datasets</option>
+                    {% for dataset_name in all_datasets %}
+                    <option value="{{ dataset_name }}" {% if selected_dataset == dataset_name %}selected{% endif %}>{{ dataset_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if mode == 'top' %}
+            <div class="min-w-[180px]">
+                <label for="sort" class="block text-sm font-medium text-text-secondary mb-1">Sort By</label>
+                <select name="sort" id="sort" class="form-input focus:ring-blue-500 focus:border-blue-500">
+                    <option value="total" {% if sort == 'total' %}selected{% endif %}>Total Bandwidth</option>
+                    <option value="read" {% if sort == 'read' %}selected{% endif %}>Read Bandwidth</option>
+                    <option value="write" {% if sort == 'write' %}selected{% endif %}>Write Bandwidth</option>
+                    <option value="rops" {% if sort == 'rops' %}selected{% endif %}>Read Ops</option>
+                    <option value="wops" {% if sort == 'wops' %}selected{% endif %}>Write Ops</option>
+                </select>
+            </div>
+            {% endif %}
+            <div class="flex items-center gap-2 pb-2">
+                <input type="checkbox" name="children" id="children" value="true"
+                       class="form-checkbox" {% if include_children %}checked{% endif %}>
+                <label for="children" class="text-sm text-text-secondary">Include children</label>
+            </div>
+            <button type="submit" class="px-6 py-2 btn-primary transition-colors">
+                Apply
+            </button>
+        </form>
+    </div>
+
+    <!-- Statistics -->
+    <div class="bg-bg-elevated rounded-lg shadow">
+        <div class="px-6 py-4 border-b border-border-subtle">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-semibold">
+                    {% if mode == 'files' %}Open Files by Dataset
+                    {% elif mode == 'top' %}Busiest Datasets
+                    {% else %}Dataset I/O Rates{% endif %}
+                </h2>
+                <div class="flex items-center gap-4">
+                    <span class="text-sm text-text-secondary" id="last-update">Live Monitoring</span>
+                    {% if mode != 'files' %}
+                    <button @click="autoRefresh = !autoRefresh; window.autoRefresh = autoRefresh"
+                            class="px-4 py-2 transition-colors"
+                            :class="autoRefresh ? 'btn-success' : 'btn-secondary'">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            <span x-text="autoRefresh ? 'Auto-refresh: ON' : 'Auto-refresh: OFF'"></span>
+                        </span>
+                    </button>
+                    {% else %}
+                    <button hx-get="/zfs/observability/dataset-stats-table?mode=files&dataset={{ selected_dataset }}&children={{ 'true' if include_children else 'false' }}"
+                            hx-target="#stats-body"
+                            hx-swap="innerHTML"
+                            class="px-4 py-2 btn-secondary transition-colors">
+                        Refresh
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="p-6">
+            <div id="stats-body"
+                 {% if mode != 'files' %}
+                 hx-get="/zfs/observability/dataset-stats-table?mode={{ mode }}&dataset={{ selected_dataset }}&children={{ 'true' if include_children else 'false' }}&sort={{ sort }}"
+                 hx-trigger="every 3s[autoRefresh]"
+                 hx-swap="innerHTML"
+                 {% endif %}>
+                {% include "zfs/observability/dataset_stats_table.jinja" %}
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-6 p-4 bg-primary-900/20 border border-primary-500/30 rounded-lg">
+        <p class="text-sm text-primary-300">
+            <strong>Note:</strong> Read and write rates are computed from ZFS dataset kstats over a one second sample,
+            the same way <code>zpool iostat</code> reports pool activity. The Open Files view lists the processes
+            currently holding files open on each dataset, which is useful when a dataset or pool cannot be unmounted
+            or exported.
+        </p>
+    </div>
+</div>
+
+<script>
+    // Global autoRefresh variable for HTMX conditional triggers
+    window.autoRefresh = {{ 'false' if mode == 'files' else 'true' }};
+
+    const lastUpdate = document.getElementById('last-update');
+    function updateLastRefresh() {
+        const now = new Date();
+        lastUpdate.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+    }
+
+    document.body.addEventListener('htmx:afterSwap', updateLastRefresh);
+    updateLastRefresh();
+</script>
+{% endblock %}

@@ -1,0 +1,202 @@
+{#
+    Export investigation results partial.
+
+    Rendered into the investigation modal on the pool detail page. It explains
+    which open files, working-directory holders, and file locks are keeping the
+    pool busy so the user can resolve them and retry the export.
+#}
+{% if error %}
+<div class="alert-danger" role="alert">
+    <p class="text-sm text-danger-300">
+        The investigation could not be completed: {{ error }}
+    </p>
+</div>
+{% elif findings %}
+<div class="space-y-5">
+    <!-- Summary -->
+    {% set total = (findings.open_files | length) + (findings.cwd_holders | length) + (findings.locks | length) %}
+    {% if findings.has_findings %}
+    <div class="card-nested border-l-4 border-warning-500">
+        <p class="text-sm text-text-secondary">
+            Found <strong class="text-text-primary">{{ total }}</strong>
+            item{{ 's' if total != 1 else '' }} holding pool
+            <strong class="font-mono text-text-primary">{{ pool_name }}</strong> busy.
+            Stop or move the processes listed below, then try the export again.
+        </p>
+    </div>
+    {% else %}
+    <div class="card-nested border-l-4 border-success-500">
+        <p class="text-sm text-text-secondary">
+            No open files, working directories, or locks were found under pool
+            <strong class="font-mono text-text-primary">{{ pool_name }}</strong>.
+            The pool may be held by a kernel subsystem (such as an NFS or SMB
+            share), an active snapshot, or a zvol in use. Check that all shares
+            and services using this pool are stopped, then try the export again.
+        </p>
+    </div>
+    {% endif %}
+
+    <!-- Mountpoints inspected -->
+    {% if findings.mountpoints %}
+    <div>
+        <h4 class="text-sm font-semibold text-text-secondary mb-2">Mountpoints inspected</h4>
+        <div class="flex flex-wrap gap-2">
+            {% for mp in findings.mountpoints %}
+            <span class="font-mono text-xs bg-bg-elevated-2 border border-border-subtle rounded px-2 py-1 text-text-primary">{{ mp }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Shells / working directory holders -->
+    {% if findings.cwd_holders %}
+    <div>
+        <h4 class="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
+            <svg class="w-4 h-4 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            Shells and processes with a working directory in the pool
+            ({{ findings.cwd_holders | length }})
+        </h4>
+        <p class="text-xs text-text-tertiary mb-2">
+            These processes are "sitting inside" the pool. A common cause is a
+            terminal that has changed directory (cd) into a dataset. Change out
+            of the directory or stop the process.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle text-text-secondary">
+                        <th class="text-left py-2 px-3 font-medium">PID</th>
+                        <th class="text-left py-2 px-3 font-medium">User</th>
+                        <th class="text-left py-2 px-3 font-medium">Command</th>
+                        <th class="text-left py-2 px-3 font-medium">Directory</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for holder in findings.cwd_holders %}
+                    <tr class="border-b border-border-subtle/50">
+                        <td class="py-2 px-3 font-mono text-text-primary">{{ holder.pid }}</td>
+                        <td class="py-2 px-3 text-text-secondary">{{ holder.user }}</td>
+                        <td class="py-2 px-3 font-mono text-text-primary">{{ holder.command }}</td>
+                        <td class="py-2 px-3 font-mono text-text-secondary break-all">{{ holder.path }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Open files -->
+    {% if findings.open_files %}
+    <div>
+        <h4 class="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
+            <svg class="w-4 h-4 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+            </svg>
+            Open files in the pool ({{ findings.open_files | length }})
+        </h4>
+        <p class="text-xs text-text-tertiary mb-2">
+            These processes have files open under the pool. Close the files or
+            stop the processes before exporting.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle text-text-secondary">
+                        <th class="text-left py-2 px-3 font-medium">PID</th>
+                        <th class="text-left py-2 px-3 font-medium">User</th>
+                        <th class="text-left py-2 px-3 font-medium">Command</th>
+                        <th class="text-left py-2 px-3 font-medium">FD</th>
+                        <th class="text-left py-2 px-3 font-medium">Path</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for open_file in findings.open_files %}
+                    <tr class="border-b border-border-subtle/50">
+                        <td class="py-2 px-3 font-mono text-text-primary">{{ open_file.pid }}</td>
+                        <td class="py-2 px-3 text-text-secondary">{{ open_file.user }}</td>
+                        <td class="py-2 px-3 font-mono text-text-primary">{{ open_file.command }}</td>
+                        <td class="py-2 px-3 font-mono text-text-secondary">{{ open_file.fd }}</td>
+                        <td class="py-2 px-3 font-mono text-text-secondary break-all">{{ open_file.path }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Locks -->
+    {% if findings.locks %}
+    <div>
+        <h4 class="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
+            <svg class="w-4 h-4 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+            </svg>
+            File locks in the pool ({{ findings.locks | length }})
+        </h4>
+        <p class="text-xs text-text-tertiary mb-2">
+            These advisory locks are held on files inside the pool. Stop the
+            owning process to release the lock.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle text-text-secondary">
+                        <th class="text-left py-2 px-3 font-medium">PID</th>
+                        <th class="text-left py-2 px-3 font-medium">Command</th>
+                        <th class="text-left py-2 px-3 font-medium">Type</th>
+                        <th class="text-left py-2 px-3 font-medium">Mode</th>
+                        <th class="text-left py-2 px-3 font-medium">Path</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lock in findings.locks %}
+                    <tr class="border-b border-border-subtle/50">
+                        <td class="py-2 px-3 font-mono text-text-primary">{{ lock.pid }}</td>
+                        <td class="py-2 px-3 font-mono text-text-primary">{{ lock.command }}</td>
+                        <td class="py-2 px-3 text-text-secondary">{{ lock.type }}</td>
+                        <td class="py-2 px-3 text-text-secondary">{{ lock.mode }}</td>
+                        <td class="py-2 px-3 font-mono text-text-secondary break-all">{{ lock.path }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Notes -->
+    {% if findings.notes %}
+    <div class="card-nested">
+        <h4 class="text-sm font-semibold text-text-secondary mb-2">Notes</h4>
+        <ul class="space-y-1">
+            {% for note in findings.notes %}
+            <li class="text-xs text-text-tertiary flex items-start gap-2">
+                <span class="text-text-tertiary">-</span>
+                <span>{{ note }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- How to resolve -->
+    <div class="card-nested border-l-4 border-info-500">
+        <h4 class="text-sm font-semibold text-text-primary mb-2">How to resolve</h4>
+        <ol class="text-xs text-text-secondary space-y-1 list-decimal list-inside">
+            <li>Stop each listed process, or ask the owning user to close it.</li>
+            <li>For shells sitting in the pool, change directory out of it (for example, <span class="font-mono">cd /</span>).</li>
+            <li>Stop any NFS or SMB shares, database services, or containers using the pool.</li>
+            <li>To stop a process by PID, use <span class="font-mono">kill &lt;PID&gt;</span> from a shell.</li>
+            <li>Once everything is cleared, use "Try Export Again" to export the pool.</li>
+        </ol>
+    </div>
+</div>
+{% else %}
+<div class="alert-danger" role="alert">
+    <p class="text-sm text-danger-300">No investigation data was returned.</p>
+</div>
+{% endif %}
