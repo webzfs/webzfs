@@ -67,29 +67,11 @@
         <div class="card-body">
             <h2 class="text-xl font-semibold text-text-primary mb-4">Confirm Export</h2>
             
-            <form method="post" action="/zfs/pools/{{ pool_name }}/export" class="space-y-4" id="form-export-pool">
-                <!-- Force Option -->
-                <div class="card-nested">
-                    <div class="flex items-start gap-3">
-                        <input type="checkbox" 
-                               id="force" 
-                               name="force" 
-                               value="true"
-                               class="form-checkbox mt-1">
-                        <label for="force" class="flex-1">
-                            <span class="font-medium text-text-primary block mb-1">Force export</span>
-                            <p class="text-sm text-text-secondary">
-                                Force unmount all datasets even if they are busy. Use this if the pool is in use but you need to export it anyway.
-                            </p>
-                            <p class="text-sm text-danger-400 mt-2 flex items-center gap-2">
-                                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                                </svg>
-                                <strong>Warning:</strong> This may cause data loss if processes are actively writing to the pool.
-                            </p>
-                        </label>
-                    </div>
-                </div>
+            <form method="post" action="/zfs/pools/{{ pool_name }}/export" class="space-y-4" id="form-export-pool" hx-boost="false">
+                <p class="text-sm text-text-secondary">
+                    This will unmount all datasets in the pool and remove it from the active pools list.
+                    The pool can be re-imported at any time. No data is deleted.
+                </p>
 
                 <!-- Buttons -->
                 <div class="flex justify-end gap-3 pt-4">
@@ -164,7 +146,7 @@
 {% set message = 'Are you sure you want to export ' ~ pool_name ~ '? All datasets will be unmounted and the pool will no longer be accessible until re-imported.' %}
 {% set confirm_text = 'Export Pool' %}
 {% set confirm_class = 'danger' %}
-{% set confirm_action = 'showExportProgress(); document.getElementById("form-export-pool").submit()' %}
+{% set confirm_action = 'submitExportForm()' %}
 {% include 'partials/confirm.jinja' %}
 
 
@@ -176,6 +158,33 @@ window.showExportProgress = function() {
         overlay.style.display = 'block';
     }
 };
+
+// Show the overlay whenever the export form is actually submitted, regardless
+// of how the submit was triggered. This guarantees the progress modal appears.
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('form-export-pool');
+    if (form) {
+        form.addEventListener('submit', function() {
+            window.showExportProgress();
+        });
+    }
+});
+
+// Submit the export form as a normal (non-boosted) navigation. Using
+// requestSubmit() fires the form's submit event so the progress overlay is
+// shown, and performs a full-page POST so the server's 303 redirect is
+// followed by the browser instead of being intercepted by htmx boosting.
+window.submitExportForm = function() {
+    const form = document.getElementById('form-export-pool');
+    if (!form) { return; }
+    window.showExportProgress();
+    if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+    } else {
+        form.submit();
+    }
+};
+
 
 // Ensure showConfirm function is available
 window.showConfirm = function(dialogId) {

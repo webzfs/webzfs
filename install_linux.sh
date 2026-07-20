@@ -314,6 +314,9 @@ webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /sbin/smartctl
 # Disk utilities
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
 
+# Open file / lock inspection (pool export busy investigation)
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsof, /usr/bin/lslocks, /bin/lsof, /bin/lslocks
+
 # Sanoid/Syncoid (optional)
 webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid, /usr/bin/syncoid, /usr/local/sbin/sanoid, /usr/local/sbin/syncoid
 

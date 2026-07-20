@@ -91,6 +91,8 @@ PRIVILEGED_COMMANDS = {
     'systemctl', 'service',
     # Disk utilities (some operations)
     'lsblk', 'blkid', 'blockdev',
+    # Open file / lock inspection (pool export busy investigation)
+    'lsof', 'lslocks', 'fstat', 'fuser',
     # Crontab
     'crontab',
     # Log reading (support bundle / syslog collection). On Linux the
