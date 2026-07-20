@@ -24,6 +24,18 @@ NAV_TABS = [
 ]
 
 templates = Jinja2Templates(BASE_DIR / "templates")
+
+# Force HTML autoescaping on all templates.
+#
+# Starlette 1.x changed its default Jinja environment from autoescape=True to
+# jinja2.select_autoescape(), which only autoescapes files ending in
+# .html/.htm/.xml/.xhtml. All of our templates use the .jinja extension, so
+# under Starlette 1.x they render completely unescaped. This both breaks HTML
+# attributes that contain quoted values (for example the confirm modal's
+# onclick="{{ confirm_action }}") and is an XSS risk. Restore the previous
+# always-escape behavior explicitly.
+templates.env.autoescape = True
+
 templates.env.globals["settings"] = settings
 templates.env.globals["NAV_TABS"] = NAV_TABS
 templates.env.globals["get_theme_css_path"] = get_theme_css_path
