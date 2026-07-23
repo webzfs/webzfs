@@ -73,12 +73,14 @@ async def create_job_form(request: Request):
     try:
         # Get available datasets
         datasets = dataset_service.list_datasets()
+        ssh_connections = ssh_service.list_connections()
         
         return templates.TemplateResponse(
             request,
             name="zfs/replication/job_create.jinja",
             context={
                 "datasets": datasets,
+                "ssh_connections": ssh_connections,
                 "replication_types": [t.value for t in ReplicationType],
                 "compression_methods": [c.value for c in CompressionMethod],
                 "page_title": "Create Replication Job"
@@ -90,6 +92,7 @@ async def create_job_form(request: Request):
             name="zfs/replication/job_create.jinja",
             context={
                 "datasets": [],
+                "ssh_connections": [],
                 "error": str(e),
                 "page_title": "Create Replication Job"
             }
@@ -109,7 +112,8 @@ async def create_job(
     compression: Annotated[str, Form()] = "lz4",
     remote_host: Annotated[str, Form()] = "",
     remote_port: Annotated[int, Form()] = 22,
-    ssh_key: Annotated[str, Form()] = ""
+    ssh_key: Annotated[str, Form()] = "",
+    ssh_connection_id: Annotated[str, Form()] = ""
 ):
     """Create a new replication job"""
     try:
@@ -119,6 +123,16 @@ async def create_job(
             options['remote_port'] = remote_port
         if ssh_key:
             options['ssh_key'] = ssh_key
+
+        # Resolve the SSH Manager connection to get the private key path
+        # and remote host details for key-based authentication.
+        if ssh_connection_id:
+            connection = ssh_service.get_connection(ssh_connection_id)
+            if connection:
+                options['ssh_key'] = connection['private_key_path']
+                if not remote_host:
+                    options['remote_host'] = f"{connection['username']}@{connection['host']}"
+                    options['remote_port'] = connection['port']
         
         job_id = replication_service.create_replication_job(
             name=name,
@@ -138,11 +152,13 @@ async def create_job(
         )
     except Exception as e:
         datasets = dataset_service.list_datasets()
+        ssh_connections = ssh_service.list_connections()
         return templates.TemplateResponse(
             request,
             name="zfs/replication/job_create.jinja",
             context={
                 "datasets": datasets,
+                "ssh_connections": ssh_connections,
                 "replication_types": [t.value for t in ReplicationType],
                 "compression_methods": [c.value for c in CompressionMethod],
                 "error": str(e),
