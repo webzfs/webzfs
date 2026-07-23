@@ -84,30 +84,29 @@
                             Remote Connection
                         </h3>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label class="form-label" for="remote_host">
-                                    Remote Host <span class="text-danger-400">*</span>
-                                </label>
-                                <input type="text" name="remote_host" id="remote_host" class="form-input" placeholder="user@hostname">
-                            </div>
-
-                            <div>
-                                <label class="form-label" for="remote_port">
-                                    SSH Port
-                                </label>
-                                <input type="number" name="remote_port" id="remote_port" value="22" class="form-input">
-                            </div>
-                        </div>
-                        
                         <div class="mb-4">
-                            <label class="form-label" for="remote_password">
-                                SSH Password (optional - for testing)
+                            <label class="form-label" for="ssh_connection">
+                                SSH Connection <span class="text-danger-400">*</span>
                             </label>
-                            <input type="password" name="remote_password" id="remote_password" class="form-input" placeholder="Leave empty if using SSH keys">
-                            <p class="text-text-tertiary text-xs mt-1">For scheduled jobs, SSH keys are strongly recommended</p>
+                            {% if ssh_connections and ssh_connections|length > 0 %}
+                            <select name="ssh_connection_id" id="ssh_connection" class="form-select">
+                                <option value="">-- Select SSH Connection --</option>
+                                {% for conn in ssh_connections %}
+                                <option value="{{ conn.id }}">{{ conn.name }} ({{ conn.username }}@{{ conn.host }}:{{ conn.port }})</option>
+                                {% endfor %}
+                            </select>
+                            <p class="text-text-tertiary text-xs mt-1">Connections are managed in <a href="/utils/ssh" class="text-primary-400 hover:text-primary-300">Utilities &gt; SSH Manager</a></p>
+                            {% else %}
+                            <div class="bg-warning-900/30 border border-warning-700 text-warning-400 px-4 py-3 rounded-lg">
+                                <p class="text-sm">No SSH connections configured. Create one in <a href="/utils/ssh" class="underline text-primary-400 hover:text-primary-300">Utilities &gt; SSH Manager</a> first.</p>
+                            </div>
+                            {% endif %}
                         </div>
-                        
+
+                        <!-- Hidden fields populated from the selected SSH connection for form submission -->
+                        <input type="hidden" name="remote_host" id="remote_host" value="">
+                        <input type="hidden" name="remote_port" id="remote_port" value="22">
+
                         <div class="flex items-center gap-4">
                             <button type="button" id="test-connection-btn" class="btn-success">
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -221,15 +220,9 @@
             SSH Authentication for Scheduled Jobs
         </h3>
         <div class="space-y-3 text-sm text-text-secondary">
-            <p><strong class="text-text-primary">Recommended:</strong> Use SSH key-based authentication for scheduled replication jobs.</p>
-            <p>Password authentication is available for testing but not recommended for production scheduled jobs as passwords cannot be securely stored for automated execution.</p>
-            <div>
-                <p class="font-medium text-text-primary mb-2">Setup SSH keys:</p>
-                <div class="bg-bg-elevated-3 p-3 rounded border border-border-default font-mono text-xs text-success-400 overflow-x-auto">
-<pre>ssh-keygen -t ed25519 -f /root/.ssh/id_zfs_replication
-ssh-copy-id -i /root/.ssh/id_zfs_replication.pub user@remotehost</pre>
-                </div>
-            </div>
+            <p><strong class="text-text-primary">Recommended:</strong> Remote replication uses key-based SSH authentication managed by the
+                <a href="/utils/ssh" class="text-primary-400 hover:text-primary-300">SSH Connection Manager</a>.</p>
+            <p>Create a connection in <a href="/utils/ssh" class="text-primary-400 hover:text-primary-300">Utilities &gt; SSH Manager</a>, verify it is Active, then select it above. The stored key is used automatically for scheduled jobs; no passwords are required or stored.</p>
         </div>
     </div>
 </div>
@@ -284,12 +277,11 @@ function loadLocalDatasets() {
 
 // Test remote connection and load datasets
 testConnectionBtn.addEventListener('click', async function() {
-    const remoteHost = document.getElementById('remote_host').value;
-    const remotePort = document.getElementById('remote_port').value;
-    const remotePassword = document.getElementById('remote_password').value;
-    
-    if (!remoteHost) {
-        connectionStatus.innerHTML = '<span class="text-danger-400 flex items-center"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Please enter remote host</span>';
+    const sshConnectionSelect = document.getElementById('ssh_connection');
+    const sshConnectionId = sshConnectionSelect ? sshConnectionSelect.value : '';
+
+    if (!sshConnectionId) {
+        connectionStatus.innerHTML = '<span class="text-danger-400 flex items-center"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Please select an SSH connection</span>';
         return;
     }
     
@@ -297,28 +289,24 @@ testConnectionBtn.addEventListener('click', async function() {
     testConnectionBtn.disabled = true;
     
     try {
-        const requestBody = {
-            remote_host: remoteHost,
-            remote_port: parseInt(remotePort)
-        };
-        
-        // Only include password if provided
-        if (remotePassword) {
-            requestBody.remote_password = remotePassword;
-        }
-        
         const response = await fetch('/zfs/replication/api/test-remote-connection', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify({ ssh_connection_id: sshConnectionId })
         });
         
         const data = await response.json();
         
         if (data.success) {
             connectionStatus.innerHTML = '<span class="text-success-400 flex items-center"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Connected successfully!</span>';
+            
+            // Store connection details in hidden fields for form submission
+            if (data.connection) {
+                document.getElementById('remote_host').value = data.connection.username + '@' + data.connection.host;
+                document.getElementById('remote_port').value = data.connection.port;
+            }
             
             // Populate target dropdown with remote datasets
             targetDatasetSelect.innerHTML = '<option value="">-- Select target dataset --</option>';
