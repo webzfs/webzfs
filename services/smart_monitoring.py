@@ -131,31 +131,37 @@ class SMARTMonitoringService:
             List of disk information dictionaries
         """
         try:
-            # Try to get list from smartctl --scan
             smartctl = self._get_smartctl_cmd()
-            result = run_privileged_command([smartctl, '--scan'])
-            
             disks = []
-            for line in result.stdout.strip().split('\n'):
-                if not line:
+            result = run_privileged_command([smartctl, '--scan', '-j'], check=False)
+            try:
+                devices = json.loads(result.stdout).get('devices', [])
+            except json.JSONDecodeError:
+                devices = []
+
+            if not devices:
+                result = run_privileged_command([smartctl, '--scan'])
+                devices = [
+                    {'name': line.split()[0]}
+                    for line in result.stdout.strip().split('\n')
+                    if line
+                ]
+
+            for device in devices:
+                disk_path = device.get('name')
+                if not disk_path:
                     continue
-                
-                parts = line.split()
-                if len(parts) >= 1:
-                    disk_path = parts[0]
-                    disk_name = disk_path.split('/')[-1]
-                    
-                    # Get basic info for each disk
-                    info = self._get_basic_disk_info(disk_path)
-                    disks.append({
-                        'path': disk_path,
-                        'name': disk_name,
-                        'model': info.get('model', 'Unknown'),
-                        'serial': info.get('serial', 'Unknown'),
-                        'smart_enabled': info.get('smart_enabled', False),
-                        'smart_available': info.get('smart_available', False)
-                    })
-            
+
+                info = self._get_basic_disk_info(disk_path)
+                disks.append({
+                    'path': disk_path,
+                    'name': disk_path.split('/')[-1],
+                    'model': info.get('model', 'Unknown'),
+                    'serial': info.get('serial', 'Unknown'),
+                    'smart_enabled': info.get('smart_enabled', False),
+                    'smart_available': info.get('smart_available', False)
+                })
+
             return disks
             
         except subprocess.CalledProcessError as e:
@@ -206,17 +212,21 @@ class SMARTMonitoringService:
         try:
             smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                [smartctl, '-H', disk],
+                [smartctl, '-H', '-j', disk],
                 check=False
             )
-            
-            health = 'UNKNOWN'
-            for line in result.stdout.split('\n'):
-                if 'SMART overall-health' in line or 'SMART Health Status' in line:
-                    if 'PASSED' in line:
-                        health = 'PASSED'
-                    elif 'FAILED' in line:
-                        health = 'FAILED'
+
+            try:
+                passed = json.loads(result.stdout).get('smart_status', {}).get('passed')
+            except json.JSONDecodeError:
+                passed = None
+
+            if passed is True:
+                health = 'PASSED'
+            elif passed is False:
+                health = 'FAILED'
+            else:
+                health = self._extract_health(result.stdout)
             
             return {
                 'disk': disk,
@@ -260,13 +270,7 @@ class SMARTMonitoringService:
             Disk information dictionary
         """
         try:
-            smartctl = self._get_smartctl_cmd()
-            result = run_privileged_command(
-                [smartctl, '-i', disk],
-                check=False
-            )
-            
-            return self._parse_device_info(result.stdout)
+            return self._get_basic_disk_info(disk)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get disk info: {e.stderr}")
@@ -686,10 +690,17 @@ class SMARTMonitoringService:
         try:
             smartctl = self._get_smartctl_cmd()
             result = run_privileged_command(
-                [smartctl, '-i', disk],
+                [smartctl, '-i', '-j', disk],
                 check=False
             )
-            return self._parse_device_info(result.stdout)
+            try:
+                return self._parse_device_info_json(json.loads(result.stdout))
+            except json.JSONDecodeError:
+                result = run_privileged_command(
+                    [smartctl, '-i', disk],
+                    check=False
+                )
+                return self._parse_device_info(result.stdout)
         except:
             return {}
     
@@ -697,11 +708,44 @@ class SMARTMonitoringService:
         """Extract health status from smartctl output"""
         for line in output.split('\n'):
             if 'SMART overall-health' in line or 'SMART Health Status' in line:
-                if 'PASSED' in line:
+                value = line.split(':', 1)[-1].strip().upper()
+                if 'PASSED' in value or value in {'OK', 'GOOD'}:
                     return 'PASSED'
-                elif 'FAILED' in line:
+                elif 'FAILED' in value:
                     return 'FAILED'
         return 'UNKNOWN'
+
+    def _parse_device_info_json(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse device information from smartctl JSON output."""
+        info: Dict[str, Any] = {}
+
+        model = data.get('model_name')
+        if not model:
+            model = ' '.join(
+                value for value in (
+                    data.get('scsi_vendor'),
+                    data.get('scsi_product'),
+                ) if value
+            )
+        if model:
+            info['model'] = model
+
+        if data.get('serial_number'):
+            info['serial'] = data['serial_number']
+        if data.get('firmware_version') or data.get('scsi_revision'):
+            info['firmware'] = data.get('firmware_version') or data['scsi_revision']
+
+        capacity = data.get('user_capacity', {}).get('bytes')
+        if capacity is not None:
+            info['capacity'] = f'{capacity:,} bytes'
+
+        smart_support = data.get('smart_support', {})
+        if 'available' in smart_support:
+            info['smart_available'] = smart_support['available']
+        if 'enabled' in smart_support:
+            info['smart_enabled'] = smart_support['enabled']
+
+        return info
     
     def _parse_smart_attributes(self, output: str) -> List[Dict[str, Any]]:
         """Parse SMART attributes table"""
@@ -735,6 +779,8 @@ class SMARTMonitoringService:
     def _parse_device_info(self, output: str) -> Dict[str, Any]:
         """Parse device information from smartctl output"""
         info = {}
+        vendor = None
+        product = None
         
         for line in output.split('\n'):
             if ':' in line:
@@ -744,6 +790,10 @@ class SMARTMonitoringService:
                 
                 if 'model' in key:
                     info['model'] = value
+                elif key == 'vendor':
+                    vendor = value
+                elif key == 'product':
+                    product = value
                 elif 'serial' in key:
                     info['serial'] = value
                 elif 'capacity' in key or 'size' in key:
@@ -755,6 +805,9 @@ class SMARTMonitoringService:
                         info['smart_available'] = True
                     elif 'Enabled' in value:
                         info['smart_enabled'] = True
+
+        if 'model' not in info and product:
+            info['model'] = ' '.join(value for value in (vendor, product) if value)
 
         return info
     
