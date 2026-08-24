@@ -62,6 +62,27 @@ if [ ! -f "/usr/local/etc/rc.d/webzfs" ]; then
     exit 1
 fi
 
+if command -v bun >/dev/null 2>&1; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="$(command -v bun)"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    printf "${GREEN}✓${NC} Bun $(bun --version) found\n"
+elif ! command -v node >/dev/null 2>&1; then
+    printf "${RED}Error: Neither Bun nor Node.js is installed${NC}\n"
+    echo "Please install Bun or Node.js with npm first"
+    exit 1
+elif ! command -v npm >/dev/null 2>&1; then
+    printf "${RED}Error: npm is not installed${NC}\n"
+    echo "Please install npm or Bun first"
+    exit 1
+else
+    printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
+    JS_PACKAGE_MANAGER="npm"
+    JS_PACKAGE_MANAGER_PATH="$(command -v npm)"
+    JS_PACKAGE_MANAGER_NAME="Node.js"
+    printf "${GREEN}✓${NC} npm $(npm --version) found\n"
+fi
+
 # Check if service is running
 SERVICE_WAS_RUNNING=false
 if service webzfs status >/dev/null 2>&1; then
@@ -122,7 +143,7 @@ fi
 echo
 
 # Update dependencies
-echo "Updating Python and Node.js dependencies..."
+echo "Updating Python and ${JS_PACKAGE_MANAGER_NAME} dependencies..."
 echo "(This may take a few minutes...)"
 echo
 
@@ -171,15 +192,19 @@ if ! .venv/bin/pip install $FIND_LINKS_FLAG -r requirements.txt >> update_log.tx
     exit 1
 fi
 
-echo "Updating Node.js dependencies..."
-npm install >> update_log.txt 2>&1
+echo "Updating ${JS_PACKAGE_MANAGER_NAME} dependencies..."
+"$JS_PACKAGE_MANAGER_PATH" install >> update_log.txt 2>&1
 
 echo "Rebuilding static assets..."
-npm run build:css >> update_log.txt 2>&1
+if [ "$JS_PACKAGE_MANAGER" = "bun" ]; then
+    "$JS_PACKAGE_MANAGER_PATH" ./node_modules/postcss-cli/index.js src/styles.css -o static/css/styles.css >> update_log.txt 2>&1
+else
+    "$JS_PACKAGE_MANAGER_PATH" run build:css >> update_log.txt 2>&1
+fi
 
 echo
 printf "${GREEN}✓${NC} Python dependencies updated\n"
-printf "${GREEN}✓${NC} Node.js dependencies updated\n"
+printf "${GREEN}✓${NC} ${JS_PACKAGE_MANAGER_NAME} dependencies updated\n"
 printf "${GREEN}✓${NC} Static assets rebuilt\n"
 echo
 

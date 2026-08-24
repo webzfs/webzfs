@@ -90,23 +90,26 @@ fi
 
 printf "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)\n"
 
-if ! command_exists node; then
-    printf "${RED}Error: Node.js is not installed${NC}\n"
-    echo "Please install Node.js first:"
-    echo "  pkg install node npm"
+if command_exists bun; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="$(command -v bun)"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    printf "${GREEN}✓${NC} Bun $(bun --version) found\n"
+elif ! command_exists node; then
+    printf "${RED}Error: Neither Bun nor Node.js is installed${NC}\n"
+    echo "Please install Bun or Node.js with npm first"
     exit 1
-fi
-
-printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
-
-if ! command_exists npm; then
+elif ! command_exists npm; then
     printf "${RED}Error: npm is not installed${NC}\n"
-    echo "Please install npm first:"
-    echo "  pkg install npm"
+    echo "Please install npm or Bun first"
     exit 1
+else
+    printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
+    JS_PACKAGE_MANAGER="npm"
+    JS_PACKAGE_MANAGER_PATH="$(command -v npm)"
+    JS_PACKAGE_MANAGER_NAME="Node.js"
+    printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 fi
-
-printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 
 # Check for ZFS (should be built-in on FreeBSD)
 if ! command_exists zpool || ! command_exists zfs; then
@@ -172,15 +175,18 @@ echo "(This may take a few minutes on first run...)"
 pip install -r requirements.txt > /dev/null 2>&1
 printf "${GREEN}✓${NC} Python dependencies installed\n"
 
-# Install Node.js dependencies
-echo "Installing Node.js dependencies..."
-npm install > /dev/null 2>&1
-printf "${GREEN}✓${NC} Node.js dependencies installed\n"
+echo "Installing ${JS_PACKAGE_MANAGER_NAME} dependencies..."
+"$JS_PACKAGE_MANAGER_PATH" install > /dev/null 2>&1
+printf "${GREEN}✓${NC} ${JS_PACKAGE_MANAGER_NAME} dependencies installed\n"
 
 # Build static assets
 echo "Building static assets..."
 mkdir -p static/css
-npm run build:css > /dev/null 2>&1
+if [ "$JS_PACKAGE_MANAGER" = "bun" ]; then
+    "$JS_PACKAGE_MANAGER_PATH" ./node_modules/postcss-cli/index.js src/styles.css -o static/css/styles.css > /dev/null 2>&1
+else
+    "$JS_PACKAGE_MANAGER_PATH" run build:css > /dev/null 2>&1
+fi
 printf "${GREEN}✓${NC} Static assets built\n"
 
 # Copy theme CSS files if available

@@ -113,10 +113,17 @@ install_dependencies() {
 
     # Install System Packages
     echo "Installing system packages via pkgin..."
-    pkgin -y install python311 py311-pip nodejs smartmontools \
-                     git perl mbuffer lzop pv mozilla-rootcerts \
-                     p5-Config-IniFiles p5-Capture-Tiny \
-                     gmake libsodium curl pkg-config openssl
+    if command_exists bun; then
+        pkgin -y install python311 py311-pip smartmontools \
+                         git perl mbuffer lzop pv mozilla-rootcerts \
+                         p5-Config-IniFiles p5-Capture-Tiny \
+                         gmake libsodium curl pkg-config openssl
+    else
+        pkgin -y install python311 py311-pip nodejs smartmontools \
+                         git perl mbuffer lzop pv mozilla-rootcerts \
+                         p5-Config-IniFiles p5-Capture-Tiny \
+                         gmake libsodium curl pkg-config openssl
+    fi
 
     # Create Python symlinks if they don't exist
     if [ ! -f /usr/pkg/bin/python3 ]; then
@@ -275,19 +282,26 @@ PYTHON_PATH=$(command -v "$PYTHON_CMD")
 PYTHON_VERSION=$($PYTHON_CMD -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
 printf "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)\n"
 
-if ! command_exists node; then
-    printf "${RED}Error: Node.js is not installed${NC}\n"
-    echo "Please install Node.js first"
+if command_exists bun; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="$(command -v bun)"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    printf "${GREEN}✓${NC} Bun $(bun --version) found\n"
+elif ! command_exists node; then
+    printf "${RED}Error: Neither Bun nor Node.js is installed${NC}\n"
+    echo "Please install Bun or Node.js with npm first"
     exit 1
-fi
-printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
-
-if ! command_exists npm; then
+elif ! command_exists npm; then
     printf "${RED}Error: npm is not installed${NC}\n"
-    echo "Please install npm first"
+    echo "Please install npm or Bun first"
     exit 1
+else
+    printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
+    JS_PACKAGE_MANAGER="npm"
+    JS_PACKAGE_MANAGER_PATH="$(command -v npm)"
+    JS_PACKAGE_MANAGER_NAME="Node.js"
+    printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 fi
-printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 
 # Check for Rust (optional - only needed if pre-compiled wheels are unavailable)
 # Try to source cargo env if rustup is installed
@@ -459,7 +473,7 @@ fi
 echo
 
 # Install dependencies
-echo "Installing Python and Node.js dependencies..."
+echo "Installing Python and ${JS_PACKAGE_MANAGER_NAME} dependencies..."
 echo "(This should be quick with pre-compiled wheels...)"
 echo
 
@@ -501,14 +515,18 @@ echo "Installing/upgrading pip in virtual environment..."
 echo "Installing Python dependencies (using pre-compiled wheels)..."
 .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> install_log.txt 2>&1
 
-echo "Installing Node.js dependencies..."
-npm install >> install_log.txt 2>&1
+echo "Installing ${JS_PACKAGE_MANAGER_NAME} dependencies..."
+"$JS_PACKAGE_MANAGER_PATH" install >> install_log.txt 2>&1
 
 echo "Creating static directory structure..."
 mkdir -p static/css
 
 echo "Building static assets..."
-npm run build:css >> install_log.txt 2>&1
+if [ "$JS_PACKAGE_MANAGER" = "bun" ]; then
+    "$JS_PACKAGE_MANAGER_PATH" ./node_modules/postcss-cli/index.js src/styles.css -o static/css/styles.css >> install_log.txt 2>&1
+else
+    "$JS_PACKAGE_MANAGER_PATH" run build:css >> install_log.txt 2>&1
+fi
 
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
@@ -523,7 +541,7 @@ fi
 
 echo
 printf "${GREEN}✓${NC} Python dependencies installed\n"
-printf "${GREEN}✓${NC} Node.js dependencies installed\n"
+printf "${GREEN}✓${NC} ${JS_PACKAGE_MANAGER_NAME} dependencies installed\n"
 printf "${GREEN}✓${NC} Static assets built\n"
 printf "${GREEN}✓${NC} Configuration file created\n"
 echo

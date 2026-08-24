@@ -202,12 +202,16 @@ echo
 # python311 - Python runtime (bundles pip via ensurepip, so a separate
 #             py311-pip package is not required and is not built for the
 #             default Python flavor on FreeBSD 15.x)
-# node/npm - Node.js for building CSS assets
+# node/npm - installed when Bun is unavailable for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
 # libsodium - runtime dependency of pynacl (used by paramiko for SSH)
 # Note: rust, gmake are NOT needed when using pre-compiled wheels
-pkg install -y python311 node npm smartmontools sanoid libsodium
+if command_exists bun; then
+    pkg install -y python311 smartmontools sanoid libsodium
+else
+    pkg install -y python311 node npm smartmontools sanoid libsodium
+fi
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -241,19 +245,24 @@ fi
 
 printf "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)\n"
 
-if ! command_exists node; then
-    printf "${RED}Error: Node.js was not installed correctly${NC}\n"
+if command_exists bun; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="$(command -v bun)"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    printf "${GREEN}✓${NC} Bun $(bun --version) found\n"
+elif ! command_exists node; then
+    printf "${RED}Error: Neither Bun nor Node.js was installed correctly${NC}\n"
     exit 1
-fi
-
-printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
-
-if ! command_exists npm; then
+elif ! command_exists npm; then
     printf "${RED}Error: npm was not installed correctly${NC}\n"
     exit 1
+else
+    printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
+    JS_PACKAGE_MANAGER="npm"
+    JS_PACKAGE_MANAGER_PATH="$(command -v npm)"
+    JS_PACKAGE_MANAGER_NAME="Node.js"
+    printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 fi
-
-printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 
 # Check for ZFS (should be built-in on FreeBSD)
 if ! command_exists zpool || ! command_exists zfs; then
@@ -356,7 +365,7 @@ printf "${GREEN}✓${NC} Data directory and files created\n"
 echo
 
 # Install dependencies
-echo "Installing Python and Node.js dependencies..."
+echo "Installing Python and ${JS_PACKAGE_MANAGER_NAME} dependencies..."
 echo "(This should be quick with pre-compiled wheels...)"
 echo
 
@@ -416,14 +425,18 @@ if ! .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> ins
     exit 1
 fi
 
-echo "Installing Node.js dependencies..."
-npm install >> install_log.txt 2>&1
+echo "Installing ${JS_PACKAGE_MANAGER_NAME} dependencies..."
+"$JS_PACKAGE_MANAGER_PATH" install >> install_log.txt 2>&1
 
 echo "Creating static directory structure..."
 mkdir -p static/css
 
 echo "Building static assets..."
-npm run build:css >> install_log.txt 2>&1
+if [ "$JS_PACKAGE_MANAGER" = "bun" ]; then
+    "$JS_PACKAGE_MANAGER_PATH" ./node_modules/postcss-cli/index.js src/styles.css -o static/css/styles.css >> install_log.txt 2>&1
+else
+    "$JS_PACKAGE_MANAGER_PATH" run build:css >> install_log.txt 2>&1
+fi
 
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
@@ -437,7 +450,7 @@ fi
 
 echo
 printf "${GREEN}✓${NC} Python dependencies installed\n"
-printf "${GREEN}✓${NC} Node.js dependencies installed\n"
+printf "${GREEN}✓${NC} ${JS_PACKAGE_MANAGER_NAME} dependencies installed\n"
 printf "${GREEN}✓${NC} Static assets built\n"
 printf "${GREEN}✓${NC} Configuration file created\n"
 echo

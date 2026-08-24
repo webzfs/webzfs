@@ -63,6 +63,39 @@ if ! id "$WEBZFS_USER" &>/dev/null; then
     exit 1
 fi
 
+if [ -x "${INSTALL_DIR}/.bun/bin/bun" ]; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="${INSTALL_DIR}/.bun/bin/bun"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    echo -e "${GREEN}✓${NC} Bun $($JS_PACKAGE_MANAGER_PATH --version) found"
+elif command -v bun >/dev/null 2>&1; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="$(command -v bun)"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    echo -e "${GREEN}✓${NC} Bun $(bun --version) found"
+elif ! command -v node >/dev/null 2>&1; then
+    echo -e "${RED}Error: Neither Bun nor Node.js is installed${NC}"
+    echo "Please install Bun or Node.js v20+ with npm and try again"
+    exit 1
+elif ! command -v npm >/dev/null 2>&1; then
+    echo -e "${RED}Error: npm is not installed${NC}"
+    echo "Please install npm or Bun and try again"
+    exit 1
+else
+    echo -e "${GREEN}✓${NC} Node.js $(node --version) found"
+    JS_PACKAGE_MANAGER="npm"
+    JS_PACKAGE_MANAGER_PATH="$(command -v npm)"
+    JS_PACKAGE_MANAGER_NAME="Node.js"
+    echo -e "${GREEN}✓${NC} npm $(npm --version) found"
+fi
+
+if [ "$JS_PACKAGE_MANAGER" = "bun" ] && [ "$JS_PACKAGE_MANAGER_PATH" != "${INSTALL_DIR}/.bun/bin/bun" ]; then
+    BUN_DEPLOY_PATH="${INSTALL_DIR}/.bun/bin/bun"
+    mkdir -p "$(dirname "$BUN_DEPLOY_PATH")"
+    install -m 0755 "$JS_PACKAGE_MANAGER_PATH" "$BUN_DEPLOY_PATH"
+    JS_PACKAGE_MANAGER_PATH="$BUN_DEPLOY_PATH"
+fi
+
 # Check if service is running
 SERVICE_WAS_RUNNING=false
 if systemctl is-active --quiet webzfs 2>/dev/null; then
@@ -162,7 +195,7 @@ echo
 
 # Create a temporary update script that runs as the webzfs user
 TEMP_UPDATE_SCRIPT="${INSTALL_DIR}/_update_deps.sh"
-echo "Updating Python and Node.js dependencies as $WEBZFS_USER..."
+echo "Updating Python and ${JS_PACKAGE_MANAGER_NAME} dependencies as $WEBZFS_USER..."
 echo "(This may take a few minutes...)"
 echo
 
@@ -176,17 +209,25 @@ export HOME="/opt/webzfs"
 
 cd /opt/webzfs
 
+JS_PACKAGE_MANAGER="$JS_PACKAGE_MANAGER_PATH"
+JS_PACKAGE_MANAGER_TYPE="$JS_PACKAGE_MANAGER"
+JS_PACKAGE_MANAGER_NAME="$JS_PACKAGE_MANAGER_NAME"
+
 echo "Upgrading pip in virtual environment..."
 .venv/bin/python3 -m pip install --upgrade pip > update_log.txt 2>&1
 
 echo "Updating Python dependencies..."
 .venv/bin/pip install -r requirements.txt >> update_log.txt 2>&1
 
-echo "Updating Node.js dependencies..."
-npm install >> update_log.txt 2>&1
+echo "Updating \$JS_PACKAGE_MANAGER_NAME dependencies..."
+"\$JS_PACKAGE_MANAGER" install >> update_log.txt 2>&1
 
 echo "Rebuilding static assets..."
-npm run build:css >> update_log.txt 2>&1
+if [ "\$JS_PACKAGE_MANAGER_TYPE" = "bun" ]; then
+    "\$JS_PACKAGE_MANAGER" ./node_modules/postcss-cli/index.js src/styles.css -o static/css/styles.css >> update_log.txt 2>&1
+else
+    "\$JS_PACKAGE_MANAGER" run build:css >> update_log.txt 2>&1
+fi
 
 echo "Dependencies updated successfully!"
 UPDATE_EOF
@@ -207,7 +248,7 @@ rm -f "$TEMP_UPDATE_SCRIPT"
 
 echo
 echo -e "${GREEN}✓${NC} Python dependencies updated"
-echo -e "${GREEN}✓${NC} Node.js dependencies updated"
+echo -e "${GREEN}✓${NC} ${JS_PACKAGE_MANAGER_NAME} dependencies updated"
 echo -e "${GREEN}✓${NC} Static assets rebuilt"
 echo
 

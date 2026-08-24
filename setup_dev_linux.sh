@@ -82,20 +82,26 @@ fi
 
 echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)"
 
-if ! command_exists node; then
-    echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js v20+ and try again"
+if command_exists bun; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="$(command -v bun)"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    echo -e "${GREEN}✓${NC} Bun $(bun --version) found"
+elif ! command_exists node; then
+    echo -e "${RED}Error: Neither Bun nor Node.js is installed${NC}"
+    echo "Please install Bun or Node.js v20+ with npm and try again"
     exit 1
-fi
-
-echo -e "${GREEN}✓${NC} Node.js $(node --version) found"
-
-if ! command_exists npm; then
+elif ! command_exists npm; then
     echo -e "${RED}Error: npm is not installed${NC}"
+    echo "Please install npm or Bun and try again"
     exit 1
+else
+    echo -e "${GREEN}✓${NC} Node.js $(node --version) found"
+    JS_PACKAGE_MANAGER="npm"
+    JS_PACKAGE_MANAGER_PATH="$(command -v npm)"
+    JS_PACKAGE_MANAGER_NAME="Node.js"
+    echo -e "${GREEN}✓${NC} npm $(npm --version) found"
 fi
-
-echo -e "${GREEN}✓${NC} npm $(npm --version) found"
 
 # Check for ZFS
 if ! command_exists zpool || ! command_exists zfs; then
@@ -136,15 +142,18 @@ echo "Installing Python dependencies..."
 pip install -r requirements.txt > /dev/null 2>&1
 echo -e "${GREEN}✓${NC} Python dependencies installed"
 
-# Install Node.js dependencies
-echo "Installing Node.js dependencies..."
-npm install > /dev/null 2>&1
-echo -e "${GREEN}✓${NC} Node.js dependencies installed"
+echo "Installing ${JS_PACKAGE_MANAGER_NAME} dependencies..."
+"$JS_PACKAGE_MANAGER_PATH" install > /dev/null 2>&1
+echo -e "${GREEN}✓${NC} ${JS_PACKAGE_MANAGER_NAME} dependencies installed"
 
 # Build static assets
 echo "Building static assets..."
 mkdir -p static/css
-npm run build:css > /dev/null 2>&1
+if [ "$JS_PACKAGE_MANAGER" = "bun" ]; then
+    "$JS_PACKAGE_MANAGER_PATH" ./node_modules/postcss-cli/index.js src/styles.css -o static/css/styles.css > /dev/null 2>&1
+else
+    "$JS_PACKAGE_MANAGER_PATH" run build:css > /dev/null 2>&1
+fi
 echo -e "${GREEN}✓${NC} Static assets built"
 
 # Copy theme CSS files if available

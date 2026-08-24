@@ -84,20 +84,32 @@ fi
 
 echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)"
 
-if ! command_exists node; then
-    echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js v20+ and try again"
+if ! "$PYTHON_PATH" -m ensurepip --version >/dev/null 2>&1; then
+    echo -e "${RED}Error: Python virtual environment support is not installed${NC}"
+    echo "Please install ${PYTHON_CMD}-venv and try again"
     exit 1
 fi
 
-echo -e "${GREEN}✓${NC} Node.js $(node --version) found"
-
-if ! command_exists npm; then
+if command_exists bun; then
+    JS_PACKAGE_MANAGER="bun"
+    JS_PACKAGE_MANAGER_PATH="$(command -v bun)"
+    JS_PACKAGE_MANAGER_NAME="Bun"
+    echo -e "${GREEN}✓${NC} Bun $(bun --version) found"
+elif ! command_exists node; then
+    echo -e "${RED}Error: Neither Bun nor Node.js is installed${NC}"
+    echo "Please install Bun or Node.js v20+ with npm and try again"
+    exit 1
+elif ! command_exists npm; then
     echo -e "${RED}Error: npm is not installed${NC}"
+    echo "Please install npm or Bun and try again"
     exit 1
+else
+    echo -e "${GREEN}✓${NC} Node.js $(node --version) found"
+    JS_PACKAGE_MANAGER="npm"
+    JS_PACKAGE_MANAGER_PATH="$(command -v npm)"
+    JS_PACKAGE_MANAGER_NAME="npm"
+    echo -e "${GREEN}✓${NC} npm $(npm --version) found"
 fi
-
-echo -e "${GREEN}✓${NC} npm $(npm --version) found"
 
 # Check for sudo
 # WebZFS runs as the unprivileged webzfs user and requires sudo to execute
@@ -190,6 +202,13 @@ if [ ! -d "$INSTALL_DIR" ]; then
     mkdir -p "$INSTALL_DIR"
 fi
 
+if [ "$JS_PACKAGE_MANAGER" = "bun" ]; then
+    BUN_DEPLOY_PATH="${INSTALL_DIR}/.bun/bin/bun"
+    mkdir -p "$(dirname "$BUN_DEPLOY_PATH")"
+    install -m 0755 "$JS_PACKAGE_MANAGER_PATH" "$BUN_DEPLOY_PATH"
+    JS_PACKAGE_MANAGER_PATH="$BUN_DEPLOY_PATH"
+fi
+
 # Copy application files to installation directory
 echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='*.log' \
@@ -236,7 +255,7 @@ echo
 # Create a temporary install script that runs as the webzfs user
 # Using a script file instead of heredoc to preserve stdin for later read prompts
 TEMP_INSTALL_SCRIPT="${INSTALL_DIR}/_install_deps.sh"
-echo "Installing Python and Node.js dependencies as $WEBZFS_USER..."
+echo "Installing Python and ${JS_PACKAGE_MANAGER_NAME} dependencies as $WEBZFS_USER..."
 echo "(This may take a few minutes...)"
 echo
 
@@ -252,8 +271,16 @@ cd /opt/webzfs
 
 # Use the full Python path
 PYTHON_PATH="$PYTHON_PATH"
+JS_PACKAGE_MANAGER="$JS_PACKAGE_MANAGER_PATH"
+JS_PACKAGE_MANAGER_TYPE="$JS_PACKAGE_MANAGER"
+JS_PACKAGE_MANAGER_NAME="$JS_PACKAGE_MANAGER_NAME"
 
 # Create virtual environment
+if [ -d ".venv" ] && [ ! -x ".venv/bin/pip" ]; then
+    echo "Virtual environment is missing pip, recreating..."
+    rm -rf .venv
+fi
+
 if [ -d ".venv" ]; then
     echo "Virtual environment already exists"
 else
@@ -267,14 +294,18 @@ echo "Installing/upgrading pip in virtual environment..."
 echo "Installing Python dependencies in virtual environment..."
 .venv/bin/pip install -r requirements.txt >> install_log.txt 2>&1
 
-echo "Installing Node.js dependencies..."
-npm install >> install_log.txt 2>&1
+echo "Installing \$JS_PACKAGE_MANAGER_NAME dependencies..."
+"\$JS_PACKAGE_MANAGER" install >> install_log.txt 2>&1
 
 echo "Creating static directory structure..."
 mkdir -p static/css
 
 echo "Building static assets..."
-npm run build:css >> install_log.txt 2>&1
+if [ "\$JS_PACKAGE_MANAGER_TYPE" = "bun" ]; then
+    "\$JS_PACKAGE_MANAGER" ./node_modules/postcss-cli/index.js src/styles.css -o static/css/styles.css >> install_log.txt 2>&1
+else
+    "\$JS_PACKAGE_MANAGER" run build:css >> install_log.txt 2>&1
+fi
 
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
@@ -305,7 +336,7 @@ rm -f "$TEMP_INSTALL_SCRIPT"
 
 echo
 echo -e "${GREEN}✓${NC} Python dependencies installed"
-echo -e "${GREEN}✓${NC} Node.js dependencies installed"
+echo -e "${GREEN}✓${NC} ${JS_PACKAGE_MANAGER_NAME} dependencies installed"
 echo -e "${GREEN}✓${NC} Static assets built"
 echo -e "${GREEN}✓${NC} Configuration file created"
 echo
