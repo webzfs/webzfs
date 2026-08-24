@@ -430,6 +430,11 @@ class SMARTMonitoringService:
                     if len(parts) >= 10:
                         temp = parts[9]
                         break
+                if 'Current Drive Temperature:' in line:
+                    match = re.search(r'\d+', line.split(':', 1)[1])
+                    if match:
+                        temp = match.group()
+                        break
             
             return {
                 'disk': disk,
@@ -771,9 +776,64 @@ class SMARTMonitoringService:
                         'type': parts[6],
                         'updated': parts[7],
                         'when_failed': parts[8],
-                        'raw_value': ' '.join(parts[9:])
+                        'raw_value': ' '.join(parts[9:]),
+                        'source': 'ata'
                     })
-        
+
+        if attributes:
+            return attributes
+
+        return self._parse_scsi_smart_data(output)
+
+    def _parse_scsi_smart_data(self, output: str) -> List[Dict[str, Any]]:
+        """Parse the SMART values reported by SCSI/SAS drives."""
+        field_names = (
+            'Accumulated load-unload cycles',
+            'Accumulated power on time, hours:minutes',
+            'Accumulated start-stop cycles',
+            'Current Drive Temperature',
+            'Drive Trip Temperature',
+            'Elements in grown defect list',
+            'Manufactured in week',
+            'Specified cycle count over device lifetime',
+            'Specified load-unload count over device lifetime',
+        )
+        attributes = []
+
+        for line in output.split('\n'):
+            line = line.strip()
+            name = None
+            value = None
+            for field_name in field_names:
+                if line.startswith(f'{field_name}:'):
+                    name = field_name
+                    value = line[len(field_name) + 1:].strip()
+                    break
+                if field_name in {
+                    'Accumulated power on time, hours:minutes',
+                    'Manufactured in week',
+                } and line.startswith(f'{field_name} '):
+                    name = field_name
+                    value = line[len(field_name):].strip()
+                    break
+
+            if not name or not value:
+                continue
+
+            attributes.append({
+                'id': 'SCSI',
+                'name': name,
+                'flag': '-',
+                'value': value,
+                'worst': '-',
+                'thresh': '-',
+                'type': 'SCSI',
+                'updated': 'N/A',
+                'when_failed': '-',
+                'raw_value': value,
+                'source': 'scsi',
+            })
+
         return attributes
     
     def _parse_device_info(self, output: str) -> Dict[str, Any]:

@@ -1,6 +1,7 @@
 {% extends "layout.jinja" %}
 
 {% block content %}
+{% set scsi_attributes = attributes and attributes[0].source == 'scsi' %}
 <div class="container mx-auto px-4 py-8">
     <!-- Breadcrumb Navigation -->
     <nav class="text-sm mb-6 text-text-tertiary">
@@ -57,6 +58,12 @@
         <div class="overflow-x-auto">
             <table class="min-w-full">
                 <thead class="bg-bg-elevated-2 text-text-secondary">
+                    {% if scsi_attributes %}
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">SCSI/SAS SMART Metric</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Value</th>
+                    </tr>
+                    {% else %}
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">ID</th>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Attribute Name</th>
@@ -68,9 +75,16 @@
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">When Failed</th>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Raw Value</th>
                     </tr>
+                    {% endif %}
                 </thead>
                 <tbody class="bg-bg-elevated divide-y divide-border-subtle">
                     {% for attr in attributes %}
+                    {% if scsi_attributes %}
+                    <tr class="hover:bg-bg-elevated-2 transition-colors">
+                        <td class="px-4 py-3 text-text-primary font-semibold">{{ attr.name }}</td>
+                        <td class="px-4 py-3 text-text-secondary font-mono">{{ attr.raw_value }}</td>
+                    </tr>
+                    {% else %}
                     <tr class="hover:bg-bg-elevated-2 transition-colors">
                         <td class="px-4 py-3 whitespace-nowrap text-text-secondary font-mono">{{ attr.id }}</td>
                         <td class="px-4 py-3 text-text-primary font-semibold">{{ attr.name }}</td>
@@ -92,6 +106,7 @@
                         </td>
                         <td class="px-4 py-3 text-text-secondary font-mono text-sm">{{ attr.raw_value }}</td>
                     </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -100,7 +115,7 @@
 
     <!-- Attribute Count -->
     <div class="mt-4 text-text-tertiary text-sm">
-        <p>Total Attributes: {{ attributes|length }}</p>
+        <p>Total {{ 'SCSI/SAS SMART Metrics' if scsi_attributes else 'Attributes' }}: {{ attributes|length }}</p>
     </div>
     {% else %}
     <!-- No Attributes Found -->
@@ -119,7 +134,10 @@
     <div class="mt-6 bg-info-900/30 border-2 border-info-500/50 text-info-400 px-4 py-3 rounded">
         <strong><svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg> About SMART Attributes:</strong>
+                    </svg> About {{ 'SCSI/SAS SMART Data' if scsi_attributes else 'SMART Attributes' }}:</strong>
+        {% if scsi_attributes %}
+        <p class="mt-2 text-sm">SCSI/SAS disks do not expose the ATA SMART attribute table. These values are reported through the drive's SCSI SMART/Log Sense data.</p>
+        {% else %}
         <ul class="mt-2 text-sm list-disc list-inside space-y-1">
             <li><strong>Value:</strong> Normalized value</li>
             <li><strong>Worst:</strong> Worst value ever recorded</li>
@@ -128,6 +146,7 @@
             <li><strong>Old_age:</strong> Indicates normal wear and tear</li>
             <li><strong>Raw Value:</strong> Actual measured value from the drive</li>
         </ul>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
