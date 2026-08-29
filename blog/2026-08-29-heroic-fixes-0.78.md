@@ -27,8 +27,7 @@ Error reporting is fixed so “Syncoid not installed” increasingly means the r
 
 ### We Added a Syncoid Option That Syncoid Doesn't Have
 
-WebZFS had a helpful **Dry Run** checkbox.  I remember this PR when it came up, and I never followed up on it, I just remember reading it when it was proposed and thinking, 'Oh yea, that'd be great' And between then and now, I somehow just assumed it was accepted and merged because it just makes sense right?  ZFS has a -n flag for no-op checks.  Obviously Jim would have accpeted this into Syncoid...
-
+WebZFS had a helpful **Dry Run** checkbox for Syncoid.  I remember this PR when it came up in the Sanoid repo, but... I never followed up on it, I just remember reading it when it was proposed and thinking, 'Oh yea, that'd be great' And between then and now, I somehow just assumed it was accepted and merged because it just makes sense right?  ZFS has a -n flag for no-op checks.  Obviously Jim would have accepted this into his work... 
 Except Jim did not.  No blame on Jim, he knows his project better than anyone, and if he thinks it's not a good fit, that's cool. 
 
 So, 0.78 removes our imaginary real but actually not real Syncoid feature.
@@ -56,9 +55,9 @@ normalization
 utf8only
 ```
 
-ZFS promptly rejected the operation because those properties are creation-only. Naturally, WebZFS did not expose them on the Dataset Creation page, which is the one place they actually work.
+ZFS promptly rejected the operation because those properties are creation-only. Naturally, WebZFS did not expose them on the Dataset Creation page, which is the one place they could actually work.
 
-0.78 fixes both sides of that arrangement. Turns out that allowins creation-only properties to be set on creation is rather important for operations restricted to “creation-only" time.
+0.78 fixes both sides of that arrangement. Turns out that allowing creation-only properties to be set on creation is rather important.  Who knew?
 
 ![IDK, I just work here](https://raw.githubusercontent.com/webzfs/webzfs/refs/heads/0.78/blog/images/i-just-work-here-idk.gif)
 
@@ -66,7 +65,7 @@ ZFS promptly rejected the operation because those properties are creation-only. 
 
 ### Dataset Creation Finally Shows the Command
 
-Pool creation already had a command preview from an earlier fix, I meant to do the same for dataset creation, but yea... I forgot again. 
+Pool creation already had a command preview from an earlier fix, I meant to do the same for dataset creation, but yea... I forgot again. Mea Culpa
 
 ---
 
@@ -81,11 +80,12 @@ Unfortunately, the `force=true` value was being sent differently from how the ba
 
 ### The Audit Log Viewer Was Missing the Viewer
 
-WebZFS already had an audit logging backend, routes, searching, filtering, and a link in the Utilities page. The three Jinja templates those routes tried to render did not exist.
+WebZFS already had an audit logging backend, routes, searching, filtering, and a link for them in the Utilities page. The three Jinja templates those routes tried to render did not exist.
 Well that's not entirely true.  They did exist... on my machine... they did not exist in my local Gitea instance or on the github repo.  
 
-This produced the technically accurate but somewhat disappointing, `TemplateNotFound`.
-So I took a Linkedin Learning course on how to use git and added those three pages. I'm now a certified Git Master. Those templates existed very strongly in our hearts until now... now they live in our repos too.
+This produced the technically accurate but somewhat disappointing, `TemplateNotFound` error.  Apparently peoples systems were not able to fetch those jinja templates off my computer through the internet.
+So I took a Linkedin Learning course on how to use git and added those three pages. I'm now a certified Git-Fu Master.  
+Those templates existed very strongly in our hearts until now... now they live in our repos too.
 
 ---
 
