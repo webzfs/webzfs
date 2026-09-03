@@ -229,12 +229,18 @@ rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='
     --exclude='config/gunicorn.conf.py' \
     "${SOURCE_DIR}/" "$INSTALL_DIR/"
 
-# Remove installer and updater entry points copied by older releases. These
-# are source-tree administration tools and must not remain in /opt/webzfs.
-find "$INSTALL_DIR" -maxdepth 1 -type f \
-    \( -name 'install*.sh' -o -name 'update*.sh' \) -exec rm -f {} +
-rm -f "$INSTALL_DIR/integrations/cockpit/install.sh"
-rm -f "$INSTALL_DIR/templates/install_omnios.sh"
+# Remove root-level install/update entry points left by older installations.
+for script_path in "${INSTALL_DIR}"/install*.sh "${INSTALL_DIR}"/update*.sh; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
+for script_path in "${INSTALL_DIR}/integrations/cockpit/install.sh" \
+    "${INSTALL_DIR}/templates/install_omnios.sh"; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
 
 # Set ownership
 chown -R "$WEBZFS_USER:$WEBZFS_USER" "$INSTALL_DIR"

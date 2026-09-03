@@ -1,3 +1,9 @@
+---
+title: "WebZFS 0.78: The bugs are coming from inside the house"
+date: 2026-08-29
+tags: [release, beta, zfs, announcement]
+---
+
 # WebZFS 0.78: The bugs are coming from inside the house
 ![inside the hoouse](https://raw.githubusercontent.com/webzfs/webzfs/refs/heads/main/blog/images/inside.jpg)
 

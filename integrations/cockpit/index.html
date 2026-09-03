@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="WebZFS Cockpit integration">
+    <title>WebZFS</title>
+    <script src="../base1/cockpit.js"></script>
+    <script src="asset-monitor.js"></script>
+    <script src="static/vendor/htmx.min.js"></script>
+    <script defer src="static/vendor/alpine.min.js"></script>
+    <script src="static/vendor/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="static/css/styles.css">
+    <link rel="stylesheet" href="static/css/themes/webzfs-theme-carbon-blue.css" id="webzfs-theme-stylesheet">
+    <link rel="stylesheet" href="static/css/corner_styles.css">
+    <link rel="stylesheet" href="cockpit-webzfs.css">
+  </head>
+  <body class="bg-bg-base text-text-primary overscroll-none antialiased corner-squared">
+    <div id="webzfs-adapter-status" class="webzfs-adapter-status" role="status" aria-live="polite">
+      Connecting to WebZFS on localhost:26619...
+    </div>
+    <div id="webzfs-root"></div>
+
+    <script defer src="session.js"></script>
+    <script defer src="asset-rewrite.js"></script>
+    <script defer src="transport.js"></script>
+    <script defer src="navigation.js"></script>
+    <script defer src="cockpit-webzfs.js"></script>
+  </body>
+</html>

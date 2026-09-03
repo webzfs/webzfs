@@ -70,6 +70,10 @@ class FleetMonitoringService:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
             return {"servers": []}
+
+    def _reload_servers(self) -> None:
+        """Reload server data so multiple application workers stay consistent."""
+        self.servers_data = self._load_servers()
     
     def _save_servers(self) -> None:
         """Save servers to config file"""
@@ -95,6 +99,7 @@ class FleetMonitoringService:
         Returns:
             List of server configurations (without passwords)
         """
+        self._reload_servers()
         servers = []
         for server in self.servers_data.get("servers", []):
             # Return server data without password
@@ -116,6 +121,7 @@ class FleetMonitoringService:
         Raises:
             KeyError: If server not found
         """
+        self._reload_servers()
         for server in self.servers_data.get("servers", []):
             if server["id"] == server_id:
                 server_copy = server.copy()
@@ -144,6 +150,7 @@ class FleetMonitoringService:
         Returns:
             server_id: UUID of created server
         """
+        self._reload_servers()
         server_id = str(uuid.uuid4())
         
         server = {
@@ -181,6 +188,7 @@ class FleetMonitoringService:
         Raises:
             ValueError: If SSH connection not found
         """
+        self._reload_servers()
         ssh_service = self._get_ssh_service()
         connection = ssh_service.get_connection(ssh_connection_id)
         
@@ -226,6 +234,7 @@ class FleetMonitoringService:
         Raises:
             KeyError: If server not found
         """
+        self._reload_servers()
         servers = self.servers_data.get("servers", [])
         for i, server in enumerate(servers):
             if server["id"] == server_id:
@@ -244,6 +253,7 @@ class FleetMonitoringService:
             server_id: Server UUID
             **updates: Fields to update
         """
+        self._reload_servers()
         for server in self.servers_data.get("servers", []):
             if server["id"] == server_id:
                 # Handle password encryption if updating password
@@ -602,6 +612,7 @@ class FleetMonitoringService:
         Returns:
             Dictionary mapping server_id to pool data
         """
+        self._reload_servers()
         results = {}
         for server in self.servers_data.get("servers", []):
             server_id = server["id"]
@@ -789,6 +800,7 @@ class FleetMonitoringService:
     
     def _get_server_by_id(self, server_id: str) -> Dict[str, Any]:
         """Get full server config including password (internal use only)"""
+        self._reload_servers()
         for server in self.servers_data.get("servers", []):
             if server["id"] == server_id:
                 return server

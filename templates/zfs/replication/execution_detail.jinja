@@ -103,6 +103,24 @@
         </div>
     </div>
 
+    <!-- Real-time Progress Monitoring (for running executions) -->
+    {% if execution.status == 'running' %}
+    <div class="card mb-6">
+        <div class="px-6 py-4 border-b border-border-subtle flex items-center justify-between">
+            <h2 class="text-xl font-semibold text-text-primary">Real-Time Progress</h2>
+            <div class="flex items-center space-x-2">
+                <div class="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
+                <span class="text-sm text-success-400">Live</span>
+            </div>
+        </div>
+        <div class="p-6">
+            <div id="live-progress" class="p-4 bg-bg-elevated-2 rounded-lg">
+                <p class="text-text-secondary">Connecting to progress stream...</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Error Message (if failed) -->
     {% if execution.status == 'failure' and execution.error_message %}
     <div class="card mb-6">
@@ -188,23 +206,7 @@
     </div>
     {% endif %}
 
-    <!-- Real-time Progress Monitoring (for running executions) -->
     {% if execution.status == 'running' %}
-    <div class="card mt-6">
-        <div class="px-6 py-4 border-b border-border-subtle flex items-center justify-between">
-            <h2 class="text-xl font-semibold text-text-primary">Real-Time Progress</h2>
-            <div class="flex items-center space-x-2">
-                <div class="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                <span class="text-sm text-success-400">Live</span>
-            </div>
-        </div>
-        <div class="p-6">
-            <div id="live-progress" class="p-4 bg-bg-elevated-2 rounded-lg">
-                <p class="text-text-secondary">Connecting to progress stream...</p>
-            </div>
-        </div>
-    </div>
-
     <script>
         // Poll the progress endpoint every 2 seconds for real-time updates.
         // Polling is used instead of Server-Sent Events because it works

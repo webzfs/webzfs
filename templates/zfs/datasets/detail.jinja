@@ -252,6 +252,22 @@
                     </div>
                 </dl>
                 {% endif %}
+                <dl id="dataset-snapshot-summary"
+                    data-dataset-name="{{ dataset.name }}"
+                    class="space-y-3{% if space_usage and space_usage|length > 0 %} mt-3 pt-3 border-t border-border-subtle{% endif %}">
+                    <div class="flex justify-between items-center">
+                        <dt class="text-text-secondary">Snapshot Count:</dt>
+                        <dd id="dataset-snapshot-count" class="text-text-tertiary" title="Loading snapshot count">...</dd>
+                    </div>
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">Latest Snapshot:</dt>
+                        <dd id="dataset-latest-snapshot" class="text-text-tertiary truncate" title="Loading latest snapshot">...</dd>
+                    </div>
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">Latest Snapshot Created:</dt>
+                        <dd id="dataset-latest-snapshot-created" class="text-text-tertiary text-right" title="Loading latest snapshot date">...</dd>
+                    </div>
+                </dl>
             </div>
         </div>
     </div>
@@ -733,6 +749,66 @@ window.showConfirm = function(dialogId) {
     dialog.dispatchEvent(new CustomEvent('open-modal'));
     console.warn('Could not open modal using Alpine.js, tried dispatching event');
 };
+
+(function() {
+    var summaryElement = document.getElementById('dataset-snapshot-summary');
+    if (!summaryElement) return;
+
+    var datasetName = summaryElement.getAttribute('data-dataset-name') || '';
+    var countElement = document.getElementById('dataset-snapshot-count');
+    var latestElement = document.getElementById('dataset-latest-snapshot');
+    var createdElement = document.getElementById('dataset-latest-snapshot-created');
+    var url = '/zfs/datasets/snapshot-summary?dataset=' + encodeURIComponent(datasetName);
+
+    function showUnavailable(message) {
+        [countElement, latestElement, createdElement].forEach(function(element) {
+            if (!element) return;
+            element.textContent = '-';
+            element.title = message;
+        });
+    }
+
+    fetch(url, { credentials: 'same-origin', cache: 'no-store' })
+        .then(function(response) {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+        })
+        .then(function(data) {
+            if (!data.success) throw new Error(data.error || 'Snapshot summary failed');
+
+            var summary = (data.summaries || {})[datasetName] || { count: 0 };
+            var count = Number(summary.count) || 0;
+            countElement.textContent = String(count);
+            countElement.className = count > 0 ? 'text-text-primary font-semibold' : 'text-text-tertiary';
+            countElement.title = count + ' direct snapshot' + (count === 1 ? '' : 's');
+
+            if (count === 0 || !summary.latest_name) {
+                latestElement.textContent = '-';
+                latestElement.title = 'No direct snapshots';
+                createdElement.textContent = '-';
+                createdElement.title = 'No direct snapshots';
+                return;
+            }
+
+            var latestLink = document.createElement('a');
+            latestLink.href = '/zfs/snapshots/' + encodeURI(summary.latest_name) + '/detail';
+            latestLink.textContent = summary.latest_snapshot || summary.latest_name;
+            latestLink.title = summary.latest_name;
+            latestLink.className = 'text-primary-400 hover:text-primary-300 font-mono transition-colors';
+            latestElement.replaceChildren(latestLink);
+            latestElement.className = 'truncate';
+
+            var creation = Number(summary.latest_creation);
+            createdElement.textContent = creation
+                ? new Date(creation * 1000).toLocaleString()
+                : '-';
+            createdElement.title = createdElement.textContent;
+            createdElement.className = 'text-text-primary text-right';
+        })
+        .catch(function(error) {
+            showUnavailable('Snapshot summary unavailable: ' + error.message);
+        });
+})();
 </script>
 {% endif %}
 

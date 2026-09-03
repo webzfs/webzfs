@@ -5,16 +5,8 @@ Handles snapshot operations: create, destroy, list, rollback, send, receive
 import re
 import subprocess
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 
 from services.utils import run_zfs_command, build_zfs_command
-
-# Try to import libzfs_core, but fall back to shell commands if not available
-try:
-    import libzfs_core as lzc
-    HAS_LIBZFS_CORE = True
-except ImportError:
-    HAS_LIBZFS_CORE = False
 
 
 class ZFSSnapshotService:
@@ -146,6 +138,80 @@ class ZFSSnapshotService:
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to list snapshots: {e.stderr}")
+
+    def get_dataset_snapshot_summaries(
+        self,
+        root_dataset: Optional[str] = None,
+        recursive: bool = True,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Return direct snapshot counts and latest snapshots by dataset.
+
+        One ``zfs list`` call retrieves snapshot names and parseable creation
+        timestamps. Each snapshot is grouped by the exact dataset name before
+        the ``@`` separator, so snapshots of child datasets are not included in
+        their parent's count.
+
+        Args:
+            root_dataset: Optional pool or dataset used to limit the query.
+            recursive: Include descendants when a root dataset is provided.
+
+        Returns:
+            Mapping keyed by dataset name with count and latest snapshot data.
+        """
+        if root_dataset:
+            self.validate_dataset_name(root_dataset)
+
+        cmd = [
+            'zfs', 'list', '-H', '-p', '-t', 'snapshot',
+            '-o', 'name,creation', '-s', 'creation'
+        ]
+        if root_dataset:
+            if recursive:
+                cmd.extend(['-r', root_dataset])
+            else:
+                cmd.extend(['-d', '1', root_dataset])
+
+        try:
+            result = run_zfs_command(cmd)
+        except subprocess.CalledProcessError as e:
+            if 'no datasets available' in (e.stderr or '').lower():
+                return {}
+            raise Exception(f"Failed to summarize snapshots: {e.stderr}")
+
+        summaries: Dict[str, Dict[str, Any]] = {}
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+
+            parts = line.split('\t')
+            if len(parts) < 2 or '@' not in parts[0]:
+                continue
+
+            full_name = parts[0]
+            dataset_name, snapshot_name = full_name.rsplit('@', 1)
+            try:
+                creation = int(parts[1])
+            except ValueError:
+                creation = 0
+
+            summary = summaries.setdefault(
+                dataset_name,
+                {
+                    'count': 0,
+                    'latest_name': None,
+                    'latest_snapshot': None,
+                    'latest_creation': None,
+                },
+            )
+            summary['count'] += 1
+
+            latest_creation = summary['latest_creation']
+            if latest_creation is None or creation >= latest_creation:
+                summary['latest_name'] = full_name
+                summary['latest_snapshot'] = snapshot_name
+                summary['latest_creation'] = creation
+
+        return summaries
     
     def get_snapshot(self, snapshot_name: str) -> Dict[str, Any]:
         """

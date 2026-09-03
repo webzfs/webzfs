@@ -260,6 +260,14 @@ fi
 
 printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 
+if ! command_exists rsync; then
+    printf "${RED}Error: rsync was not installed correctly${NC}\n"
+    echo "Install it with: pkg install rsync"
+    exit 1
+fi
+
+printf "${GREEN}✓${NC} rsync found\n"
+
 # Check for ZFS (should be built-in on FreeBSD)
 if ! command_exists zpool || ! command_exists zfs; then
     printf "${YELLOW}Warning: ZFS utilities not found in PATH${NC}\n"
@@ -317,8 +325,26 @@ echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 
 # Use tar instead of rsync (more portable on FreeBSD)
 (cd "$SOURCE_DIR" && tar cf - --exclude='.venv' --exclude='node_modules' --exclude='.git' \
-    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
+    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' \
+    --exclude='./install_linux.sh' --exclude='./install_freebsd.sh' \
+    --exclude='./install_netbsd.sh' --exclude='./install_linux_cockpit.sh' \
+    --exclude='./update_linux.sh' --exclude='./update_freebsd.sh' \
+    --exclude='./update_netbsd.sh' --exclude='./update_linux_cockpit.sh' \
+    --exclude='./integrations/cockpit/install.sh' .) | \
     (cd "$INSTALL_DIR" && tar xpf -)
+
+# Remove root-level install/update entry points left by older installations.
+for script_path in "${INSTALL_DIR}"/install*.sh "${INSTALL_DIR}"/update*.sh; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
+for script_path in "${INSTALL_DIR}/integrations/cockpit/install.sh" \
+    "${INSTALL_DIR}/templates/install_omnios.sh"; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
 
 printf "${GREEN}✓${NC} Application files copied\n"
 

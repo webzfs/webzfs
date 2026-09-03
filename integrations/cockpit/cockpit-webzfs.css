@@ -1,0 +1,35 @@
+html,
+body {
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+}
+
+.webzfs-adapter-status {
+    position: fixed;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 1000;
+    max-width: min(32rem, calc(100vw - 1.5rem));
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border-default, #334155);
+    background: var(--color-bg-elevated, #111827);
+    color: var(--color-text-primary, #f8fafc);
+    box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 30%);
+}
+
+.webzfs-adapter-error {
+    border-color: var(--color-danger-500, #ef4444);
+    color: var(--color-danger-300, #fca5a5);
+}
+
+.webzfs-adapter-error-page {
+    display: grid;
+    place-content: center;
+    gap: 1rem;
+    min-height: 100vh;
+    padding: 2rem;
+    text-align: center;
+}

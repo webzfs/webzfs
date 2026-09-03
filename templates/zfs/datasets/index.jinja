@@ -72,6 +72,7 @@
             <tr class="hover:bg-bg-elevated-2 transition-colors dataset-row"
                 id="{{ row_id }}"
                 data-parent="{{ parent_id }}"
+                data-dataset-name="{{ dataset.name }}"
                 data-name="{{ dataset.name.split('/')[-1] }}"
                 data-used="{{ dataset.used }}"
                 data-avail="{{ dataset.avail }}">
@@ -114,6 +115,9 @@
                 <td class="px-2 py-2 whitespace-nowrap text-text-primary">{{ dataset.used }}</td>
                 <td class="px-2 py-2 whitespace-nowrap text-text-primary">{{ dataset.avail }}</td>
                 <td class="px-2 py-2 whitespace-nowrap text-text-primary">{{ dataset.refer }}</td>
+                <td class="px-2 py-2 whitespace-nowrap text-text-primary">
+                    <span class="dataset-snapshot-count text-text-tertiary" title="Loading snapshot count">...</span>
+                </td>
                 <td class="px-2 py-2 whitespace-nowrap text-text-primary">
                     {% if dataset.mountpoint == '-' %}
                         <span class="text-text-tertiary">-</span>
@@ -203,6 +207,7 @@
                             </th>
                             <th class="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider">Avail</th>
                             <th class="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider">Refer</th>
+                            <th class="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider">Snapshots</th>
                             <th class="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider">Mountpoint</th>
                             <th class="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider">Comp</th>
                             <th class="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider">Ratio</th>
@@ -492,6 +497,94 @@
             initAllTables();
         }
         document.body.addEventListener('htmx:load', initAllTables);
+    })();
+    </script>
+
+    <script>
+    (function() {
+        function formatSnapshotDate(timestamp) {
+            var seconds = Number(timestamp);
+            if (!seconds) return '';
+            return new Date(seconds * 1000).toLocaleString();
+        }
+
+        function renderSnapshotSummary(row, summary) {
+            var countElement = row.querySelector('.dataset-snapshot-count');
+            if (!countElement) return;
+
+            var count = Number(summary.count) || 0;
+            row.setAttribute('data-snapshots', String(count));
+            countElement.replaceChildren();
+
+            if (count === 0) {
+                countElement.textContent = '0';
+                countElement.title = 'No direct snapshots';
+                countElement.className = 'dataset-snapshot-count text-text-tertiary';
+                return;
+            }
+
+            var title = count + ' direct snapshot' + (count === 1 ? '' : 's');
+            if (summary.latest_name) {
+                title += '. Latest: ' + summary.latest_name;
+                var latestDate = formatSnapshotDate(summary.latest_creation);
+                if (latestDate) title += ' (' + latestDate + ')';
+            }
+            countElement.textContent = String(count);
+            countElement.title = title;
+            countElement.className = 'dataset-snapshot-count text-text-primary font-medium';
+        }
+
+        function loadSnapshotSummaries() {
+            var rows = Array.prototype.slice.call(
+                document.querySelectorAll('tr.dataset-row[data-dataset-name]')
+            );
+            var pendingRows = rows.filter(function(row) {
+                return row.dataset.snapshotSummaryLoaded !== 'true' &&
+                    row.dataset.snapshotSummaryLoading !== 'true';
+            });
+            if (pendingRows.length === 0) return;
+
+            pendingRows.forEach(function(row) {
+                row.dataset.snapshotSummaryLoading = 'true';
+            });
+
+            fetch('/zfs/datasets/snapshot-summary', {
+                credentials: 'same-origin',
+                cache: 'no-store'
+            })
+                .then(function(response) {
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (!data.success) throw new Error(data.error || 'Snapshot summary failed');
+                    var summaries = data.summaries || {};
+                    pendingRows.forEach(function(row) {
+                        var datasetName = row.getAttribute('data-dataset-name') || '';
+                        var summary = summaries[datasetName] || { count: 0 };
+                        renderSnapshotSummary(row, summary);
+                        row.dataset.snapshotSummaryLoaded = 'true';
+                        delete row.dataset.snapshotSummaryLoading;
+                    });
+                })
+                .catch(function(error) {
+                    pendingRows.forEach(function(row) {
+                        var countElement = row.querySelector('.dataset-snapshot-count');
+                        if (countElement) {
+                            countElement.textContent = '-';
+                            countElement.title = 'Snapshot count unavailable: ' + error.message;
+                        }
+                        delete row.dataset.snapshotSummaryLoading;
+                    });
+                });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadSnapshotSummaries, { once: true });
+        } else {
+            loadSnapshotSummaries();
+        }
+        document.body.addEventListener('htmx:load', loadSnapshotSummaries);
     })();
     </script>
 

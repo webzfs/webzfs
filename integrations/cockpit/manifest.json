@@ -1,0 +1,11 @@
+{
+  "version": 0,
+  "content-security-policy": "script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:",
+  "menu": {
+    "webzfs": {
+      "label": "WebZFS",
+      "order": 35,
+      "path": "index.html"
+    }
+  }
+}

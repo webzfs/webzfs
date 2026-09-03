@@ -72,7 +72,7 @@
                 </div>
                 
                 <!-- Search & Filter -->
-                <form method="get" class="flex gap-2">
+                <form action="/utils/logs/view/{{ category }}" method="get" class="flex gap-2">
                     <input type="hidden" name="lines" value="{{ lines }}">
                     <div class="relative">
                         <input type="text" name="search" value="{{ search }}" 

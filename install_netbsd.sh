@@ -150,7 +150,7 @@ install_dependencies() {
     # Install System Packages
     echo "Installing system packages via pkgin..."
     pkgin -y install python312 py312-pip nodejs smartmontools \
-                     git perl mbuffer lzop pv mozilla-rootcerts \
+                     git perl mbuffer lzop pvs mozilla-rootcerts \
                      p5-Config-IniFiles p5-Capture-Tiny \
                      gmake libsodium curl pkg-config openssl
 
@@ -318,6 +318,14 @@ if ! command_exists npm; then
 fi
 printf "${GREEN}✓${NC} npm $(npm --version) found\n"
 
+if ! command_exists rsync; then
+    printf "${RED}Error: rsync is not installed${NC}\n"
+    echo "Install it with: pkgin install rsync"
+    exit 1
+fi
+
+printf "${GREEN}✓${NC} rsync found\n"
+
 # Check for Rust (optional - only needed if pre-compiled wheels are unavailable)
 # Try to source cargo env if rustup is installed
 if [ -f "/root/.cargo/env" ]; then
@@ -362,8 +370,26 @@ echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 
 # Use tar to copy files (portable method)
 (cd "$SOURCE_DIR" && tar cf - --exclude='.venv' --exclude='node_modules' --exclude='.git' \
-    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' .) | \
+    --exclude='*.log' --exclude='__pycache__' --exclude='*.pyc' \
+    --exclude='./install_linux.sh' --exclude='./install_freebsd.sh' \
+    --exclude='./install_netbsd.sh' --exclude='./install_linux_cockpit.sh' \
+    --exclude='./update_linux.sh' --exclude='./update_freebsd.sh' \
+    --exclude='./update_netbsd.sh' --exclude='./update_linux_cockpit.sh' \
+    --exclude='./integrations/cockpit/install.sh' .) | \
     (cd "$INSTALL_DIR" && tar xf -)
+
+# Remove root-level install/update entry points left by older installations.
+for script_path in "${INSTALL_DIR}"/install*.sh "${INSTALL_DIR}"/update*.sh; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
+for script_path in "${INSTALL_DIR}/integrations/cockpit/install.sh" \
+    "${INSTALL_DIR}/templates/install_omnios.sh"; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
 
 printf "${GREEN}✓${NC} Application files copied\n"
 

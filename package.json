@@ -5,13 +5,17 @@
   "main": "index.js",
   "scripts": {
     "build:css": "postcss src/styles.css -o static/css/styles.css",
-    "watch:css": "onchange --verbose 'src/**/*.css' 'templates/**/*.jinja' -- postcss src/styles.css -o static/css/styles.css"
+    "watch:css": "onchange --verbose 'src/**/*.css' 'templates/**/*.jinja' -- postcss src/styles.css -o static/css/styles.css",
+    "test:cockpit": "node --test integrations/cockpit/test/*.test.js"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "autoprefixer": "^10.5.0",
+    "alpinejs": "3.13.3",
+    "chart.js": "4.4.0",
+    "htmx.org": "1.9.10",
     "onchange": "^7.1.0",
     "postcss": "^8.5.15",
     "postcss-cli": "^11.0.1",

@@ -271,16 +271,15 @@ __pycache__
 .config
 .wheels
 config/gunicorn.conf.py
-install_linux.sh
-update_linux.sh
-install_freebsd.sh
-update_freebsd.sh
-install_netbsd.sh
-update_netbsd.sh
-install_linux_cockpit.sh
-update_linux_cockpit.sh
-integrations/cockpit/install.sh
-templates/install_omnios.sh
+./install_linux.sh
+./install_freebsd.sh
+./install_netbsd.sh
+./install_linux_cockpit.sh
+./update_linux.sh
+./update_freebsd.sh
+./update_netbsd.sh
+./update_linux_cockpit.sh
+./integrations/cockpit/install.sh
 EOF
 
 # Create a backup tar of the source, excluding unwanted files
@@ -289,14 +288,18 @@ EOF
 
 rm -f "$EXCLUDE_FILE"
 
-# Remove installer and updater entry points copied by older releases. These
-# are source-tree administration tools and must not remain in /opt/webzfs.
-for stale_script in "$INSTALL_DIR"/install*.sh "$INSTALL_DIR"/update*.sh; do
-    [ -f "$stale_script" ] || continue
-    rm -f "$stale_script"
+# Remove root-level install/update entry points left by older installations.
+for script_path in "${INSTALL_DIR}"/install*.sh "${INSTALL_DIR}"/update*.sh; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
 done
-rm -f "$INSTALL_DIR/integrations/cockpit/install.sh"
-rm -f "$INSTALL_DIR/templates/install_omnios.sh"
+for script_path in "${INSTALL_DIR}/integrations/cockpit/install.sh" \
+    "${INSTALL_DIR}/templates/install_omnios.sh"; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
 
 printf "${GREEN}✓${NC} Application files updated\n"
 echo

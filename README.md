@@ -75,13 +75,14 @@ The application automatically detects the operating system and adapts its behavi
 - sanoid (optional)
 - smartd (optional)
 - sudo (on linux)
+- rsync
 
 #### FreeBSD Package Requirements: (Automatically installed with the install script)
 #### ArchLinux Requirements:
 #### RHEL Package Requirements:
 #### Fedora Package Requirements: 
 #### SUSE Package Requirements:
-#### Debain/Ubuntu/Proxmox Package Requirements: sudo nodejs npm libsodium-dev python3.13-venv python3-pip python3-full sanoid smartmontools
+#### Debain/Ubuntu/Proxmox Package Requirements: sudo rsync nodejs npm libsodium-dev python3.13-venv python3-pip python3-full sanoid smartmontools
 
 ### Installation
 

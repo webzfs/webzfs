@@ -622,16 +622,7 @@
 <div
   id="confirm-check-disks"
   class="modal-overlay"
-  x-data="{ open: false, state: 'confirm', errorMsg: '' }"
-  x-show="open"
-  x-on:keydown.escape.window="if (state !== 'checking') open = false"
   style="display: none;"
-  x-transition:enter="transition ease-out duration-200"
-  x-transition:enter-start="opacity-0"
-  x-transition:enter-end="opacity-100"
-  x-transition:leave="transition ease-in duration-150"
-  x-transition:leave-start="opacity-100"
-  x-transition:leave-end="opacity-0"
 >
   <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
   <div class="fixed inset-0 z-50 overflow-y-auto">
@@ -639,8 +630,7 @@
       <div class="modal modal-sm">
 
         <!-- Confirm State -->
-        <template x-if="state === 'confirm'">
-          <div>
+        <div id="disk-check-confirm-state">
             <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-warning-900/50 border-2 border-warning-500">
               <svg class="w-6 h-6 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
@@ -651,15 +641,13 @@
               This will check all disks for active pool usage and ZFS labels. Using disks that are in active pools or have ZFS labels may result in DATA LOSS if not handled carefully.<br><br><strong>Note:</strong> This automated check is not perfect. As an administrator, you should independently verify that disks are not in use before adding them to a pool.
             </div>
             <div class="flex space-x-3">
-              <button type="button" class="btn-secondary flex-1" x-on:click="open = false">Cancel</button>
-              <button type="button" class="btn-warning flex-1" x-on:click="state = 'checking'; runDiskCheck()">Check Disks</button>
+              <button type="button" class="btn-secondary flex-1" onclick="closeDiskCheckDialog()">Cancel</button>
+              <button type="button" class="btn-warning flex-1" onclick="runDiskCheck()">Check Disks</button>
             </div>
-          </div>
-        </template>
+        </div>
 
         <!-- Checking State -->
-        <template x-if="state === 'checking'">
-          <div>
+        <div id="disk-check-checking-state" style="display: none;">
             <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4">
               <div class="loading-spinner loading-spinner-lg"></div>
             </div>
@@ -667,12 +655,10 @@
             <div class="text-text-secondary text-center mb-6 text-sm">
               Scanning all disks for active pool usage and ZFS labels. This may take a moment on systems with many drives.
             </div>
-          </div>
-        </template>
+        </div>
 
         <!-- Complete State -->
-        <template x-if="state === 'complete'">
-          <div>
+        <div id="disk-check-complete-state" style="display: none;">
             <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-success-900/50 border-2 border-success-500">
               <svg class="w-6 h-6 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
@@ -682,23 +668,20 @@
             <div class="text-text-secondary text-center mb-6 text-sm">
               Disk statuses have been updated. Review the disk listings for any changes in status.
             </div>
-            <button type="button" class="btn-success w-full" x-on:click="open = false; state = 'confirm'">Close</button>
-          </div>
-        </template>
+            <button type="button" class="btn-success w-full" onclick="closeDiskCheckDialog()">Close</button>
+        </div>
 
         <!-- Error State -->
-        <template x-if="state === 'error'">
-          <div>
+        <div id="disk-check-error-state" style="display: none;">
             <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-danger-900/50 border-2 border-danger-500">
               <svg class="w-6 h-6 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg>
             </div>
             <h3 class="text-xl font-semibold text-text-primary text-center mb-2">Disk Check Failed</h3>
-            <div class="text-text-secondary text-center mb-6 text-sm" x-text="errorMsg"></div>
-            <button type="button" class="btn-secondary w-full" x-on:click="open = false; state = 'confirm'">Close</button>
-          </div>
-        </template>
+            <div id="disk-check-error-message" class="text-text-secondary text-center mb-6 text-sm"></div>
+            <button type="button" class="btn-secondary w-full" onclick="closeDiskCheckDialog()">Close</button>
+        </div>
 
       </div>
     </div>
@@ -1694,15 +1677,25 @@ function validateAndCreate() {
 }
 
 // Run disk check (called from modal button)
-async function runDiskCheck() {
-    // Get the modal's Alpine component to control state
-    var modalEl = document.getElementById('confirm-check-disks');
-    var modalData = null;
-    if (window.Alpine) {
-        modalData = window.Alpine.$data(modalEl);
-    } else if (modalEl.__x) {
-        modalData = modalEl.__x.$data;
+function showDiskCheckState(state) {
+    ['confirm', 'checking', 'complete', 'error'].forEach(function(name) {
+        var stateElement = document.getElementById('disk-check-' + name + '-state');
+        if (stateElement) {
+            stateElement.style.display = name === state ? 'block' : 'none';
+        }
+    });
+}
+
+function closeDiskCheckDialog() {
+    var dialog = document.getElementById('confirm-check-disks');
+    if (dialog) {
+        dialog.style.display = 'none';
     }
+    showDiskCheckState('confirm');
+}
+
+async function runDiskCheck() {
+    showDiskCheckState('checking');
 
     try {
         const response = await fetch('/zfs/pools/create/check-disk-usage');
@@ -1759,17 +1752,14 @@ async function runDiskCheck() {
             });
         }
 
-        // Transition modal to complete state
-        if (modalData) {
-            modalData.state = 'complete';
-        }
+        showDiskCheckState('complete');
     } catch (error) {
         console.error('Error checking disk usage:', error);
-        // Transition modal to error state
-        if (modalData) {
-            modalData.errorMsg = 'Error checking disk usage: ' + (error.message || 'Unknown error');
-            modalData.state = 'error';
+        var errorMessage = document.getElementById('disk-check-error-message');
+        if (errorMessage) {
+            errorMessage.textContent = 'Error checking disk usage: ' + (error.message || 'Unknown error');
         }
+        showDiskCheckState('error');
     }
 }
 
@@ -1779,6 +1769,12 @@ window.showConfirm = function(dialogId) {
     
     if (!dialog) {
         console.error('Dialog not found:', dialogId);
+        return;
+    }
+
+    if (dialogId === 'confirm-check-disks') {
+        showDiskCheckState('confirm');
+        dialog.style.display = 'block';
         return;
     }
     

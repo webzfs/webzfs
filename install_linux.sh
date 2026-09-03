@@ -165,6 +165,23 @@ fi
 
 echo -e "${GREEN}✓${NC} sudo found"
 
+# Check for rsync
+# The installer uses rsync to copy the source tree into /opt/webzfs.
+# Minimal Linux installations, including EL10 minimal, may omit it.
+if ! command_exists rsync; then
+    echo -e "${RED}Error: rsync is not installed${NC}"
+    echo "rsync is required to copy WebZFS application files."
+    echo "Install it with the command for your distribution, then rerun this installer:"
+    echo
+    echo "  Debian/Ubuntu: sudo apt install rsync"
+    echo "  RHEL/Fedora:   sudo dnf install rsync"
+    echo "  Arch Linux:    sudo pacman -S rsync"
+    echo "  openSUSE:      sudo zypper install rsync"
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} rsync found"
+
 # Check for ZFS
 if ! command_exists zpool || ! command_exists zfs; then
     echo -e "${YELLOW}Warning: ZFS utilities not found in PATH${NC}"
@@ -247,7 +264,22 @@ fi
 echo "Copying application files from $SOURCE_DIR to $INSTALL_DIR..."
 rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='*.log' \
     --exclude='__pycache__' --exclude='*.pyc' \
+    --exclude='/install*.sh' --exclude='/update*.sh' \
+    --exclude='/integrations/cockpit/install.sh' \
     "${SOURCE_DIR}/" "$INSTALL_DIR/"
+
+# Remove root-level install/update entry points left by older installations.
+for script_path in "${INSTALL_DIR}"/install*.sh "${INSTALL_DIR}"/update*.sh; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
+for script_path in "${INSTALL_DIR}/integrations/cockpit/install.sh" \
+    "${INSTALL_DIR}/templates/install_omnios.sh"; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
 
 # Set ownership
 chown -R "$WEBZFS_USER:$WEBZFS_USER" "$INSTALL_DIR"

@@ -225,7 +225,29 @@ echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
     --exclude='.config' \
     --exclude='.wheels' \
     --exclude='config/gunicorn.conf.py' \
+    --exclude='./install_linux.sh' \
+    --exclude='./install_freebsd.sh' \
+    --exclude='./install_netbsd.sh' \
+    --exclude='./install_linux_cockpit.sh' \
+    --exclude='./update_linux.sh' \
+    --exclude='./update_freebsd.sh' \
+    --exclude='./update_netbsd.sh' \
+    --exclude='./update_linux_cockpit.sh' \
+    --exclude='./integrations/cockpit/install.sh' \
     .) | (cd "$INSTALL_DIR" && tar xf -)
+
+# Remove root-level install/update entry points left by older installations.
+for script_path in "${INSTALL_DIR}"/install*.sh "${INSTALL_DIR}"/update*.sh; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
+for script_path in "${INSTALL_DIR}/integrations/cockpit/install.sh" \
+    "${INSTALL_DIR}/templates/install_omnios.sh"; do
+    if [ -f "${script_path}" ]; then
+        unlink "${script_path}"
+    fi
+done
 
 printf "${GREEN}✓${NC} Application files updated\n"
 echo

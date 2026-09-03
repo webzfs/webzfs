@@ -5,10 +5,11 @@ Provides web interface for ZFS dataset operations
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Form, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from typing import Annotated, Optional
 from config.templates import templates
 from services.zfs_dataset import ZFSDatasetService
+from services.zfs_snapshot import ZFSSnapshotService
 from services.audit_logger import audit_logger
 from services.utils import is_netbsd, get_openzfs_man_page_url
 from auth.dependencies import get_current_user
@@ -16,6 +17,7 @@ from auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/zfs/datasets", tags=["zfs-datasets"], dependencies=[Depends(get_current_user)])
 dataset_service = ZFSDatasetService()
+snapshot_service = ZFSSnapshotService()
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -81,6 +83,37 @@ async def datasets_index(
                 "error": str(e),
                 "page_title": "ZFS Datasets"
             }
+        )
+
+
+@router.get("/snapshot-summary", response_class=JSONResponse)
+async def dataset_snapshot_summary(
+    pool: Optional[str] = None,
+    dataset: Optional[str] = None,
+):
+    """Return direct snapshot counts and latest snapshot data by dataset."""
+    if pool and dataset:
+        return JSONResponse(
+            content={
+                "success": False,
+                "error": "Specify either pool or dataset, not both",
+            },
+            status_code=400,
+        )
+
+    try:
+        root_dataset = dataset or pool
+        summaries = snapshot_service.get_dataset_snapshot_summaries(
+            root_dataset=root_dataset,
+            recursive=dataset is None,
+        )
+        return JSONResponse(
+            content={"success": True, "summaries": summaries}
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500,
         )
 
 
