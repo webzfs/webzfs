@@ -106,7 +106,21 @@
                 </svg>
                 Execution History
             </h2>
-            <span class="text-text-tertiary text-sm">Last {{ history|length }} executions</span>
+            <div class="flex flex-wrap items-center justify-end gap-2">
+                <span class="text-text-tertiary text-sm">Last {{ history|length }} executions</span>
+                {% if history %}
+                <form method="post"
+                      action="/zfs/replication/history/delete-completed"
+                      id="form-delete-completed-history"
+                      hx-boost="false"
+                      class="hidden"></form>
+                <button type="button"
+                        class="btn-danger btn-sm"
+                        onclick="showConfirm('confirm-delete-completed-history')">
+                    Clear Completed History
+                </button>
+                {% endif %}
+            </div>
         </div>
         <div class="p-6">
             {% if history %}
@@ -177,14 +191,19 @@
                                         <span>Details</span>
                                     </a>
                                     {% if execution.status != 'running' %}
-                                    <form method="post" action="/zfs/replication/history/{{ execution.id }}/delete"
-                                          onsubmit="return confirm('Are you sure you want to delete execution #{{ execution.id }}?');">
-                                        <button type="submit" class="btn-danger btn-sm inline-flex items-center">
-                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                            </svg>
-                                        </button>
-                                    </form>
+                                    <form method="post"
+                                          action="/zfs/replication/history/{{ execution.id }}/delete"
+                                          id="form-delete-execution-{{ execution.id }}"
+                                          hx-boost="false"
+                                          class="hidden"></form>
+                                    <button type="button"
+                                            class="btn-danger btn-sm inline-flex items-center"
+                                            title="Delete execution"
+                                            onclick="showConfirm('confirm-delete-execution-{{ execution.id }}')">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                    </button>
                                     {% endif %}
                                 </div>
                             </td>
@@ -225,5 +244,49 @@
             {% endif %}
         </div>
     </div>
+
+    {% if history %}
+    {% set id = 'confirm-delete-completed-history' %}
+    {% set title = 'Clear Completed Replication History' %}
+    {% set message = 'Delete all completed replication history records? Running executions will be retained. This action cannot be undone.' %}
+    {% set confirm_text = 'Clear History' %}
+    {% set confirm_class = 'danger' %}
+    {% set confirm_action = 'document.getElementById("form-delete-completed-history").submit()' %}
+    {% include 'partials/confirm.jinja' %}
+
+    {% for execution in history %}
+        {% if execution.status != 'running' %}
+        {% set id = 'confirm-delete-execution-' ~ execution.id|string %}
+        {% set title = 'Delete Replication History Record' %}
+        {% set message = 'Delete execution record #' ~ execution.id|string ~ '? This action cannot be undone.' %}
+        {% set confirm_text = 'Delete Record' %}
+        {% set confirm_class = 'danger' %}
+        {% set confirm_action = 'document.getElementById("form-delete-execution-' ~ execution.id|string ~ '").submit()' %}
+        {% include 'partials/confirm.jinja' %}
+        {% endif %}
+    {% endfor %}
+    {% endif %}
 </div>
+
+<script>
+window.showConfirm = function(dialogId) {
+    const dialog = document.getElementById(dialogId);
+    if (!dialog) {
+        console.error('Dialog not found:', dialogId);
+        return;
+    }
+    if (window.Alpine) {
+        const component = window.Alpine.$data(dialog);
+        if (component) {
+            component.open = true;
+            return;
+        }
+    }
+    if (dialog.__x) {
+        dialog.__x.$data.open = true;
+        return;
+    }
+    dialog.dispatchEvent(new CustomEvent('open-modal'));
+};
+</script>
 {% endblock %}

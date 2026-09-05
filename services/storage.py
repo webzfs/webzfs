@@ -355,9 +355,6 @@ class FileStorageService:
     def delete_execution_record(self, execution_id: int) -> bool:
         """Delete an execution record and its associated progress file.
 
-        Only non-running executions can be deleted to prevent removing
-        an active transfer's record.
-
         Args:
             execution_id: The execution record ID to delete.
 
@@ -388,6 +385,31 @@ class FileStorageService:
                 return True
 
         return False
+
+    def delete_completed_execution_records(self) -> int:
+        """Delete all non-running records from replication history."""
+        with self._lock, self._interprocess_lock():
+            data = self._read_json(self.history_file)
+            executions = data.get('executions', [])
+            deleted_count = sum(
+                1
+                for execution in executions
+                if execution.get('status') != 'running'
+            )
+
+            if not deleted_count:
+                return 0
+
+            data['executions'] = [
+                execution
+                for execution in executions
+                if execution.get('status') == 'running'
+            ]
+            self._write_json(self.history_file, data)
+            self._write_log(
+                f"Deleted {deleted_count} completed execution record(s)"
+            )
+            return deleted_count
 
     # Notification Methods
     

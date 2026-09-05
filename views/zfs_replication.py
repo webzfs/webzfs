@@ -611,6 +611,26 @@ async def delete_execution(request: Request, execution_id: int):
         )
 
 
+@router.post("/history/delete-completed", response_class=HTMLResponse)
+async def delete_all_executions(request: Request):
+    """Delete every completed replication execution across all history pages."""
+    try:
+        deleted_count = (
+            replication_service.storage.delete_completed_execution_records()
+        )
+        message = f"Deleted {deleted_count} completed execution record(s)"
+
+        return RedirectResponse(
+            url=f"/zfs/replication/history?message={message}",
+            status_code=303,
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/replication/history?error={str(e)}",
+            status_code=303,
+        )
+
+
 @router.get("/history/{execution_id}/error-log")
 async def execution_error_log(request: Request, execution_id: int):
     """Generate a downloadable markdown error log for a failed execution.
