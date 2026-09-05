@@ -1,64 +1,75 @@
-{% extends "layout_main.jinja" %}
+{% extends "layout.jinja" %}
 
-{% set active_page = "files" %}
+{% set active_page = "utils" %}
 
-{% block caption %}File Browser{% endblock %}
+{% block content %}
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">File Browser</span>
+    </nav>
 
-{% block inner %}
-    <!-- Info Box -->
-    <div class="card-nested bg-info-900/30 border-info-900 mb-6">
-        <div class="flex items-start gap-3">
-            <svg class="w-5 h-5 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h1 class="text-3xl font-bold text-text-primary mb-0">File Browser</h1>
+        <a href="/utils/text" class="btn-secondary inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
             </svg>
-            <div class="text-sm text-text-secondary">
-                <strong class="text-info-400">File Browser:</strong> Navigate the server filesystem and edit files directly from the web interface.
+            Open Text Editor
+        </a>
+    </div>
+
+    <div class="card mb-6 animate-fade-in">
+        <div class="card-body">
+            <div class="flex items-start gap-3 mb-5">
+                <div class="p-2 bg-info-500/10 border border-info-500/20 rounded-lg flex-shrink-0">
+                    <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-semibold text-text-primary mb-1">Open a directory</h2>
+                    <p class="text-sm text-text-secondary mb-0">Browse directories visible to the WebZFS service account.</p>
+                </div>
             </div>
+
+            <form action="/utils/files/list" method="post" class="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div class="flex-1">
+                    <label class="form-label" for="directory">Directory Path</label>
+                    <input
+                        class="form-input font-mono"
+                        id="directory"
+                        name="directory"
+                        type="text"
+                        placeholder="/path/to/directory"
+                        value="/home"
+                        autocomplete="off"
+                        required
+                    >
+                </div>
+                <button class="btn-primary inline-flex items-center justify-center gap-2 sm:flex-shrink-0" type="submit">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    Browse Directory
+                </button>
+            </form>
         </div>
     </div>
 
-    <!-- Browse Form -->
-    <form action="/utils/files/list" method="post" class="mb-6">
-        <div class="mb-4">
-            <label class="form-label" for="directory">
-                <span class="flex items-center gap-2">
-                    <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                    </svg>
-                    Directory Path
-                </span>
-            </label>
-            <input
-                class="form-input"
-                id="directory"
-                name="directory"
-                type="text"
-                placeholder="/path/to/directory"
-                value="/home"
-                required
-            >
-            <p class="text-xs text-text-tertiary mt-1">Enter the full path to the directory you want to browse</p>
-        </div>
-        <div class="flex items-center gap-3">
-            <button class="btn-primary" type="submit">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                </svg>
-                Browse Directory
-            </button>
-        </div>
-    </form>
-
     <!-- Quick Access Section -->
-    <div class="card-nested">
-        <h3 class="text-lg font-semibold text-text-primary mb-3 flex items-center gap-2">
+    <div class="card animate-fade-in">
+        <div class="card-body">
+            <h2 class="text-xl font-semibold text-text-primary mb-4 flex items-center gap-2">
             <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
             </svg>
             Common Directories
-        </h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            <button hx-post="/utils/files/list" hx-vals='{"directory": "/home"}' hx-target="body" hx-swap="innerHTML" class="flex items-center gap-3 p-3 rounded-lg bg-bg-elevated-2 hover:bg-bg-elevated-3 border border-border-default transition-colors text-left">
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <form action="/utils/files/list" method="post">
+                <input type="hidden" name="directory" value="/home">
+                <button type="submit" class="card-nested w-full flex items-center gap-3 text-left hover:border-info-500 transition-colors">
                 <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
                 </svg>
@@ -66,8 +77,11 @@
                     <div class="text-sm font-medium text-text-primary">/home</div>
                     <div class="text-xs text-text-tertiary">Home directories</div>
                 </div>
-            </button>
-            <button hx-post="/utils/files/list" hx-vals='{"directory": "/etc"}' hx-target="body" hx-swap="innerHTML" class="flex items-center gap-3 p-3 rounded-lg bg-bg-elevated-2 hover:bg-bg-elevated-3 border border-border-default transition-colors text-left">
+                </button>
+            </form>
+            <form action="/utils/files/list" method="post">
+                <input type="hidden" name="directory" value="/etc">
+                <button type="submit" class="card-nested w-full flex items-center gap-3 text-left hover:border-info-500 transition-colors">
                 <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -76,8 +90,11 @@
                     <div class="text-sm font-medium text-text-primary">/etc</div>
                     <div class="text-xs text-text-tertiary">Configuration files</div>
                 </div>
-            </button>
-            <button hx-post="/utils/files/list" hx-vals='{"directory": "/var/log"}' hx-target="body" hx-swap="innerHTML" class="flex items-center gap-3 p-3 rounded-lg bg-bg-elevated-2 hover:bg-bg-elevated-3 border border-border-default transition-colors text-left">
+                </button>
+            </form>
+            <form action="/utils/files/list" method="post">
+                <input type="hidden" name="directory" value="/var/log">
+                <button type="submit" class="card-nested w-full flex items-center gap-3 text-left hover:border-info-500 transition-colors">
                 <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
@@ -85,9 +102,9 @@
                     <div class="text-sm font-medium text-text-primary">/var/log</div>
                     <div class="text-xs text-text-tertiary">System logs</div>
                 </div>
-            </button>
+                </button>
+            </form>
+            </div>
         </div>
     </div>
-
-    <div id="filelist" class="mt-6"></div>
 {% endblock %}

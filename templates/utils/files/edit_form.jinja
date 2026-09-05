@@ -1,53 +1,65 @@
 {% if success %}
-<div id="success" hx-swap-oob="true">
-    {% include "partials/success.jinja" %}
+<div class="alert-success flex items-center gap-3 mb-4 animate-fade-in" role="status">
+    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+    </svg>
+    <span>File saved successfully.</span>
 </div>
 {% endif %}
 
 {% if error %}
-<div id="error" hx-swap-oob="true">
     {% include "partials/error.jinja" %}
-</div>
 {% endif %}
 
 <!-- File Editor Card -->
 <div class="card">
     <div class="card-body">
-        <div class="flex items-center justify-between mb-4">
-            <div>
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-5 pb-5 border-b border-border-subtle">
+            <div class="min-w-0">
                 <h3 class="text-lg font-semibold text-text-primary flex items-center gap-2">
                     <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                     </svg>
                     Editing File
                 </h3>
-                <p class="text-sm text-text-secondary font-mono mt-1">{{ file_path }}</p>
+                <p class="text-sm text-text-secondary font-mono mt-1 mb-0 break-all">{{ file_path }}</p>
             </div>
+            {% if needs_sudo %}
+            <span class="badge-warning inline-flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+                Elevated write
+            </span>
+            {% else %}
+            <span class="badge-info">Plain text</span>
+            {% endif %}
         </div>
 
         <form class="w-full" action="/utils/files/save" method="post">
-            <input type="hidden" id="file_path" name="file_path" value="{{ file_path }}">
+            <input type="hidden" name="file_path" value="{{ file_path }}">
             
             <div class="mb-4">
                 <label class="form-label" for="content">File Contents</label>
-                <textarea 
-                    class="form-input font-mono text-sm" 
+                <textarea
+                    class="form-textarea font-mono text-sm leading-6 min-h-[32rem] scrollbar-thin"
                     id="content" 
                     name="content" 
                     rows="24"
                     placeholder="File content..."
                 >{{ content }}</textarea>
-                <p class="text-xs text-text-tertiary mt-1">Edit the file content above and save your changes</p>
+                <p class="text-xs text-text-tertiary mt-2 mb-0">Saving replaces the current file contents{% if needs_sudo %} using configured sudo access{% endif %}.</p>
             </div>
 
-            <div class="flex gap-3 items-center">
-                <button 
-                    hx-post="/utils/files/save" 
-                    hx-target="#edit" 
-                    class="btn-success flex-1" 
+            <div class="flex flex-col sm:flex-row sm:justify-end gap-3">
+                <button
+                    hx-post="/utils/files/save"
+                    hx-target="#edit"
+                    hx-swap="innerHTML"
+                    class="btn-success inline-flex items-center justify-center gap-2"
                     type="submit"
                 >
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
                     </svg>
                     Save Changes
@@ -55,10 +67,10 @@
             </div>
         </form>
         
-        <form action="/utils/files/list" method="post" class="mt-4">
+        <form action="/utils/files/list" method="post" class="mt-3">
             <input type="hidden" name="directory" value="{{ file_path.rsplit('/', 1)[0] or '/' }}">
-            <button type="submit" class="btn-secondary w-full">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button type="submit" class="btn-secondary w-full sm:w-auto inline-flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                 </svg>
                 Back to Directory
