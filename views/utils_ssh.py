@@ -2,13 +2,21 @@
 SSH Connection Management Views
 HTTP routes for managing SSH connections
 """
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Annotated
+from auth.dependencies import get_current_user
 from config.templates import templates
 from services.ssh_connection import SSHConnectionService
 
-router = APIRouter()
+# Real, pre-existing gap found live 2026-09-06: this router had no
+# router-level `dependencies=` at all, unlike every other sensitive
+# router in this app (zfs_pools.py, zfs_replication.py, dashboard.py,
+# ...) -- meaning list/add/delete/test-connection were reachable with
+# zero authentication to anyone with network access to the app.
+# Confirmed live against a real instance before this fix landed.
+# Matches the exact pattern used everywhere else in this codebase.
+router = APIRouter(dependencies=[Depends(get_current_user)])
 ssh_service = SSHConnectionService()
 
 
