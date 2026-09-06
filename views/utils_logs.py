@@ -27,7 +27,7 @@ from services.shell_recording import (
 )
 from services.shell_settings import can_audit_shell_recordings
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def read_log_file(
