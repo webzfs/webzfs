@@ -1,282 +1,121 @@
 {% extends "layout.jinja" %}
 
-{% set active_page = 'shell' %}
+{% set active_page = "utils" %}
 
-{% block content %}
-    <div class="container-page animate-slide-in">
-        <!-- Breadcrumb Navigation -->
-        <nav class="text-sm mb-6 text-text-tertiary">
-            <a href="/utils" class="hover:text-primary-400">Utilities</a> 
-            <span class="mx-2">/</span> 
-            <span class="text-text-primary">Shell Terminal</span>
-        </nav>
+{% block title %}Shell Terminal - WebZFS{% endblock %}
 
-        <!-- Page Header -->
-        <div class="mb-6 flex items-start justify-between">
-            <div>
-                <h1 class="text-3xl font-bold text-text-primary mb-2">Shell Terminal</h1>
-                <p class="text-text-secondary">Execute shell commands directly from the web interface</p>
-            </div>
-            <div class="flex gap-2">
-                <form id="browseFilesForm" method="post" action="/utils/files/list">
-                    <input type="hidden" name="directory" id="browseDirectory" value="{{ cwd }}">
-                    <button type="submit" class="btn-primary flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                        </svg>
-                        Browse Files
-                    </button>
-                </form>
-                <a href="/utils/shell/download-history" class="btn-success flex items-center gap-2" hx-boost="false">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Download History
-                </a>
-            </div>
-        </div>
-
-        <!-- Info and Current Directory Box -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            <div class="card-nested bg-info-900/30 border-info-900">
-                <div class="flex items-start gap-3">
-                    <svg class="w-5 h-5 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <div class="text-sm text-text-secondary">
-                        <strong class="text-info-400">Terminal Access:</strong> Commands are executed with server privileges. Exercise caution and avoid destructive operations.
-                    </div>
-                </div>
-            </div>
-            <div class="card-nested bg-primary-900/30 border-primary-900">
-                <div class="flex items-start gap-3">
-                    <svg class="w-5 h-5 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                    </svg>
-                    <div class="text-sm">
-                        <strong class="text-primary-400">Current Directory:</strong>
-                        <div id="cwd" class="mt-1">
-                            <span class="text-primary-400 font-mono text-sm">{{ cwd }}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Terminal Card -->
-        <div class="card">
-            <div class="card-body p-0 overflow-hidden">
-                <div id="shell" class="flex flex-col gap-1 h-[calc(80vh)] bg-gray-950 p-4 text-text-primary overflow-y-scroll font-mono text-sm">
-                    <div id="history">
-                        <!-- Command history will appear here -->
-                    </div>
-                    <div id="shellInputDiv" class="flex items-center mt-2">
-                        <span class="font-bold text-success-400">#</span>
-                        <form id="inputForm" method="post" action="/utils/shell/command" class="flex-1">
-                            <input 
-                                id="shellInput" 
-                                class="w-full ml-2 bg-transparent focus:outline-none caret-success-400 text-text-primary placeholder-text-tertiary" 
-                                name="input_command" 
-                                type="text"
-                                placeholder="Enter command..."
-                                autocomplete="off"
-                            >
-                            <input 
-                                hx-post="/utils/shell/command" 
-                                hx-target="#history" 
-                                hx-swap="beforeend scroll:#shell:bottom"
-                                hx-on:htmx:after-request="document.getElementById('inputForm').reset(); htmx.ajax('GET', '/utils/shell/cwd', {target:'#cwd', swap:'innerHTML'});" 
-                                type="submit" 
-                                hidden 
-                            />
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Browse Files CTA -->
-        <div class="card-nested mt-6 bg-primary-900/30 border-primary-900">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <svg class="w-6 h-6 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                    </svg>
-                    <div>
-                        <p class="font-semibold text-text-primary">Open this directory in the Files tab to view or edit files</p>
-                        <p class="text-sm text-text-secondary mt-1">Current directory: <span id="cwd-display-bottom" class="font-mono text-primary-400">{{ cwd }}</span></p>
-                    </div>
-                </div>
-                <form method="post" action="/utils/files/list">
-                    <input type="hidden" name="directory" class="browse-directory-input" value="{{ cwd }}">
-                    <button type="submit" class="btn-primary flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                        </svg>
-                        Browse Files
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <!-- Tips Section -->
-        <div class="card-nested mt-6">
-            <h3 class="text-lg font-semibold text-text-primary mb-3 flex items-center gap-2">
-                <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                </svg>
-                Terminal Tips
-            </h3>
-            <ul class="space-y-2 text-sm text-text-secondary">
-                <li class="flex items-start gap-2">
-                    <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Click anywhere to focus the input field
-                </li>
-                <li class="flex items-start gap-2">
-                    <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Press Enter to execute commands
-                </li>
-                <li class="flex items-start gap-2">
-                    <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Command history scrolls automatically
-                </li>
-                <li class="flex items-start gap-2">
-                    <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Press <code class="px-1 py-0.5 bg-bg-elevated rounded text-xs">Tab</code> for command and path completion
-                </li>
-                <li class="flex items-start gap-2">
-                    <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Press <code class="px-1 py-0.5 bg-bg-elevated rounded text-xs">Tab</code> multiple times to cycle through matches
-                </li>
-                <li class="flex items-start gap-2">
-                    <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Use <code class="px-1 py-0.5 bg-bg-elevated rounded text-xs">cd</code> commands to navigate directories
-                </li>
-                <li class="flex items-start gap-2">
-                    <svg class="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Download full command history with the button above
-                </li>
-            </ul>
-        </div>
-    </div>
+{% block head_assets %}
+{% if not cockpit_context and allowed %}
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/xterm/xterm.css') }}">
+<script src="{{ url_for('static', path='vendor/xterm/xterm.js') }}"></script>
+<script src="{{ url_for('static', path='vendor/xterm/addon-fit.js') }}"></script>
+{% endif %}
 {% endblock %}
 
-{% block after_body %}
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            var myInput = document.getElementById("shellInput");
+{% block content %}
+<nav class="text-sm mb-6 text-text-tertiary">
+    <a href="/utils" class="hover:text-primary-400">Utilities</a>
+    <span class="mx-2">/</span>
+    <span class="text-text-primary">Shell Terminal</span>
+</nav>
 
-            // Auto-focus on page load
-            myInput.focus();
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <h1 class="text-3xl font-bold text-text-primary mb-0">Shell Terminal</h1>
+    <div class="flex flex-wrap gap-2">
+        <form method="post" action="/utils/files/list">
+            <input type="hidden" name="directory" value="{{ identity.home }}">
+            <button type="submit" class="btn-secondary inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                </svg>
+                Browse Files
+            </button>
+        </form>
+        <a href="/utils/logs" class="btn-secondary inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Audit Logs
+        </a>
+    </div>
+</div>
 
-            // Re-focus when clicking anywhere
-            document.addEventListener("click", function(event) {
-                if (event.target !== myInput) {
-                    myInput.focus();
-                }
-            });
+{% if cockpit_context %}
+<div class="card opacity-75 animate-fade-in" aria-disabled="true">
+    <div class="card-body text-center py-12">
+        <svg class="w-14 h-14 mx-auto text-text-tertiary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+        </svg>
+        <span class="badge-secondary mb-4">Not available in Cockpit</span>
+        <h2 class="text-2xl font-semibold text-text-primary mt-4">Use Cockpit Terminal</h2>
+        <p class="text-text-secondary max-w-2xl mx-auto">WebZFS disables its own terminal inside Cockpit. Cockpit Terminal opens a shell as your Cockpit user and is the supported shell interface in this environment.</p>
+        <button type="button" class="btn-primary inline-flex items-center gap-2" onclick="WebZFSApp.openCockpitTerminal()">Open Cockpit Terminal</button>
+    </div>
+</div>
+{% elif not allowed %}
+<div class="card opacity-75 animate-fade-in" aria-disabled="true">
+    <div class="card-body text-center py-12">
+        <svg class="w-14 h-14 mx-auto text-text-tertiary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+        </svg>
+        <span class="badge-secondary mb-4">Access not granted</span>
+        <h2 class="text-2xl font-semibold text-text-primary mt-4">Terminal access is restricted</h2>
+        <p class="text-text-secondary max-w-2xl mx-auto">The authenticated username <code>{{ username }}</code> is not included in <code>SHELL_ALLOWED_USERS</code>. An administrator must update <code>/opt/webzfs/.env</code> and restart WebZFS.</p>
+    </div>
+</div>
+{% else %}
+{% if recording_enabled %}
+<div class="alert-warning mb-4 animate-fade-in" role="alert">
+    <div class="flex items-start gap-3">
+        <svg class="w-6 h-6 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+        <div>
+            <h2 class="text-lg font-semibold text-warning-400">Terminal recording is enabled</h2>
+            <p class="text-warning-400/90 text-sm mb-0">All terminal input, including passwords and other hidden input, terminal output, timing information, and resize events are archived for auditing. Recordings are retained for {{ recording_retention_days }} days with a {{ recording_max_session_mib }} MiB per-session limit.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
 
-            // Tab completion handling
-            let completionIndex = -1;
-            let completionSuggestions = [];
-            
-            document.addEventListener("keydown", async function(event) {
-                if (event.key === "Tab") {
-                    event.preventDefault();
-                    
-                    const input = myInput.value;
-                    
-                    // If we're cycling through suggestions
-                    if (completionSuggestions.length > 0) {
-                        completionIndex = (completionIndex + 1) % completionSuggestions.length;
-                        autocompleteFill(completionSuggestions[completionIndex], input);
-                    } else {
-                        // Get new suggestions
-                        await getCompletions(input);
-                        if (completionSuggestions.length > 0) {
-                            completionIndex = 0;
-                            autocompleteFill(completionSuggestions[0], input);
-                        }
-                    }
-                } else if (event.key !== "Shift") {
-                    // Reset completion on any other key
-                    completionIndex = -1;
-                    completionSuggestions = [];
-                }
-            });
-            
-            async function getCompletions(partial) {
-                try {
-                    const formData = new FormData();
-                    formData.append('partial', partial);
-                    
-                    const response = await fetch('/utils/shell/autocomplete', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    const data = await response.json();
-                    completionSuggestions = data.suggestions || [];
-                } catch (error) {
-                    console.error('Autocomplete error:', error);
-                    completionSuggestions = [];
-                }
-            }
-            
-            function autocompleteFill(suggestion, originalInput) {
-                // Find the last word/path in the input
-                const parts = originalInput.split(/\s+/);
-                if (parts.length > 0) {
-                    parts[parts.length - 1] = suggestion;
-                    myInput.value = parts.join(' ');
-                } else {
-                    myInput.value = suggestion;
-                }
-            }
-            
-            // Update browse files button directory when CWD changes
-            const observer = new MutationObserver(function(mutations) {
-                mutations.forEach(function(mutation) {
-                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
-                        const cwdElement = document.getElementById('cwd');
-                        if (cwdElement) {
-                            const cwdText = cwdElement.textContent.trim();
-                            // Update both browse directory inputs
-                            document.getElementById('browseDirectory').value = cwdText;
-                            const bottomInputs = document.querySelectorAll('.browse-directory-input');
-                            bottomInputs.forEach(input => input.value = cwdText);
-                            // Update bottom display
-                            const cwdDisplayBottom = document.getElementById('cwd-display-bottom');
-                            if (cwdDisplayBottom) {
-                                cwdDisplayBottom.textContent = cwdText;
-                            }
-                        }
-                    }
-                });
-            });
-            
-            const cwdElement = document.getElementById('cwd');
-            if (cwdElement) {
-                observer.observe(cwdElement, { 
-                    childList: true, 
-                    characterData: true, 
-                    subtree: true 
-                });
-            }
-        });
-    </script>
+<div class="card animate-fade-in">
+    <div class="card-body p-0 overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border-subtle bg-bg-elevated-2">
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+                <span id="terminal-status" class="badge-secondary">Disconnected</span>
+                {% if recording_enabled %}<span class="badge-warning">Recording</span>{% endif %}
+                <span class="text-text-secondary">WebZFS user: <strong class="text-text-primary">{{ username }}</strong></span>
+                <span class="text-text-secondary">Effective account: <strong class="text-warning-400">{{ identity.username }} (UID {{ identity.uid }})</strong></span>
+            </div>
+            <div class="flex gap-2">
+                <button id="terminal-reconnect" type="button" class="btn-secondary btn-sm">Reconnect</button>
+                <button id="terminal-clear" type="button" class="btn-secondary btn-sm">Clear Screen</button>
+                <button id="terminal-disconnect" type="button" class="btn-danger btn-sm">Disconnect</button>
+            </div>
+        </div>
+
+        {% if recording_enabled %}
+        <div id="terminal-consent" class="p-6 border-b border-border-subtle bg-bg-elevated">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input id="recording-acknowledgement" type="checkbox" class="form-checkbox mt-1">
+                <span class="text-sm text-text-secondary">I understand that this session records all terminal input, including passwords and hidden input, plus output and timing information.</span>
+            </label>
+            <button id="terminal-start" type="button" class="btn-warning mt-4" disabled>Start Recorded Terminal</button>
+        </div>
+        {% endif %}
+
+        <div id="terminal-container" class="bg-black min-h-[34rem] h-[calc(100vh-20rem)] p-3"></div>
+    </div>
+</div>
+
+<div class="card-nested mt-4">
+    <p class="text-sm text-text-secondary mb-0">The terminal runs as <strong class="text-warning-400">{{ identity.username }}</strong>, not as the PAM username shown above. It closes after {{ idle_timeout_seconds // 60 }} minutes without terminal activity or when the WebZFS login token expires.</p>
+</div>
+
+<script id="terminal-config" type="application/json">{{ {
+    "recording": recording_enabled,
+    "socketPath": "/utils/shell/terminal"
+} | tojson }}</script>
+<script src="{{ url_for('static', path='js/terminal/shell-terminal.js') }}"></script>
+{% endif %}
 {% endblock %}

@@ -13,6 +13,7 @@ Unified Scheduling Hub (/utils/scheduling); this page links to it.
 The old /utils/scrub-scheduling URL redirects here so bookmarks and
 documentation links keep working.
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, Request
@@ -24,7 +25,9 @@ from services.audit_logger import audit_logger
 from services.dashboard import get_scrub_status_all
 from services.schedule_utils import describe_schedule, preview_next_runs
 from services.storage import FileStorageService
+from services.shell_settings import can_use_shell
 from services.zfs_pool import ZFSPoolService
+from core.request_context import is_cockpit_request
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +42,14 @@ def _schedules_by_pool() -> dict:
     by_pool: dict = {}
     try:
         for schedule in storage_service.get_scrub_schedules():
-            pool_name = schedule.get('pool', '')
+            pool_name = schedule.get("pool", "")
             entry = dict(schedule)
-            entry['schedule_human'] = describe_schedule(
-                schedule.get('schedule', '')
-            )
+            entry["schedule_human"] = describe_schedule(schedule.get("schedule", ""))
             try:
-                upcoming = preview_next_runs(schedule.get('schedule', ''), count=1)
-                entry['next_run_preview'] = upcoming[0] if upcoming else ''
+                upcoming = preview_next_runs(schedule.get("schedule", ""), count=1)
+                entry["next_run_preview"] = upcoming[0] if upcoming else ""
             except Exception:
-                entry['next_run_preview'] = ''
+                entry["next_run_preview"] = ""
             by_pool.setdefault(pool_name, []).append(entry)
     except Exception as read_error:
         logger.warning(f"Could not read scrub schedules: {read_error}")
@@ -56,9 +57,16 @@ def _schedules_by_pool() -> dict:
 
 
 @router.get("/")
-def index(request: Request):
+def index(request: Request, username: str = Depends(get_current_user)):
     """Display the utilities page with cards for each utility."""
-    return templates.TemplateResponse(request, name="utils/index.jinja", context={})
+    return templates.TemplateResponse(
+        request,
+        name="utils/index.jinja",
+        context={
+            "cockpit_context": is_cockpit_request(request),
+            "shell_allowed": can_use_shell(username),
+        },
+    )
 
 
 @router.get("/scrub", response_class=HTMLResponse)
@@ -90,8 +98,9 @@ def scrub_content_partial(request: Request):
 
 
 @router.post("/scrub/{pool_name}/start", response_class=HTMLResponse)
-def start_scrub_now(request: Request, pool_name: str,
-                    current_user: str = Depends(get_current_user)):
+def start_scrub_now(
+    request: Request, pool_name: str, current_user: str = Depends(get_current_user)
+):
     """Start a scrub on one pool immediately from the overview page."""
     try:
         pool_service.scrub_pool(pool_name)
@@ -104,8 +113,11 @@ def start_scrub_now(request: Request, pool_name: str,
         )
     except Exception as scrub_error:
         audit_logger.log_pool_scrub(
-            user=current_user, pool_name=pool_name, action="start",
-            success=False, error=str(scrub_error),
+            user=current_user,
+            pool_name=pool_name,
+            action="start",
+            success=False,
+            error=str(scrub_error),
         )
         return RedirectResponse(
             url=f"/utils/scrub?error={scrub_error}",

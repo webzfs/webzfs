@@ -3,6 +3,7 @@ WebZFS Settings Views
 Provides the settings page for theme selection, session timeout configuration,
 backup and restore of WebZFS configuration, and other WebZFS configuration.
 """
+
 import io
 import logging
 from urllib.parse import quote
@@ -36,7 +37,8 @@ from services.timeout_settings import (
 )
 from services import backup_restore
 from auth.dependencies import get_current_user
-
+from core.request_context import is_cockpit_request
+from services.shell_settings import shell_status
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,12 @@ router = APIRouter(tags=["settings"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/", response_class=HTMLResponse)
-async def settings_index(request: Request, message: str = "", error: str = ""):
+async def settings_index(
+    request: Request,
+    message: str = "",
+    error: str = "",
+    current_user: str = Depends(get_current_user),
+):
     """Display the WebZFS settings page with theme selector and session timeout."""
     active_theme = get_active_theme()
     theme_families = get_all_themes_for_template()
@@ -70,15 +77,21 @@ async def settings_index(request: Request, message: str = "", error: str = ""):
             "theme_families": theme_families,
             "theme_variables": theme_variables,
             "current_session_timeout": current_session_timeout,
-            "current_session_timeout_display": format_timeout_display(current_session_timeout),
+            "current_session_timeout_display": format_timeout_display(
+                current_session_timeout
+            ),
             "default_session_timeout": DEFAULT_SESSION_TIMEOUT,
-            "default_session_timeout_display": format_timeout_display(DEFAULT_SESSION_TIMEOUT),
+            "default_session_timeout_display": format_timeout_display(
+                DEFAULT_SESSION_TIMEOUT
+            ),
             "session_timeout_presets": SESSION_TIMEOUT_PRESETS,
             "active_corner_style": active_corner_style,
             "active_corner_style_name": CORNER_STYLE_DISPLAY_NAMES.get(
                 active_corner_style, active_corner_style
             ),
             "corner_styles": corner_styles,
+            "shell_status": shell_status(current_user),
+            "cockpit_context": is_cockpit_request(request),
             "message": message,
             "error": error,
             "page_title": "WebZFS Settings",

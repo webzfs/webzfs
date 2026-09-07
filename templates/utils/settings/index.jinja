@@ -306,6 +306,41 @@
             </div>
         </div>
 
+        <!-- Terminal Security Card -->
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-2 bg-danger-500/10 border border-danger-500/20 rounded-lg">
+                        <svg class="w-6 h-6 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-primary">Native Terminal Security</h2>
+                        <p class="text-sm text-text-secondary">Administrator-managed access and recording policy</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Environment</div><div class="text-lg font-semibold text-text-primary">{% if cockpit_context %}Cockpit{% else %}Native WebZFS{% endif %}</div></div>
+                    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Current User</div><div class="text-lg font-semibold {% if shell_status.allowed %}text-success-400{% else %}text-text-secondary{% endif %}">{% if shell_status.allowed %}Terminal allowed{% else %}Terminal denied{% endif %}</div></div>
+                    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Effective Account</div><div class="text-lg font-semibold text-warning-400">{{ shell_status.identity.username }} (UID {{ shell_status.identity.uid }})</div></div>
+                    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Recording</div><div class="text-lg font-semibold {% if shell_status.recording_enabled %}text-warning-400{% else %}text-text-secondary{% endif %}">{% if shell_status.recording_enabled %}Enabled{% else %}Disabled{% endif %}</div></div>
+                </div>
+
+                <dl class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5 text-sm">
+                    <div><dt class="text-text-tertiary">Terminal users</dt><dd class="text-text-primary font-mono break-all">{{ shell_status.allowed_users | join(', ') if shell_status.allowed_users else 'None configured' }}</dd></div>
+                    <div><dt class="text-text-tertiary">Recording auditors</dt><dd class="text-text-primary font-mono break-all">{{ shell_status.audit_users | join(', ') if shell_status.audit_users else 'None configured' }}</dd></div>
+                    <div><dt class="text-text-tertiary">Idle timeout</dt><dd class="text-text-primary">{{ shell_status.idle_timeout_seconds }} seconds</dd></div>
+                    <div><dt class="text-text-tertiary">Recording retention</dt><dd class="text-text-primary">{{ shell_status.recording_retention_days }} days, {{ shell_status.recording_max_session_mib }} MiB per session, {{ shell_status.recording_max_total_mib }} MiB total</dd></div>
+                </dl>
+
+                <div class="card-nested mt-4">
+                    <p class="text-sm text-text-secondary mb-0">These security settings are read-only in the browser. Edit <code>/opt/webzfs/.env</code> and restart WebZFS. Inside Cockpit, the native WebZFS terminal and Shell Session History remain disabled regardless of these values.</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Backup and Restore Card -->
         <div class="card animate-fade-in">
             <div class="card-body">

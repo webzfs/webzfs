@@ -4,7 +4,8 @@
   "description": "ZFS Web Management Interface",
   "main": "index.js",
   "scripts": {
-    "build:css": "postcss src/styles.css -o static/css/styles.css",
+    "build:css": "postcss src/styles.css -o static/css/styles.css && npm run build:terminal-assets",
+    "build:terminal-assets": "mkdir -p static/vendor/xterm && cp node_modules/@xterm/xterm/lib/xterm.js static/vendor/xterm/xterm.js && cp node_modules/@xterm/xterm/css/xterm.css static/vendor/xterm/xterm.css && cp node_modules/@xterm/addon-fit/lib/addon-fit.js static/vendor/xterm/addon-fit.js",
     "watch:css": "onchange --verbose 'src/**/*.css' 'templates/**/*.jinja' -- postcss src/styles.css -o static/css/styles.css",
     "test:cockpit": "node --test integrations/cockpit/test/*.test.js"
   },
@@ -12,8 +13,10 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "autoprefixer": "^10.5.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "alpinejs": "3.13.3",
+    "autoprefixer": "^10.5.0",
     "chart.js": "4.4.0",
     "htmx.org": "1.9.10",
     "onchange": "^7.1.0",

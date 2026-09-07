@@ -513,6 +513,7 @@
         global.WebZFSTransport.initialize();
         global.WebZFSApp = {
             navigate: loadPage,
+            openCockpitTerminal: () => global.cockpit.jump("/system/terminal"),
             reload: () => loadPage(currentPath),
         };
         global.WebZFSNavigation.install(root, loadPage, download, showError);

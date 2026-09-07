@@ -10,6 +10,7 @@ fastapi = ">=0.139.0,<0.140.0"
 
 python-multipart = "^0.0.32"
 uvicorn = "^0.42.0"
+wsproto = "1.3.2"
 gunicorn = "^25.3.0"
 typer = "^0.24.1"
 pydantic-settings = ">=2.14.2,<3.0.0"
