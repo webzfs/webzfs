@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from typing import Annotated, Optional
 from config.templates import templates
+from core.content_negotiation import wants_json
 from services.zfs_dataset import ZFSDatasetService
 from services.zfs_snapshot import ZFSSnapshotService
 from services.audit_logger import audit_logger
@@ -25,10 +26,18 @@ async def datasets_index(
     request: Request,
     pool: Optional[str] = None
 ):
-    """Display all datasets"""
+    """Display all datasets.
+
+    Supports content negotiation (see core/content_negotiation.py): a
+    client sending `Accept: application/json` gets the flat dataset
+    list back as JSON, skipping the hierarchical grouping this view
+    otherwise builds for the HTML page.
+    """
     try:
         datasets = dataset_service.list_datasets(pool_name=pool)
-        
+        if wants_json(request):
+            return JSONResponse({"datasets": datasets})
+
         # Group datasets by pool
         pools_dict = {}
         for dataset in datasets:
@@ -74,6 +83,8 @@ async def datasets_index(
             }
         )
     except Exception as e:
+        if wants_json(request):
+            return JSONResponse({"error": str(e)}, status_code=400)
         return templates.TemplateResponse(
             request,
             name="zfs/datasets/index.jinja",
@@ -284,11 +295,18 @@ async def dataset_properties(
     request: Request,
     dataset_path: str
 ):
-    """Display dataset properties"""
+    """Display dataset properties.
+
+    Supports content negotiation (see core/content_negotiation.py): a
+    client sending `Accept: application/json` gets the properties back
+    as a real JSON object instead of the rendered page.
+    """
     try:
         properties = dataset_service.get_properties(dataset_path)
+        if wants_json(request):
+            return JSONResponse({"dataset": dataset_path, "properties": properties})
         openzfs_man_url = get_openzfs_man_page_url()
-        
+
         return templates.TemplateResponse(
             request,
             name="zfs/datasets/properties.jinja",
@@ -300,6 +318,8 @@ async def dataset_properties(
             }
         )
     except Exception as e:
+        if wants_json(request):
+            return JSONResponse({"dataset": dataset_path, "error": str(e)}, status_code=400)
         # Return full page with error for HTMX compatibility
         return templates.TemplateResponse(
             request,
@@ -322,13 +342,25 @@ async def set_dataset_property(
     property_value: Annotated[str, Form()],
     current_user: str = Depends(get_current_user)
 ):
-    """Set a dataset property"""
+    """Set a dataset property.
+
+    Supports content negotiation (see core/content_negotiation.py): a
+    client sending `Accept: application/json` gets a real JSON
+    confirmation body back instead of the browser-oriented redirect.
+    """
     try:
         dataset_service.set_property(dataset_path, property_name, property_value)
         audit_logger.log_dataset_property_change(
             user=current_user, dataset_name=dataset_path,
             property_name=property_name, property_value=property_value
         )
+        if wants_json(request):
+            return JSONResponse({
+                "dataset": dataset_path,
+                "property": property_name,
+                "value": property_value,
+                "status": "ok",
+            })
         return RedirectResponse(
             url=f"/zfs/datasets/{dataset_path}/properties?message=Property updated successfully",
             status_code=303
@@ -339,6 +371,12 @@ async def set_dataset_property(
             property_name=property_name, property_value=property_value,
             success=False, error=str(e)
         )
+        if wants_json(request):
+            return JSONResponse({
+                "dataset": dataset_path,
+                "property": property_name,
+                "error": str(e),
+            }, status_code=400)
         return RedirectResponse(
             url=f"/zfs/datasets/{dataset_path}/properties?error={quote(str(e))}",
             status_code=303

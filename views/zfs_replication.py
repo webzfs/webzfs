@@ -9,6 +9,7 @@ import json
 import platform
 import threading
 from config.templates import templates
+from core.content_negotiation import wants_json
 from services.zfs_replication import ZFSReplicationService, ReplicationType, CompressionMethod
 from services.syncoid import SyncoidService
 from services.zfs_dataset import ZFSDatasetService
@@ -55,10 +56,18 @@ async def replication_index(request: Request):
 
         # Get active executions so user can see in-progress replications
         active_executions = replication_service.get_active_executions()
-        
+
         # Detect OS
         system = platform.system()
-        
+
+        if wants_json(request):
+            return JSONResponse({
+                "scheduled_jobs": scheduled_jobs,
+                "syncoid_status": syncoid_status,
+                "active_executions": active_executions,
+                "system": system,
+            })
+
         return templates.TemplateResponse(
             request,
             name="zfs/replication/index.jinja",
@@ -71,6 +80,8 @@ async def replication_index(request: Request):
             }
         )
     except Exception as e:
+        if wants_json(request):
+            return JSONResponse({"error": str(e)}, status_code=400)
         return templates.TemplateResponse(
             request,
             name="zfs/replication/index.jinja",
@@ -988,7 +999,21 @@ async def syncoid_job_save(
     additional_flags: Annotated[str, Form()] = "",
 ):
     """Create or update a scheduled Syncoid job and register it with
-    the OS scheduler (systemd timer on Linux, root crontab on BSD)."""
+    the OS scheduler (systemd timer on Linux, root crontab on BSD).
+
+    Supports content negotiation (see core/content_negotiation.py): a
+    client sending `Accept: application/json` gets the saved job back as
+    JSON (including its server-assigned `id` on create) instead of a
+    redirect, and JSON error bodies (400) instead of the re-rendered
+    form on validation failure.
+    """
+    json_client = wants_json(request)
+
+    def job_error(message: str):
+        if json_client:
+            return JSONResponse({"error": message}, status_code=400)
+        return _parse_job_form_error(request, message, form_job)
+
     source_dataset = source_dataset.strip()
     target_dataset = target_dataset.strip()
     # Combine the target parent with the child dataset name server-side.
@@ -1027,7 +1052,7 @@ async def syncoid_job_save(
         schedule = schedule.strip()
         is_valid, schedule_error = validate_cron_expression(schedule)
         if not is_valid:
-            return _parse_job_form_error(request, schedule_error, form_job)
+            return job_error(schedule_error)
 
         # Validate dataset names before saving. Without this check a
         # mountpoint path such as /zdata is accepted, and the job later
@@ -1037,14 +1062,10 @@ async def syncoid_job_save(
         if not dataset_error:
             dataset_error = _validate_job_dataset(target_dataset, "Target dataset")
         if dataset_error:
-            return _parse_job_form_error(request, dataset_error, form_job)
+            return job_error(dataset_error)
 
         if replication_type in ("push", "pull") and not ssh_connection_id:
-            return _parse_job_form_error(
-                request,
-                "A SSH connection is required for push and pull jobs.",
-                form_job,
-            )
+            return job_error("A SSH connection is required for push and pull jobs.")
         if replication_type == "local":
             ssh_connection_id = ""
 
@@ -1052,9 +1073,7 @@ async def syncoid_job_save(
         if ssh_connection_id:
             connection = ssh_service.get_connection(ssh_connection_id)
             if not connection:
-                return _parse_job_form_error(
-                    request, "Selected SSH connection was not found.", form_job
-                )
+                return job_error("Selected SSH connection was not found.")
 
         if job_id:
             saved_id = int(job_id)
@@ -1114,17 +1133,23 @@ async def syncoid_job_save(
         saved_job = storage_service.get_syncoid_job(saved_id)
         job_scheduler.register_job(saved_job)
 
+        if json_client:
+            return JSONResponse({"job": saved_job, "action": action})
         return RedirectResponse(
             url=f"/zfs/replication/syncoid?message=Scheduled job '{name}' {action}",
             status_code=303
         )
     except Exception as e:
-        return _parse_job_form_error(request, str(e), form_job)
+        return job_error(str(e))
 
 
 @router.post("/syncoid/jobs/{job_id}/enable", response_class=HTMLResponse)
 async def syncoid_job_enable(request: Request, job_id: int):
-    """Enable a scheduled Syncoid job and register its OS schedule"""
+    """Enable a scheduled Syncoid job and register its OS schedule.
+
+    Supports content negotiation: `Accept: application/json` gets a
+    JSON confirmation/error instead of a redirect.
+    """
     try:
         storage_service.update_syncoid_job(job_id=job_id, enabled=True)
         job = storage_service.get_syncoid_job(job_id)
@@ -1134,11 +1159,15 @@ async def syncoid_job_enable(request: Request, job_id: int):
                 next_run=calculate_next_run(job.get('schedule', '')) or "",
             )
             job_scheduler.register_job(job)
+        if wants_json(request):
+            return JSONResponse({"job_id": job_id, "enabled": True, "status": "ok"})
         return RedirectResponse(
             url="/zfs/replication/syncoid?message=Scheduled job enabled",
             status_code=303
         )
     except Exception as e:
+        if wants_json(request):
+            return JSONResponse({"job_id": job_id, "error": str(e)}, status_code=400)
         return RedirectResponse(
             url=f"/zfs/replication/syncoid?error={str(e)}",
             status_code=303
@@ -1147,15 +1176,23 @@ async def syncoid_job_enable(request: Request, job_id: int):
 
 @router.post("/syncoid/jobs/{job_id}/disable", response_class=HTMLResponse)
 async def syncoid_job_disable(request: Request, job_id: int):
-    """Disable a scheduled Syncoid job and remove its OS schedule"""
+    """Disable a scheduled Syncoid job and remove its OS schedule.
+
+    Supports content negotiation: `Accept: application/json` gets a
+    JSON confirmation/error instead of a redirect.
+    """
     try:
         storage_service.update_syncoid_job(job_id=job_id, enabled=False)
         job_scheduler.unregister_job(job_id)
+        if wants_json(request):
+            return JSONResponse({"job_id": job_id, "enabled": False, "status": "ok"})
         return RedirectResponse(
             url="/zfs/replication/syncoid?message=Scheduled job disabled",
             status_code=303
         )
     except Exception as e:
+        if wants_json(request):
+            return JSONResponse({"job_id": job_id, "error": str(e)}, status_code=400)
         return RedirectResponse(
             url=f"/zfs/replication/syncoid?error={str(e)}",
             status_code=303
@@ -1164,15 +1201,23 @@ async def syncoid_job_disable(request: Request, job_id: int):
 
 @router.post("/syncoid/jobs/{job_id}/delete", response_class=HTMLResponse)
 async def syncoid_job_delete(request: Request, job_id: int):
-    """Delete a scheduled Syncoid job and remove its OS schedule"""
+    """Delete a scheduled Syncoid job and remove its OS schedule.
+
+    Supports content negotiation: `Accept: application/json` gets a
+    JSON confirmation/error instead of a redirect.
+    """
     try:
         job_scheduler.unregister_job(job_id)
         storage_service.delete_syncoid_job(job_id)
+        if wants_json(request):
+            return JSONResponse({"job_id": job_id, "status": "deleted"})
         return RedirectResponse(
             url="/zfs/replication/syncoid?message=Scheduled job deleted",
             status_code=303
         )
     except Exception as e:
+        if wants_json(request):
+            return JSONResponse({"job_id": job_id, "error": str(e)}, status_code=400)
         return RedirectResponse(
             url=f"/zfs/replication/syncoid?error={str(e)}",
             status_code=303

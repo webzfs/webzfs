@@ -153,17 +153,18 @@ class SSHConnectionService:
                 "last_tested": datetime.now().isoformat(),
                 "status": "active",
                 "used_by": [],
-                "notes": notes
+                "notes": notes,
+                "key_source": "generated",
             }
-            
+
             # Add to connections list
             if "connections" not in self.connections_data:
                 self.connections_data["connections"] = []
             self.connections_data["connections"].append(connection)
-            
+
             # Save to disk
             self._save_connections()
-            
+
             logger.info(f"Created SSH connection: {name} ({connection_id})")
             return connection_id
             
@@ -177,7 +178,105 @@ class SSHConnectionService:
             except:
                 pass
             raise Exception(f"Failed to create SSH connection: {str(e)}")
-    
+
+    def register_existing_connection(
+        self,
+        name: str,
+        host: str,
+        username: str,
+        private_key_path: str,
+        port: int = 22,
+        notes: str = ""
+    ) -> str:
+        """
+        Register an SSH connection that's already trusted via an
+        existing private key, instead of generating a new keypair and
+        bootstrapping it with a password (create_connection's own flow).
+
+        Real gap this closes: create_connection always requires
+        password auth to be enabled on the remote host, even
+        temporarily, to copy its freshly-generated public key over.
+        Plenty of real environments (this one included) run key-only
+        SSH with no password auth at all, by design -- there's no way
+        to use this app's own connection management against a host
+        like that without this second path.
+
+        Steps:
+        1. Verify the given private key file exists and actually
+           authenticates (reusing the same test used after
+           create_connection's own key-copy step).
+        2. Get its fingerprint.
+        3. Trust the remote host key (same deliberate-trust reasoning
+           as create_connection).
+        4. Save a connection record in the exact same schema
+           create_connection produces, so every other part of the app
+           (replication jobs' own ssh_connection_id, fleet monitoring,
+           etc.) treats it identically either way.
+
+        Args:
+            name: Human-readable connection name
+            host: IP address or hostname
+            username: SSH username
+            private_key_path: Path to an existing private key that's
+                already authorized on the remote host
+            port: SSH port (default 22)
+            notes: Optional notes about the connection
+
+        Returns:
+            connection_id: UUID of the created connection
+
+        Raises:
+            Exception: If the key file is missing or authentication
+                fails
+        """
+        connection_id = str(uuid.uuid4())
+        self.connections_data = self._load_connections()
+
+        key_path = Path(private_key_path).expanduser()
+        if not key_path.is_file():
+            raise Exception(f"Private key not found: {key_path}")
+
+        if not self._test_key_auth(host, port, username, key_path):
+            raise Exception(
+                "SSH key authentication test failed against the existing key. "
+                "Confirm it's actually authorized on the remote host."
+            )
+
+        # Reuse the given key for both the "private" and "public" path
+        # fields -- there may not be a separate .pub file alongside an
+        # externally-managed key, and fingerprinting only needs the
+        # private key's own public component, which ssh-keygen can
+        # derive directly.
+        fingerprint = self._get_key_fingerprint(key_path)
+        host_key_fingerprints = self._trust_host_key(host, port)
+
+        connection = {
+            "id": connection_id,
+            "name": name,
+            "host": host,
+            "port": port,
+            "username": username,
+            "private_key_path": str(key_path),
+            "public_key_path": str(key_path),
+            "fingerprint": fingerprint,
+            "host_key_fingerprints": host_key_fingerprints,
+            "created_at": datetime.now().isoformat(),
+            "last_used": None,
+            "last_tested": datetime.now().isoformat(),
+            "status": "active",
+            "used_by": [],
+            "notes": notes,
+            "key_source": "external",
+        }
+
+        if "connections" not in self.connections_data:
+            self.connections_data["connections"] = []
+        self.connections_data["connections"].append(connection)
+        self._save_connections()
+
+        logger.info(f"Registered existing-key SSH connection: {name} ({connection_id})")
+        return connection_id
+
     def update_connection(
         self,
         connection_id: str,
@@ -499,15 +598,19 @@ class SSHConnectionService:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
-            # Connect using the key we're about to remove (it still works until we remove it)
-            key = paramiko.Ed25519Key.from_private_key_file(connection["private_key_path"])
-            
+            # Connect using the key we're about to remove (it still works
+            # until we remove it). key_filename auto-detects key type --
+            # same reasoning as _test_key_auth/get_ssh_client, needed
+            # since this can now run against an externally-registered
+            # (non-Ed25519) connection too.
             client.connect(
                 hostname=connection["host"],
                 port=connection["port"],
                 username=connection["username"],
-                pkey=key,
-                timeout=10
+                key_filename=connection["private_key_path"],
+                timeout=10,
+                look_for_keys=False,
+                allow_agent=False
             )
             
             # Remove the specific key from authorized_keys
@@ -539,21 +642,25 @@ class SSHConnectionService:
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            
-            # Load the private key
-            key = paramiko.Ed25519Key.from_private_key_file(str(private_key_path))
-            
-            # Test connection
+
+            # key_filename lets paramiko auto-detect the key type (RSA,
+            # ECDSA, Ed25519, ...) instead of assuming Ed25519.
+            # create_connection's own generated keys are always Ed25519
+            # so this is a no-op for that path, but
+            # register_existing_connection can hand this an
+            # externally-managed key of any type (e.g. this fleet's real
+            # RSA-based keep@floads.io key) -- hardcoding Ed25519Key here
+            # would make that path fail its own auth test unconditionally.
             client.connect(
                 hostname=host,
                 port=port,
                 username=username,
-                pkey=key,
+                key_filename=str(private_key_path),
                 timeout=10,
                 look_for_keys=False,
                 allow_agent=False
             )
-            
+
             # Execute a simple command to verify
             stdin, stdout, stderr = client.exec_command('echo "test"')
             result = stdout.read().decode().strip()
@@ -722,11 +829,18 @@ class SSHConnectionService:
             raise Exception(f"SSH connection {connection_id} not found")
         
         key_path = Path(conn["private_key_path"]).resolve()
-        
+
         # The key must live inside the managed key directory and be a
         # regular file. This prevents key path injection via a tampered
-        # connections file.
-        if key_path.parent != self.keys_dir:
+        # connections file. Does not apply to connections registered via
+        # register_existing_connection ("key_source": "external") --
+        # those intentionally point at a key this service doesn't
+        # generate or own (e.g. a pre-trusted fleet key), so there's no
+        # keys_dir path for them to live inside by design. Older
+        # connections predating this field have no "key_source" key at
+        # all and fall through to the strict check, which is correct --
+        # they really were all generated into keys_dir.
+        if conn.get("key_source") != "external" and key_path.parent != self.keys_dir:
             raise Exception(
                 f"Private key for connection '{conn['name']}' is outside the managed key directory"
             )
@@ -860,17 +974,17 @@ class SSHConnectionService:
         
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        # Load the private key
-        key = paramiko.Ed25519Key.from_private_key_file(conn["private_key_path"])
-        
-        # Connect
+
+        # key_filename auto-detects key type -- see _test_key_auth's own
+        # comment for why this can't hardcode Ed25519Key.
         client.connect(
             hostname=conn["host"],
             port=conn["port"],
             username=conn["username"],
-            pkey=key,
-            timeout=10
+            key_filename=conn["private_key_path"],
+            timeout=10,
+            look_for_keys=False,
+            allow_agent=False
         )
         
         # Mark as used
