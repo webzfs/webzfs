@@ -6,3 +6,4 @@ Due to design and architectural designs by a OS or Distro, the native source won
 
 ## Current List
 
+- [Nix / NixOS](nix/README.md)
