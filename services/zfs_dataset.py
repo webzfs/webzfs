@@ -19,11 +19,31 @@ except ImportError:
 
 class ZFSDatasetService:
     """Service for managing ZFS datasets (filesystems and volumes)"""
+
+    MIN_PASSPHRASE_LENGTH = 8
+    MAX_PASSPHRASE_BYTES = 512
+    KEY_PROPERTY_TIMEOUT_SECONDS = 10
+    KEY_LOAD_TIMEOUT_SECONDS = 30
     
     # ZFS naming pattern: alphanumeric, underscore, hyphen, period, colon, plus forward slash for paths
     ZFS_DATASET_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*(/[a-zA-Z0-9][a-zA-Z0-9_\-.:]*)*$')
     # Full snapshot name pattern (dataset@snapshot)
     ZFS_SNAPSHOT_FULL_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*(/[a-zA-Z0-9][a-zA-Z0-9_\-.:]*)*@[a-zA-Z0-9][a-zA-Z0-9_\-.:]*$')
+
+    @classmethod
+    def validate_passphrase(cls, passphrase: str) -> None:
+        """Validate an OpenZFS passphrase before invoking the ZFS command."""
+        if len(passphrase) < cls.MIN_PASSPHRASE_LENGTH:
+            raise ValueError(
+                f"Encryption passphrase must be at least "
+                f"{cls.MIN_PASSPHRASE_LENGTH} characters long"
+            )
+
+        if len(passphrase.encode("utf-8")) > cls.MAX_PASSPHRASE_BYTES:
+            raise ValueError(
+                f"Encryption passphrase must not exceed "
+                f"{cls.MAX_PASSPHRASE_BYTES} bytes"
+            )
     
     @classmethod
     def validate_dataset_name(cls, dataset_name: str) -> None:
@@ -283,6 +303,7 @@ class ZFSDatasetService:
             create_parents: Create parent datasets if they don't exist
         """
         self.validate_dataset_name(dataset_name)
+        self.validate_passphrase(passphrase)
         try:
             props = properties or {}
             
@@ -719,27 +740,105 @@ class ZFSDatasetService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to promote dataset: {e.stderr}")
     
-    def load_key(self, dataset_name: str, key_location: Optional[str] = None) -> None:
+    def load_key(
+        self,
+        dataset_name: str,
+        passphrase: Optional[str] = None,
+    ) -> None:
         """
         Load encryption key for a dataset
         
         Args:
             dataset_name: Name of the dataset
-            key_location: Optional path to key file (if not using prompt)
+            passphrase: Optional passphrase to provide through standard input
         """
         self.validate_dataset_name(dataset_name)
+        key_location = ''
+        timeout_seconds = self.KEY_PROPERTY_TIMEOUT_SECONDS
+        timeout_message = "Reading the dataset encryption key properties"
         try:
-            cmd = ['zfs', 'load-key']
+            key_result = run_zfs_command(
+                [
+                    'zfs', 'get', '-H', '-o', 'property,value',
+                    'keyformat,keylocation,encryptionroot', dataset_name,
+                ],
+                timeout=self.KEY_PROPERTY_TIMEOUT_SECONDS,
+            )
+            key_properties = {}
+            for line in key_result.stdout.strip().split('\n'):
+                parts = line.split('\t', 1)
+                if len(parts) == 2:
+                    key_properties[parts[0]] = parts[1]
+
+            key_format = key_properties.get('keyformat', '')
+            key_location = key_properties.get('keylocation', '')
+            encryption_root = key_properties.get('encryptionroot', dataset_name)
+
+            if not key_format or key_format == '-':
+                raise ValueError("Dataset does not have an encryption key format")
+            if not key_location or key_location == '-':
+                raise ValueError("Dataset does not have a configured key location")
+            if key_location == 'prompt' and key_format == 'passphrase' and not passphrase:
+                raise ValueError("Encryption passphrase is required")
+            if key_location == 'prompt' and key_format != 'passphrase':
+                raise ValueError(
+                    f"Prompt-based {key_format} keys are not supported by this form"
+                )
+            if key_location == 'prompt' and passphrase:
+                self.validate_passphrase(passphrase)
+
+            cmd = ['zfs', 'load-key', encryption_root]
+            input_data = (
+                f"{passphrase}\n" if key_location == 'prompt' and passphrase else None
+            )
+            timeout_seconds = self.KEY_LOAD_TIMEOUT_SECONDS
+            timeout_message = (
+                "Encryption key loading from the configured key location"
+            )
+            run_zfs_command(
+                cmd,
+                input_data=input_data,
+                timeout=self.KEY_LOAD_TIMEOUT_SECONDS,
+            )
             
-            if key_location:
-                cmd.extend(['-L', key_location])
-            
-            cmd.append(dataset_name)
-            
-            run_zfs_command(cmd)
-            
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"{timeout_message} timed out after {timeout_seconds} seconds. "
+                "The configured key location may be unavailable or unreachable."
+            )
         except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to load encryption key: {e.stderr}")
+            error = (e.stderr or '').strip()
+            if key_location.startswith('file://'):
+                error_lower = error.lower()
+                if any(message in error_lower for message in (
+                    'no such file', 'cannot open', 'failed to open',
+                    'permission denied', 'not found',
+                )):
+                    raise Exception(
+                        "The configured encryption key file is unavailable or "
+                        f"unreadable. Verify the file path and permissions. {error}"
+                    )
+                raise Exception(
+                    f"Failed to load encryption key from the configured key file: "
+                    f"{error}"
+                )
+            if key_location.startswith(('http://', 'https://')):
+                error_lower = error.lower()
+                if any(message in error_lower for message in (
+                    'cannot connect', 'could not connect', 'failed to connect',
+                    "couldn't connect", 'connection refused',
+                    'could not resolve', "couldn't resolve",
+                    'name resolution', 'unreachable', 'timed out', 'timeout',
+                )):
+                    raise Exception(
+                        "The configured remote encryption key location is "
+                        f"unavailable or unreachable. {error}"
+                    )
+                raise Exception(
+                    f"Failed to load encryption key from the configured remote "
+                    f"location: {error}"
+                )
+            raise Exception(f"Failed to load encryption key: {error}")
     
     def unload_key(self, dataset_name: str) -> None:
         """
@@ -750,6 +849,12 @@ class ZFSDatasetService:
         """
         self.validate_dataset_name(dataset_name)
         try:
+            mounted_result = run_zfs_command(
+                ['zfs', 'get', '-H', '-o', 'value', 'mounted', dataset_name]
+            )
+            if mounted_result.stdout.strip() == 'yes':
+                raise ValueError("Dataset must be unmounted before unloading its key")
+
             run_zfs_command(['zfs', 'unload-key', dataset_name])
             
         except subprocess.CalledProcessError as e:

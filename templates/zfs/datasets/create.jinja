@@ -43,9 +43,13 @@
     <!-- Create Form -->
     <div class="card">
         <div class="card-body">
-            <form method="post" action="/zfs/datasets/create" class="space-y-6" x-data="{ 
+            <form method="post" action="/zfs/datasets/create" id="create-dataset-form"
+                  class="space-y-6" hx-boost="false"
+                  onsubmit="return prepareDatasetCreate(event)" x-data="{ 
                 datasetType: '{{ dataset_type if dataset_type else 'filesystem' }}', 
                 encryption: '{{ encryption if encryption else '' }}',
+                 passphrase: '',
+                 passphraseConfirm: '',
                 parentDataset: '{{ parent if parent else (pool if pool else '') }}',
                 datasetSuffix: '',
                 get fullDatasetName() {
@@ -54,6 +58,15 @@
                 },
                 get isNameIncomplete() {
                     return !this.parentDataset || !this.datasetSuffix || this.datasetSuffix.includes('/');
+                 },
+                 get isPassphraseInvalid() {
+                     return this.encryption !== '' && (
+                         this.passphrase.length < 8 ||
+                         this.passphrase !== this.passphraseConfirm
+                     );
+                 },
+                 get isFormIncomplete() {
+                     return this.isNameIncomplete || this.isPassphraseInvalid;
                 }
             }">
                 <!-- Hidden field for the full dataset name (submitted to server) -->
@@ -399,10 +412,17 @@
                             name="passphrase"
                             class="form-input"
                             placeholder="Enter a strong passphrase"
+                            x-model="passphrase"
+                            minlength="8"
                             :required="encryption !== ''"
+                            :disabled="encryption === ''"
                         >
                         <p class="text-text-tertiary text-sm mt-1">
-                            This passphrase will be required to unlock the dataset after system reboot.
+                            Use at least 8 characters. This passphrase will be required to unlock the dataset after system reboot.
+                        </p>
+                        <p x-show="encryption !== '' && passphrase.length > 0 && passphrase.length < 8"
+                           class="text-danger-400 text-sm mt-1">
+                            Passphrase must be at least 8 characters long.
                         </p>
                     </div>
 
@@ -416,8 +436,15 @@
                             name="passphrase_confirm"
                             class="form-input"
                             placeholder="Re-enter passphrase"
+                            x-model="passphraseConfirm"
+                            minlength="8"
                             :required="encryption !== ''"
+                            :disabled="encryption === ''"
                         >
+                        <p x-show="encryption !== '' && passphraseConfirm.length > 0 && passphrase !== passphraseConfirm"
+                           class="text-danger-400 text-sm mt-1">
+                            Passphrases do not match.
+                        </p>
                     </div>
 
                     <!-- Info box about keyfile -->
@@ -470,9 +497,10 @@
                     </a>
                     <button 
                         type="submit" 
+                        id="create-dataset-button"
                         class="inline-flex items-center gap-2 htmx-loading font-medium py-2 px-4 rounded-lg transition-colors"
-                        :class="isNameIncomplete ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'btn-success'"
-                        :disabled="isNameIncomplete"
+                        :class="isFormIncomplete ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'btn-success'"
+                        :disabled="isFormIncomplete"
                     >
                         <span class="htmx-indicator">
                             <div class="loading-spinner loading-spinner-sm"></div>
@@ -489,4 +517,95 @@
         </div>
     </div>
 </div>
+
+<!-- Dataset Creation In-Progress Overlay -->
+<div
+    id="dataset-create-progress-overlay"
+    class="modal-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="dataset-create-progress-title"
+    aria-describedby="dataset-create-progress-message"
+    style="display: none;"
+>
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="modal modal-sm text-center">
+                <div class="flex items-center justify-center mb-4">
+                    <div class="loading-spinner loading-spinner-lg" aria-hidden="true"></div>
+                </div>
+                <h3 id="dataset-create-progress-title" class="text-xl font-semibold text-text-primary mb-2">
+                    Creating Dataset
+                </h3>
+                <p id="dataset-create-progress-message" class="text-text-secondary">
+                    Creating dataset <strong id="dataset-create-progress-name" class="font-mono text-text-primary"></strong>.
+                    This operation may take a while. Please wait and do not close or refresh this page.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var datasetCreateSubmitting = false;
+
+function prepareDatasetCreate(event) {
+    const form = event.currentTarget;
+    if (!form || datasetCreateSubmitting) {
+        return false;
+    }
+
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return false;
+    }
+
+    const passphrase = document.getElementById('passphrase');
+    const passphraseConfirm = document.getElementById('passphrase_confirm');
+    const encryption = document.getElementById('encryption');
+    if (encryption && encryption.value) {
+        if (!passphrase || passphrase.value.length < 8) {
+            passphrase.setCustomValidity('Passphrase must be at least 8 characters long.');
+            passphrase.reportValidity();
+            return false;
+        }
+        passphrase.setCustomValidity('');
+
+        if (!passphraseConfirm || passphrase.value !== passphraseConfirm.value) {
+            passphraseConfirm.setCustomValidity('Passphrases do not match.');
+            passphraseConfirm.reportValidity();
+            return false;
+        }
+        passphraseConfirm.setCustomValidity('');
+    }
+
+    datasetCreateSubmitting = true;
+    const overlay = document.getElementById('dataset-create-progress-overlay');
+    const datasetNameFields = form.querySelectorAll('input[name="dataset_name"]');
+    const datasetName = datasetNameFields[datasetNameFields.length - 1];
+    const datasetNameElement = document.getElementById('dataset-create-progress-name');
+    const createButton = document.getElementById('create-dataset-button');
+
+    if (datasetNameElement && datasetName) {
+        datasetNameElement.textContent = datasetName.value;
+    }
+    if (createButton) {
+        createButton.disabled = true;
+        createButton.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    if (overlay) {
+        overlay.style.display = 'block';
+        overlay.setAttribute('aria-busy', 'true');
+    }
+
+    return true;
+}
+
+document.addEventListener('input', function(event) {
+    if (event.target && (event.target.id === 'passphrase' || event.target.id === 'passphrase_confirm')) {
+        event.target.setCustomValidity('');
+    }
+});
+</script>
 {% endblock %}
