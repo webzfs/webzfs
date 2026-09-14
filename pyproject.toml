@@ -20,7 +20,7 @@ python-jose = { version = "^3.5.0", extras = ["cryptography"] }
 pyasn1 = ">=0.6.3,<0.7.0"
 python-pam = "^2.0.2"
 paramiko = ">=5.0.0,<6.0.0"
-cryptography = ">=48.0.1,<50.0.0"
+cryptography = ">=48.0.1,<51.0.0"
 croniter = "^6.0.0"
 
 [tool.poetry.group.dev.dependencies]
