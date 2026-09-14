@@ -14,7 +14,12 @@ from services.audit_logger import audit_logger, LogCategory
 from auth.dependencies import get_current_user
 
 
-router = APIRouter()
+# Same class of gap as utils_ssh.py (see that file's own comment,
+# security fix #227): no router-level `dependencies=` at all, unlike
+# every other sensitive router in this app. Meant unauthenticated
+# read/download access to the full audit trail (auth.log,
+# zfs_operations.log, file_access.log).
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def read_log_file(log_path: Path, lines: int = 500, search: Optional[str] = None) -> List[Dict[str, Any]]:
