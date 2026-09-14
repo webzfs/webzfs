@@ -17,7 +17,7 @@
     "chart.js": "4.4.0",
     "htmx.org": "1.9.10",
     "onchange": "^7.1.0",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.28",
     "postcss-cli": "^11.0.1",
     "tailwindcss": "^3.4.1"
   },
