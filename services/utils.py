@@ -136,7 +136,8 @@ def run_privileged_command(
     capture_output: bool = True,
     timeout: Optional[float] = None,
     input_data: Optional[str] = None,
-    use_sudo: Optional[bool] = None
+    use_sudo: Optional[bool] = None,
+    env: Optional[dict[str, str]] = None,
 ) -> subprocess.CompletedProcess:
     """
     Run a privileged command with platform-appropriate sudo handling.
@@ -152,6 +153,7 @@ def run_privileged_command(
         timeout: Optional timeout in seconds
         input_data: Optional input to send to stdin
         use_sudo: Override automatic sudo detection
+        env: Optional subprocess environment, such as LC_ALL=C for native parsers
     
     Returns:
         subprocess.CompletedProcess with the command results
@@ -164,7 +166,8 @@ def run_privileged_command(
         text=text,
         capture_output=capture_output,
         timeout=timeout,
-        input=input_data
+        input=input_data,
+        env=env,
     )
 
 
@@ -216,7 +219,8 @@ def run_zfs_command(
     capture_output: bool = True,
     timeout: Optional[float] = None,
     input_data: Optional[str] = None,
-    use_sudo: Optional[bool] = None
+    use_sudo: Optional[bool] = None,
+    env: Optional[dict[str, str]] = None
 ) -> subprocess.CompletedProcess:
     """
     Run a ZFS/ZPOOL command with platform-appropriate sudo handling.
@@ -232,6 +236,7 @@ def run_zfs_command(
         timeout: Optional timeout in seconds
         input_data: Optional input to send to stdin
         use_sudo: Override automatic sudo detection
+        env: Optional subprocess environment; callers merge with os.environ
     
     Returns:
         subprocess.CompletedProcess with the command results
@@ -248,7 +253,8 @@ def run_zfs_command(
         text=text,
         capture_output=capture_output,
         timeout=timeout,
-        input=input_data
+        input=input_data,
+        env=env
     )
 
 # Valid OpenZFS man page versions (major.minor)

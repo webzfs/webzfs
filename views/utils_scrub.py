@@ -26,6 +26,7 @@ from services.dashboard import get_scrub_status_all
 from services.schedule_utils import describe_schedule, preview_next_runs
 from services.storage import FileStorageService
 from services.shell_settings import can_use_shell
+from services.zfs_delegation import can_manage_zfs_delegation
 from services.zfs_pool import ZFSPoolService
 from core.request_context import is_cockpit_request
 
@@ -65,6 +66,7 @@ def index(request: Request, username: str = Depends(get_current_user)):
         context={
             "cockpit_context": is_cockpit_request(request),
             "shell_allowed": can_use_shell(username),
+            "delegation_allowed": can_manage_zfs_delegation(username),
         },
     )
 

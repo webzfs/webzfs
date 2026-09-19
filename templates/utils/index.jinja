@@ -83,6 +83,72 @@
                 </div>
             </a>
 
+            <!-- ZFS Delegated Permissions -->
+            {% if delegation_allowed and not cockpit_context %}
+            <a href="/utils/zfs-delegation/" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-indigo-500/10 rounded-lg group-hover:bg-indigo-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-indigo-400 transition-colors">ZFS Delegated Permissions</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Manage Unix user and group grants and reusable permission sets. Existing create-time configuration is read-only.</p>
+                        </div>
+                        <div class="flex items-center text-indigo-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage Delegations</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+            {% elif cockpit_context %}
+            <div class="card opacity-60 animate-fade-in" style="animation-delay: 0.075s;" aria-disabled="true">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-bg-elevated-2 rounded-lg flex-shrink-0">
+                            <svg class="w-7 h-7 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-xl font-semibold text-text-secondary">ZFS Delegated Permissions</h2>
+                                <span class="badge-secondary">Not available in Cockpit</span>
+                            </div>
+                            <p class="text-text-tertiary text-sm mt-0.5">Manage Unix user and group grants and reusable permission sets. Existing create-time configuration is read-only.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card opacity-60 animate-fade-in" style="animation-delay: 0.075s;" aria-disabled="true">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-bg-elevated-2 rounded-lg flex-shrink-0">
+                            <svg class="w-7 h-7 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-xl font-semibold text-text-secondary">ZFS Delegated Permissions</h2>
+                                <span class="badge-secondary">Access not granted</span>
+                            </div>
+                            <p class="text-text-tertiary text-sm mt-0.5">Manage Unix user and group grants and reusable permission sets. Existing create-time configuration is read-only.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- SSH Connections -->
             <a href="/utils/ssh" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.1s;">
                 <div class="card-body py-4">

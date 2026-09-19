@@ -64,6 +64,14 @@
         </div>
         {% endif %}
 
+        <section class="card" aria-labelledby="delegation-access-title">
+            <div class="card-body">
+                <h2 id="delegation-access-title" class="text-xl font-semibold text-text-primary">ZFS Delegation Access</h2>
+                <p class="text-text-secondary mt-2">Allowed native WebZFS users: <strong>{{ delegation_users | join(', ') or 'None (disabled)' }}</strong></p>
+                <p class="text-sm text-text-secondary mt-2">Read-only setting: <code>ZFS_DELEGATION_ALLOWED_USERS</code>. Edit <code>/opt/webzfs/.env</code> and restart WebZFS to change access. This controls application access, not the operating-system sudo policy. Not available in Cockpit.</p>
+            </div>
+        </section>
+
         <!-- Theme Selection Card -->
         <div class="card animate-fade-in">
             <div class="card-body">

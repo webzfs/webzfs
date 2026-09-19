@@ -39,6 +39,7 @@ from services import backup_restore
 from auth.dependencies import get_current_user
 from core.request_context import is_cockpit_request
 from services.shell_settings import shell_status
+from services.zfs_delegation import delegation_allowed_users
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ async def settings_index(
             ),
             "corner_styles": corner_styles,
             "shell_status": shell_status(current_user),
+            "delegation_users": sorted(delegation_allowed_users()),
             "cockpit_context": is_cockpit_request(request),
             "message": message,
             "error": error,
