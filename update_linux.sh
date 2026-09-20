@@ -349,6 +349,16 @@ webzfs ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/webzfs-task-*, /bi
 # File editing (for config files like smartd.conf, sanoid.conf)
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
 
+# ZED ZEDLET management (enable/disable/create/edit/restore scripts).
+# Restricted to the ZED enabled directory to limit scope.
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/ln -sf /usr/lib/zfs/zed.d/* /etc/zfs/zed.d/*, /bin/ln -sf /usr/lib/zfs/zed.d/* /etc/zfs/zed.d/*
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/ln -sf /usr/libexec/zfs/zed.d/* /etc/zfs/zed.d/*, /bin/ln -sf /usr/libexec/zfs/zed.d/* /etc/zfs/zed.d/*
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/zfs/zed.d/*, /bin/rm -f /etc/zfs/zed.d/*
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/mv -f /etc/zfs/zed.d/.webzfs-tmp-* /etc/zfs/zed.d/*, /bin/mv -f /etc/zfs/zed.d/.webzfs-tmp-* /etc/zfs/zed.d/*
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/chmod, /bin/chmod
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/chown root\:root /etc/zfs/zed.d/*, /bin/chown root\:root /etc/zfs/zed.d/*
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/kill -HUP *, /bin/kill -HUP *
+
 # Read system journal and plain-text syslog files for the
 # Observability -> System Log page. journalctl needs sudo (or
 # systemd-journal group) on most distros. tail covers Debian/Ubuntu

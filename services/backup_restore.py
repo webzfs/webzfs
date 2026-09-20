@@ -57,7 +57,7 @@ KDF_ITERATIONS = 600_000
 KDF_SALT_BYTES = 16
 AES_KEY_BYTES = 32
 GCM_NONCE_BYTES = 12
-APP_VERSION = "0.70"
+APP_VERSION = "0.83"
 
 # Categories used in manifest entries and restore selection.
 CATEGORY_CONFIG = "config"
@@ -93,6 +93,7 @@ def _sanoid_config_path() -> Path:
 # basename. Anything not listed here is left alone on restore.
 USER_CONFIG_FILES = [
     "theme.conf",
+    "corner_style.conf",
     "session_timeout.json",
     "ssh_connections.json",
     "fleet_servers.json",
@@ -100,6 +101,7 @@ USER_CONFIG_FILES = [
     "scrub_schedules.json",
     "smart_scheduled_tests.json",
     "syncoid_jobs.json",
+    "health_schedules.json",
     "replication_history.json",
     "smart_test_history.json",
     "notification_log.json",
@@ -707,6 +709,50 @@ def restore_archive(
         "failed": failed,
         "timestamp": timestamp,
     }
+
+
+# ---------------------------------------------------------------------------
+# Post-restore schedule reconciliation
+# ---------------------------------------------------------------------------
+
+
+# Schedule config files whose presence in a restore should trigger an
+# OS scheduler re-sync (systemd timers on Linux, crontab block on BSD).
+_SCHEDULE_FILES = {
+    "scrub_schedules.json",
+    "smart_scheduled_tests.json",
+    "syncoid_jobs.json",
+    "health_schedules.json",
+}
+
+
+def resync_os_schedules() -> Optional[str]:
+    """Re-register all WebZFS scheduled tasks with the OS scheduler.
+
+    Call this after restoring config files so that systemd timer units
+    (Linux) or the root crontab block (BSD) match the restored JSON
+    schedule stores. Returns None on success or an error message string.
+    """
+    try:
+        from services.job_scheduler import TaskScheduler
+
+        TaskScheduler().sync_all()
+        logger.info("OS scheduler re-synced after restore")
+        return None
+    except Exception as exc:
+        msg = f"Schedule re-sync failed: {exc}"
+        logger.warning(msg)
+        return msg
+
+
+def restore_needs_schedule_sync(restored_files: List[Dict[str, Any]]) -> bool:
+    """Return True when the restored file list includes schedule config."""
+    for entry in restored_files:
+        arcname = entry.get("arcname", "")
+        basename = Path(arcname).name
+        if basename in _SCHEDULE_FILES:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------

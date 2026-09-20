@@ -83,6 +83,29 @@
                 </div>
             </a>
 
+            <!-- ZED Event Scripts -->
+            <a href="/utils/zed" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-cyan-500/10 rounded-lg group-hover:bg-cyan-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-info-400 transition-colors">ZED Event Scripts</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Manage ZFS Event Daemon ZEDLETs: enable packaged handlers, create custom event hooks, and edit zed.rc</p>
+                        </div>
+                        <div class="flex items-center text-info-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage ZEDLETs</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
             <!-- ZFS Delegated Permissions -->
             {% if delegation_allowed and not cockpit_context %}
             <a href="/utils/zfs-delegation/" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">

@@ -378,16 +378,28 @@ async def backup_restore_apply(
 
     restored_count = len(result.get("restored", []))
     failed_count = len(result.get("failed", []))
+
+    # Re-register OS-level scheduled tasks when schedule config files
+    # were among the restored files (systemd timers on Linux, crontab
+    # block on BSD).
+    sync_warning = ""
+    restored_files = result.get("restored", [])
+    if backup_restore.restore_needs_schedule_sync(restored_files):
+        sync_error = backup_restore.resync_os_schedules()
+        if sync_error:
+            sync_warning = f" Warning: {sync_error}"
+
     if failed_count:
         return _redirect_with(
             error=(
                 f"Restore completed with errors: {restored_count} files restored, "
-                f"{failed_count} failed. Check server logs for details."
+                f"{failed_count} failed.{sync_warning} Check server logs for details."
             )
         )
     return _redirect_with(
         message=(
             f"Restore complete. {restored_count} files written. "
             f"Existing files were preserved as *.pre-restore-{result['timestamp']}."
+            f"{sync_warning}"
         )
     )
