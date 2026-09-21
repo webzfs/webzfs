@@ -1,0 +1,191 @@
+{% extends "layout.jinja" %}
+{% set active_page = 'utils' %}
+{% block title %}ZFS Delegated Permissions{% endblock %}
+{% block content %}
+<div class="space-y-6" hx-boost="false">
+
+    <!-- Breadcrumb -->
+    <nav class="text-sm text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">ZFS Delegated Permissions</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div>
+        <h1 class="text-3xl font-bold text-text-primary">ZFS Delegated Permissions</h1>
+        <p class="text-text-secondary mt-1">Manage <code class="text-sm">zfs allow</code> delegations for local Unix users and groups. Each change maps to one native command; create-time configuration is shown read-only.</p>
+    </div>
+
+    <!-- Messages -->
+    {% if error %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded">
+        {{ error }} <a href="{{ base_url }}/" class="underline ml-2">Refresh delegation state</a>
+    </div>
+    {% endif %}
+    {% if message %}
+    <div class="bg-success-900/30 border-2 border-success-500/50 text-success-400 px-4 py-3 rounded">
+        {{ message }}
+    </div>
+    {% endif %}
+
+    {% if state %}
+    <!-- Two-column layout: sidebar + content -->
+    <div class="flex flex-col lg:flex-row items-start gap-6">
+
+    <!-- Dataset Sidebar -->
+    <aside class="w-full lg:w-72 flex-shrink-0">
+        <div class="card lg:sticky lg:top-20">
+            <div class="card-body">
+                <h2 class="text-lg font-semibold text-text-primary">Datasets</h2>
+                <p class="text-xs text-text-secondary mt-0.5">Select a filesystem or volume to inspect its delegated administration rules.</p>
+                <!-- Filter -->
+                <div class="relative mt-3">
+                    <svg class="w-4 h-4 text-text-tertiary absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" d="m20 20-3.5-3.5"/></svg>
+                    <input type="search" id="ds-filter" class="form-input w-full pl-8 text-sm" placeholder="Filter datasets..." oninput="document.querySelectorAll('[data-ds]').forEach(el=>{el.style.display=el.dataset.ds.includes(this.value.toLowerCase())?'':'none'})">
+                </div>
+                <!-- Pool Tree -->
+                <nav class="mt-3 space-y-2 max-h-[60vh] overflow-y-auto text-sm" aria-label="Dataset tree">
+                    {% for group in tree %}
+                    <div class="border border-border-subtle rounded-lg overflow-hidden bg-bg-elevated-2">
+                        <!-- Pool header with caret toggle -->
+                        <button type="button" onclick="var c=this.nextElementSibling;var open=c.style.display!=='none';c.style.display=open?'none':'';this.querySelector('[data-caret]').style.transform=open?'rotate(-90deg)':''" class="flex items-center gap-1.5 w-full px-2.5 py-2 text-left text-text-primary font-semibold hover:bg-bg-elevated-3 transition-colors">
+                            <svg data-caret class="w-3 h-3 text-text-tertiary flex-shrink-0 transition-transform" style="{% if not group.expanded %}transform:rotate(-90deg){% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
+                            <svg class="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                            <span class="flex-1">{{ group.pool }}</span>
+                            <span class="bg-bg-elevated-3 text-text-tertiary text-xs px-1.5 py-0.5 rounded-full">{{ group.nodes | length }}</span>
+                        </button>
+                        <!-- Child datasets inside the same bordered group -->
+                        <div style="{% if not group.expanded %}display:none{% endif %}">
+                            {% for node in group.nodes %}
+                            <a href="{{ base_url }}/?{{ {'dataset':node.name} | urlencode }}" data-ds="{{ node.name | lower }}" class="flex items-center gap-1.5 py-1.5 transition-colors {% if node.selected %}bg-primary-500/15 text-primary-400 font-medium{% else %}text-text-secondary hover:bg-bg-elevated-3 hover:text-text-primary{% endif %}" style="padding-left:{{ 20 + node.depth * 14 }}px; padding-right:8px">
+                                <svg class="w-3.5 h-3.5 flex-shrink-0 {% if node.selected %}text-primary-400{% else %}text-text-tertiary{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    {% if node.kind == 'volume' %}<rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+                                    {% else %}<path stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>{% endif %}
+                                </svg>
+                                <span class="truncate flex-1">{{ node.name }}</span>
+                                {% if node.count %}<span class="bg-bg-elevated-3 text-text-tertiary text-xs px-1.5 py-0.5 rounded-full flex-shrink-0">{{ node.count }}</span>{% endif %}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </nav>
+                <p class="text-xs text-text-tertiary mt-3">{{ state.datasets | length }} datasets across {{ tree | length }} pool{{ 's' if tree | length != 1 else '' }}</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 min-w-0 space-y-6">
+
+    <!-- Dataset Header + Summary (single card) -->
+    <section class="card">
+        <div class="card-body space-y-4">
+            <!-- Top row: name, badges, action buttons -->
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h2 class="text-2xl font-bold text-text-primary font-mono">{{ state.dataset }}</h2>
+                        <span class="badge-secondary text-xs">{{ state.datasets[state.dataset] }}</span>
+                        {% if state.pool_enabled == 'on' %}
+                        <button type="button" onclick="showConfirm('confirm-pool-toggle')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-success-500/15 text-success-400 border border-success-500/30 hover:bg-success-500/25 transition-colors cursor-pointer" title="Click to disable pool delegation">
+                            <span class="w-1.5 h-1.5 rounded-full bg-success-400"></span>delegation active
+                        </button>
+                        {% else %}
+                        <button type="button" onclick="showConfirm('confirm-pool-toggle')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-warning-500/15 text-warning-400 border border-warning-500/30 hover:bg-warning-500/25 transition-colors cursor-pointer" title="Click to enable pool delegation">
+                            <span class="w-1.5 h-1.5 rounded-full bg-warning-400"></span>delegation off
+                        </button>
+                        {% endif %}
+                    </div>
+                    <p class="text-text-secondary text-sm mt-1">Rules are stored by ZFS on the dataset. Inherited grants from ancestors are also shown.</p>
+                </div>
+                {% if state.support.writable %}
+                <div class="flex flex-wrap gap-2 flex-shrink-0">
+                    <a class="btn-secondary" href="{{ base_url }}/action?{{ {'dataset':state.dataset,'action':'set_create'} | urlencode }}">Permission Sets</a>
+                    <a class="btn-primary" href="{{ base_url }}/action?{{ {'dataset':state.dataset,'action':'grant'} | urlencode }}">Grant Permissions</a>
+                </div>
+                {% endif %}
+            </div>
+            <!-- Summary metrics (inside the same card) -->
+            {% set direct_grants = state.entries | selectattr('kind', 'in', ['user','group','everyone']) | selectattr('source', 'equalto', state.dataset) | list | length %}
+            {% set inherited_grants = state.entries | selectattr('kind', 'in', ['user','group','everyone']) | rejectattr('source', 'equalto', state.dataset) | list | length %}
+            {% set set_count = state.entries | selectattr('kind', 'equalto', 'set') | list | length %}
+            {% set ct_count = state.entries | selectattr('kind', 'equalto', 'create_time') | list | length %}
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {% for label, value, color, hint in [('Direct grants', direct_grants, 'primary', 'defined here'), ('Inherited rules', inherited_grants, 'purple', 'from ancestors'), ('Permission sets', set_count, 'info', 'available'), ('Create-time', ct_count, 'warning', 'read-only entries')] %}
+                <div class="bg-bg-elevated-2 border border-border-subtle rounded-lg py-3 px-4">
+                    <span class="block text-xs font-medium text-text-secondary uppercase tracking-wider">{{ label }}</span>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <span class="text-2xl font-bold text-{{ color }}-400">{{ value }}</span>
+                        <span class="text-xs text-text-tertiary">{{ hint }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Platform Warnings -->
+    {% if not state.support.writable %}
+    <div class="bg-warning-900/30 border-2 border-warning-500/50 px-4 py-3 rounded flex gap-3">
+        <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div><strong class="text-warning-400">Read-only delegation profile</strong><p class="text-text-secondary text-sm mt-1">{{ state.support.reason }}</p></div>
+    </div>
+    {% elif state.support.platform == 'Linux' %}
+    <div class="bg-warning-900/30 border-2 border-warning-500/50 px-4 py-3 rounded flex gap-3">
+        <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div><strong class="text-warning-400">Linux OpenZFS {{ state.support.version }} writable profile</strong><p class="text-text-secondary text-sm mt-1">Adding <code>mount</code>, <code>mountpoint</code>, <code>canmount</code>, <code>rename</code>, or <code>share</code> is disabled. Existing tokens may still be removed.</p></div>
+    </div>
+    {% endif %}
+    {% if state.pool_enabled == 'off' %}
+    <div class="bg-warning-900/30 border-2 border-warning-500/50 px-4 py-3 rounded flex gap-3">
+        <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div><strong class="text-warning-400">Pool delegation is disabled</strong><p class="text-text-secondary text-sm mt-1">Stored grants remain configured but are not usable while <code>delegation=off</code>.</p></div>
+    </div>
+    {% endif %}
+
+    {% include 'utils/zfs_delegation/_entries.jinja' %}
+
+    <!-- Additive Info -->
+    <div class="card-nested bg-info-500/10 border-info-500/30">
+        <div class="flex gap-3">
+            <svg class="w-5 h-5 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div class="text-sm text-text-secondary">
+                <p class="font-medium text-text-primary mb-1">Delegated permissions are additive</p>
+                <p>A user can retain a permission through an ancestor rule, group membership, <code>everyone</code>, or a named permission set after a direct grant is revoked. Inherited rows are shown read-only; change them at the dataset where they were defined.</p>
+            </div>
+        </div>
+    </div>
+
+    </div><!-- /Main Content -->
+    </div><!-- /Two-column layout -->
+
+    <!-- Pool Delegation Toggle Modal -->
+    {% if state.support.writable %}
+    {% set id = 'confirm-pool-toggle' %}
+    {% if state.pool_enabled == 'on' %}
+    {% set title = 'Disable Pool Delegation' %}
+    {% set message = 'Turning delegation off on pool <strong>' + state.pool + '</strong> prevents all non-privileged access through stored grants. Grant metadata remains configured and takes effect again when delegation is re-enabled.' %}
+    {% set confirm_text = 'Disable Delegation' %}
+    {% set confirm_class = 'danger' %}
+    {% else %}
+    {% set title = 'Enable Pool Delegation' %}
+    {% set message = 'Turning delegation on for pool <strong>' + state.pool + '</strong> allows non-privileged users to exercise any stored grants on datasets in this pool.' %}
+    {% set confirm_text = 'Enable Delegation' %}
+    {% set confirm_class = 'primary' %}
+    {% endif %}
+    {% set confirm_action = "document.getElementById('pool-toggle-form').submit()" %}
+    {% include 'partials/confirm.jinja' %}
+    {% endif %}
+
+    {% endif %}
+</div>
+
+<!-- Hidden form for pool-toggle POST (used by HTMX from the confirm modal) -->
+{% if state and state.support.writable %}
+<form id="pool-toggle-form" method="post" action="{{ base_url }}/pool-toggle" style="display:none">
+    <input type="hidden" name="dataset" value="{{ state.dataset }}">
+</form>
+{% endif %}
+{% endblock %}

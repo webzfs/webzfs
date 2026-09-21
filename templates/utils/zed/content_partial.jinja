@@ -1,0 +1,207 @@
+{# ZED content partial: status bar, metrics, toolbar, ZEDLET table, modals #}
+
+{% if status.error %}
+<div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
+    <strong>Error:</strong> {{ status.error }}
+</div>
+{% else %}
+
+{# Status Strip #}
+<div class="card mb-6">
+    <div class="card-body py-4">
+        <div class="flex flex-col lg:flex-row lg:items-center gap-4">
+            {# Daemon status #}
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-bg-elevated-2 rounded-lg text-text-tertiary">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h.01M17 16h.01"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-text-primary">ZFS Event Daemon</div>
+                    {% if status.daemon_running %}
+                    <div class="text-xs text-success-400">
+                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-success-400 mr-1"></span>
+                        Running{% if status.daemon_pid %} (PID {{ status.daemon_pid }}){% endif %}
+                    </div>
+                    {% else %}
+                    <div class="text-xs text-danger-400">
+                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-danger-400 mr-1"></span>
+                        Not Running
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {# Directory paths #}
+            <div class="flex flex-col sm:flex-row gap-4 lg:ml-auto text-xs">
+                {% if status.enabled_dir %}
+                <div>
+                    <div class="text-text-tertiary mb-0.5">Enabled ZEDLET directory</div>
+                    <code class="font-mono text-text-secondary">{{ status.enabled_dir }}</code>
+                </div>
+                {% endif %}
+                {% if status.package_dir %}
+                <div>
+                    <div class="text-text-tertiary mb-0.5">Packaged ZEDLET directory</div>
+                    <code class="font-mono text-text-secondary">{{ status.package_dir }}</code>
+                </div>
+                {% endif %}
+            </div>
+            {# Service control buttons #}
+            <div class="flex items-center gap-2 lg:ml-4 flex-shrink-0">
+                {% if status.daemon_running %}
+                <form method="post" action="/utils/zed/stop" hx-boost="false">
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Stop the ZED service?')">Stop</button>
+                </form>
+                <form method="post" action="/utils/zed/reload" hx-boost="false">
+                    <button type="submit" class="btn btn-secondary btn-sm">Reload</button>
+                </form>
+                {% else %}
+                <form method="post" action="/utils/zed/start" hx-boost="false">
+                    <button type="submit" class="btn btn-success btn-sm">Start</button>
+                </form>
+                {% endif %}
+                <button type="button" class="btn btn-secondary btn-sm"
+                        hx-get="/utils/zed/content-partial"
+                        hx-target="#zed-content-container"
+                        hx-swap="innerHTML"
+                        title="Refresh ZED status">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.6 15A7 7 0 0018 17l2-2M18.4 9A7 7 0 006 7L4 9"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Metric Cards #}
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+    <div class="card cursor-pointer hover:border-primary-500/50 transition-colors" onclick="filterZedlets('all')">
+        <div class="card-body py-4 text-center">
+            <p class="text-text-tertiary text-xs uppercase tracking-wider">Total</p>
+            <p class="text-2xl font-bold text-text-primary mt-1">{{ status.total }}</p>
+        </div>
+    </div>
+    <div class="card cursor-pointer hover:border-success-500/50 transition-colors" onclick="filterZedlets('enabled')">
+        <div class="card-body py-4 text-center">
+            <p class="text-text-tertiary text-xs uppercase tracking-wider">Enabled</p>
+            <p class="text-2xl font-bold text-success-400 mt-1">{{ status.enabled_count }}</p>
+        </div>
+    </div>
+    <div class="card cursor-pointer hover:border-text-tertiary/50 transition-colors" onclick="filterZedlets('disabled')">
+        <div class="card-body py-4 text-center">
+            <p class="text-text-tertiary text-xs uppercase tracking-wider">Disabled</p>
+            <p class="text-2xl font-bold text-text-tertiary mt-1">{{ status.disabled_count }}</p>
+        </div>
+    </div>
+    <div class="card cursor-pointer hover:border-primary-500/50 transition-colors" onclick="filterZedlets('package')">
+        <div class="card-body py-4 text-center">
+            <p class="text-text-tertiary text-xs uppercase tracking-wider">Package</p>
+            <p class="text-2xl font-bold text-primary-400 mt-1">{{ status.package_count }}</p>
+        </div>
+    </div>
+    <div class="card cursor-pointer hover:border-info-500/50 transition-colors" onclick="filterZedlets('custom')">
+        <div class="card-body py-4 text-center">
+            <p class="text-text-tertiary text-xs uppercase tracking-wider">Custom</p>
+            <p class="text-2xl font-bold text-info-400 mt-1">{{ status.custom_count }}</p>
+        </div>
+    </div>
+    <div class="card cursor-pointer hover:border-warning-500/50 transition-colors" onclick="filterZedlets('override')">
+        <div class="card-body py-4 text-center">
+            <p class="text-text-tertiary text-xs uppercase tracking-wider">Override</p>
+            <p class="text-2xl font-bold text-warning-400 mt-1">{{ status.override_count }}</p>
+        </div>
+    </div>
+</div>
+
+{# Toolbar #}
+<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+    <div class="flex-1 w-full sm:max-w-sm">
+        <input type="text" id="zed-search" placeholder="Search scripts..."
+               oninput="searchZedlets(this.value)"
+               class="form-input w-full text-sm">
+    </div>
+    <div class="flex items-center gap-2">
+        <button type="button" class="btn btn-secondary btn-sm"
+                hx-get="/utils/zed/zed-rc"
+                hx-target="#rc-edit-body"
+                hx-swap="innerHTML"
+                onclick="showZedModal('rc-modal')">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            Edit zed.rc
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="showZedModal('create-modal')">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"/>
+            </svg>
+            Create ZEDLET
+        </button>
+    </div>
+</div>
+
+
+
+{% include "utils/zed/_table.jinja" %}
+{% include "utils/zed/_modals.jinja" %}
+
+<script>
+var zedFilter = 'all';
+function filterZedlets(f) {
+    zedFilter = f;
+    var s = document.getElementById('zed-search');
+    applyZedFilters(f, s ? s.value.toLowerCase() : '');
+}
+function searchZedlets(v) { applyZedFilters(zedFilter, v.toLowerCase()); }
+function applyZedFilters(f, s) {
+    var rows = document.querySelectorAll('.zedlet-row');
+    var vis = 0;
+    rows.forEach(function(r) {
+        var n = r.getAttribute('data-name');
+        var e = r.getAttribute('data-enabled');
+        var o = r.getAttribute('data-origin');
+        var mf = (f==='all') || (f==='enabled'&&e==='true') || (f==='disabled'&&e==='false') || (f===o);
+        var ms = !s || n.indexOf(s) !== -1;
+        r.style.display = (mf && ms) ? '' : 'none';
+        if (mf && ms) vis++;
+    });
+    var c = document.getElementById('zed-visible-count');
+    if (c) c.textContent = vis + ' of ' + rows.length + ' scripts';
+}
+function showZedModal(id) {
+    var m = document.getElementById(id);
+    if (!m) return;
+    if (window.Alpine && typeof window.Alpine.$data === 'function') {
+        var d = window.Alpine.$data(m); if (d) { d.open = true; return; }
+    }
+    if (m.__x) { m.__x.$data.open = true; return; }
+    m.style.display = 'block';
+}
+function closeZedModal(id) {
+    var m = document.getElementById(id);
+    if (!m) return;
+    if (window.Alpine && typeof window.Alpine.$data === 'function') {
+        var d = window.Alpine.$data(m); if (d) { d.open = false; return; }
+    }
+    if (m.__x) { m.__x.$data.open = false; return; }
+    m.style.display = 'none';
+}
+function updateFilenamePreview() {
+    var p = document.getElementById('create-event-prefix');
+    var h = document.getElementById('create-handler-name');
+    var sc = document.getElementById('create-sync-check');
+    var pv = document.getElementById('create-filename-preview');
+    if (!p || !h || !pv) return;
+    var ev = p.value, hn = h.value.replace(/[^a-zA-Z0-9_\-]/g, '');
+    var sy = sc && sc.checked;
+    pv.textContent = (ev && hn) ? (sy ? ev+'-sync-'+hn+'.sh' : ev+'-'+hn+'.sh') : 'select event and enter handler name';
+}
+</script>
+
+{% endif %}

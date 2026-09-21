@@ -1,0 +1,67 @@
+{% extends "layout.jinja" %}
+{% set active_page = 'utils' %}
+{% block title %}Confirm {{ labels[action] }}{% endblock %}
+{% block content %}
+<div class="space-y-6" hx-boost="false">
+
+    <!-- Breadcrumb -->
+    <nav class="text-sm text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <a href="{{ base_url }}/?{{ {'dataset':state.dataset} | urlencode }}" class="hover:text-primary-400">ZFS Delegated Permissions</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Confirm {{ labels[action] }}</span>
+    </nav>
+
+    <h1 class="text-3xl font-bold text-text-primary">Confirm {{ labels[action] }}</h1>
+
+    <section class="card">
+        <div class="card-body space-y-5">
+            <p class="text-text-secondary">Dataset: <strong class="text-text-primary">{{ state.dataset }}</strong>. Review the exact native command before executing:</p>
+
+            <!-- Command Preview -->
+            <div class="bg-bg-elevated-2 rounded-lg p-4 font-mono text-sm overflow-x-auto border border-border-subtle">
+                <span class="text-text-tertiary select-none">$ </span><span class="text-success-400">{{ command }}</span>
+            </div>
+
+            <p class="text-xs text-text-tertiary">This confirmation expires in five minutes and is bound to your login and this exact state. Submission revalidates under the shared lock. External CLI changes are not locked by WebZFS.</p>
+
+            {% if plan.empties_set %}
+            <div class="bg-warning-900/30 border-2 border-warning-500/50 px-4 py-3 rounded flex gap-3">
+                <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <div><strong class="text-warning-400">Set will be deleted</strong><p class="text-text-secondary text-sm mt-1">Removing the last token removes the entire permission-set definition.</p></div>
+            </div>
+            {% endif %}
+
+            {% if plan.scan %}
+            <div class="bg-bg-elevated-2 rounded-lg p-4 border border-border-subtle">
+                <span class="text-xs font-medium text-text-secondary uppercase tracking-wider">Reference scan</span>
+                <p class="text-sm text-text-primary mt-1">{{ plan.scan.incomplete or 'Complete. No references found in the source and its descendants.' }}</p>
+                {% if plan.scan.references %}
+                <ul class="mt-2 text-sm text-text-secondary list-disc list-inside">
+                    {% for ref in plan.scan.references %}<li class="font-mono text-xs">{{ ref }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <form method="post" action="{{ base_url }}/apply" class="space-y-4">
+                <input type="hidden" name="confirmation" value="{{ confirmation }}">
+                {% if plan.scan and plan.scan.incomplete %}
+                <label class="flex items-start gap-2 text-warning-400 cursor-pointer">
+                    <input type="checkbox" name="acknowledge_scan" value="true" required class="mt-0.5 accent-warning-500">
+                    <span class="text-sm">I understand this incomplete reference scan may leave ineffective grants or set references behind.</span>
+                </label>
+                {% endif %}
+                <div class="flex gap-3 pt-2">
+                    <button class="btn-primary" type="submit">
+                        <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        Execute Confirmed Change
+                    </button>
+                    <a class="btn-secondary" href="{{ base_url }}/?{{ {'dataset':state.dataset} | urlencode }}">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </section>
+</div>
+{% endblock %}

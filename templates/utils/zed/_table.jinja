@@ -1,0 +1,41 @@
+{# ZEDLET table #}
+{% if status.zedlets %}
+<div class="card">
+    <div class="card-body">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-text-primary">Event Scripts</h2>
+            <span id="zed-visible-count" class="text-xs text-text-tertiary">{{ status.total }} ZEDLETs</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle text-text-tertiary text-xs uppercase tracking-wider">
+                        <th class="py-2 pr-4 text-left font-medium">ZEDLET</th>
+                        <th class="py-2 px-4 text-left font-medium">Event / Match</th>
+                        <th class="py-2 px-4 text-left font-medium">Origin</th>
+                        <th class="py-2 px-4 text-left font-medium hidden lg:table-cell">Filesystem</th>
+                        <th class="py-2 px-4 text-left font-medium">State</th>
+                        <th class="py-2 pl-4 text-right font-medium">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for z in status.zedlets %}
+                    {% include "utils/zed/_row.jinja" %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="mt-3 flex items-center justify-between text-xs text-text-tertiary pt-3 border-t border-border-subtle">
+            <span id="zed-row-count">{{ status.total }} ZEDLETs</span>
+            <span>Default scripts are protected from deletion.</span>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-12">
+        <p class="text-text-secondary">No ZEDLETs found</p>
+        <p class="text-text-tertiary text-sm mt-1">Create a custom ZEDLET or ensure ZED is properly installed.</p>
+    </div>
+</div>
+{% endif %}
