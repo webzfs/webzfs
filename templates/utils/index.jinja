@@ -106,6 +106,29 @@
                 </div>
             </a>
 
+            <!-- Custom VDEV Properties -->
+            <a href="/utils/vdev-properties/" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-teal-500/10 rounded-lg group-hover:bg-teal-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 12h.01M7 17h.01M11 7h6M11 12h6M11 17h6M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-teal-400 transition-colors">Custom VDEV Properties</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Annotate pools, vdevs, and leaf disks with inventory metadata (serial, WWN, warranty, location) stored as native ZFS user properties</p>
+                        </div>
+                        <div class="flex items-center text-teal-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage Properties</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
             <!-- ZFS Delegated Permissions -->
             {% if delegation_allowed and not cockpit_context %}
             <a href="/utils/zfs-delegation/" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">

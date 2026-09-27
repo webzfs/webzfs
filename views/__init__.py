@@ -8,6 +8,7 @@ import views.utils_files
 import views.utils_scrub
 import views.utils_zed
 import views.utils_zfs_delegation
+import views.utils_vdev_properties
 import views.utils_logs
 import views.zfs_pools
 import views.zfs_datasets
@@ -42,6 +43,7 @@ router.include_router(views.fleet.router)
 router.include_router(views.utils_scrub.router, prefix="/utils")
 router.include_router(views.utils_zed.router, prefix="/utils/zed")
 router.include_router(views.utils_zfs_delegation.router, prefix="/utils/zfs-delegation")
+router.include_router(views.utils_vdev_properties.router, prefix="/utils/vdev-properties")
 router.include_router(views.utils_shell.router, prefix="/utils/shell")
 router.include_router(views.utils_text.router, prefix="/utils/text")
 router.include_router(views.utils_files.router, prefix="/utils/files")

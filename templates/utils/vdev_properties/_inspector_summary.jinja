@@ -1,0 +1,48 @@
+{# Object header and summary block inside the inspector. Context: pool, node, v (node.props). #}
+{% if node.kind == 'pool' %}
+<div class="flex justify-between gap-3 items-start">
+    <div>
+        <h3 class="text-lg font-semibold text-text-primary mb-0">Pool: {{ pool }}</h3>
+        <p class="text-xs text-text-tertiary mt-1 mb-0">Pool-level metadata should stay limited to inventory ownership and shared conventions.</p>
+    </div>
+    <span class="badge badge-{{ 'success' if node.state == 'ONLINE' else 'warning' }}">{{ node.state }}</span>
+</div>
+<div class="card-nested">
+    <h4 class="text-sm font-semibold text-text-primary mb-1">{{ pool }}</h4>
+    <p class="text-xs text-text-secondary mb-0">Use pool scope for metadata that applies to the inventory as a whole rather than to an individual physical disk. Values are stored on the <code>root-0</code> vdev.</p>
+</div>
+
+{% elif node.kind == 'vdev' %}
+<div class="flex justify-between gap-3 items-start">
+    <div>
+        <h3 class="text-lg font-semibold text-text-primary mb-0">{{ node.name|upper }}</h3>
+        <p class="text-xs text-text-tertiary mt-1 mb-0">{{ node.type|upper }} / {{ node.section }} / {{ node.leaves|length }} leaf vdev{{ 's' if node.leaves|length != 1 else '' }}</p>
+    </div>
+    <span class="badge badge-{{ 'success' if node.state == 'ONLINE' else 'warning' }}">{{ node.state }}</span>
+</div>
+<div class="card-nested">
+    <h4 class="text-sm font-semibold text-text-primary mb-1">Top-level vdev metadata</h4>
+    <p class="text-xs text-text-secondary mb-0">Useful for role labels, chassis/enclosure grouping, service notes, and other metadata shared by this vdev group.</p>
+</div>
+
+{% else %}
+<div class="flex justify-between gap-3 items-start">
+    <div class="min-w-0">
+        <h3 class="text-lg font-semibold text-text-primary mb-0 break-all">{{ node.name }}</h3>
+        <p class="text-xs text-text-tertiary mt-1 mb-0 break-all">{{ node.group|upper }} / {{ node.path or 'no device path' }}{% if node.physpath %} / {{ node.physpath }}{% endif %}</p>
+    </div>
+    <span class="badge badge-{{ node.alert_class }} flex-shrink-0">{{ node.alert_label }}</span>
+</div>
+<div class="card-nested">
+    <h4 class="text-sm font-semibold text-text-primary mb-1">{{ v['webzfs:disk.model'] or 'Unknown model' }}</h4>
+    <p class="text-xs text-text-secondary mb-0 break-words">{{ v['webzfs:disk.location'] or 'No physical location' }} / {{ v['webzfs:disk.interface'] or 'Unknown interface' }} / {{ v['webzfs:disk.formfactor'] or 'Unknown form factor' }} / state {{ node.state }}</p>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+    {% for label, key in [('Serial', 'webzfs:disk.serial'), ('WWN', 'webzfs:disk.wwn'), ('Firmware', 'webzfs:disk.firmware')] %}
+    <div class="rounded-lg border border-border-subtle bg-bg-elevated-2/60 px-2.5 py-2">
+        <div class="text-[9.5px] uppercase tracking-wider text-text-tertiary">{{ label }}</div>
+        <div class="mt-1 text-[11px] font-bold font-mono break-all {% if v[key] %}text-text-primary{% else %}text-text-tertiary{% endif %}">{{ v[key] or '-' }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
