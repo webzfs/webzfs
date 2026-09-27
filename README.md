@@ -100,6 +100,8 @@ The installation script automatically:
 - Installs all dependencies and builds assets
 - Configures sudo permissions
 
+See [ports/README.md](ports/README.md) for detailed information about specific distros.
+
 **FreeBSD:**
 ```bash
 git clone https://github.com/webzfs/webzfs.git
