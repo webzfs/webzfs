@@ -187,6 +187,7 @@ async def create_dataset(
         if encryption:
             if not passphrase:
                 raise Exception("Passphrase is required when encryption is enabled")
+            dataset_service.validate_passphrase(passphrase)
             if passphrase != passphrase_confirm:
                 raise Exception("Passphrases do not match")
             
@@ -510,18 +511,21 @@ async def promote_dataset(
 async def load_encryption_key(
     request: Request,
     dataset_path: str,
-    key_location: Annotated[str, Form()] = ""
+    passphrase: Annotated[str, Form()] = ""
 ):
     """Load encryption key for a dataset"""
     try:
-        dataset_service.load_key(dataset_path, key_location if key_location else None)
+        dataset_service.load_key(
+            dataset_path,
+            passphrase=passphrase or None,
+        )
         return RedirectResponse(
             url=f"/zfs/datasets/{dataset_path}?message=Encryption key loaded successfully",
             status_code=303
         )
     except Exception as e:
         return RedirectResponse(
-            url=f"/zfs/datasets/{dataset_path}?error={str(e)}",
+            url=f"/zfs/datasets/{dataset_path}?error={quote(str(e))}",
             status_code=303
         )
 
@@ -540,7 +544,7 @@ async def unload_encryption_key(
         )
     except Exception as e:
         return RedirectResponse(
-            url=f"/zfs/datasets/{dataset_path}?error={str(e)}",
+            url=f"/zfs/datasets/{dataset_path}?error={quote(str(e))}",
             status_code=303
         )
 

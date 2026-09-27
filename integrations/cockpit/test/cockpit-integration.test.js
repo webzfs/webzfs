@@ -57,8 +57,40 @@ test("extracts and forwards the WebZFS token cookie", () => {
     session.updateFromHeaders({ "Set-Cookie": "token=abc.def; Path=/; HttpOnly" });
     assert.deepEqual(session.addCookieHeader({ "HX-Request": "true" }), {
         "HX-Request": "true",
-        Cookie: "token=abc.def",
+        Cookie: "token=abc.def; webzfs_context=cockpit",
     });
+});
+
+test("forwards the Cockpit context cookie before authentication", () => {
+    session.clear();
+    assert.deepEqual(session.addCookieHeader({ Accept: "text/html" }), {
+        Accept: "text/html",
+        Cookie: "webzfs_context=cockpit",
+    });
+});
+
+test("forces the Cockpit context marker on backend requests", () => {
+    assert.deepEqual(
+        transport.addCockpitContextHeader({
+            Accept: "text/html",
+            "x-webzfs-context": "native",
+        }),
+        {
+            Accept: "text/html",
+            "X-WebZFS-Context": "cockpit",
+        }
+    );
+});
+
+test("requires a context-cookie-aware installed backend", () => {
+    const projectRoot = path.resolve(__dirname, "../../..");
+    const installer = fs.readFileSync(
+        path.join(projectRoot, "integrations/cockpit/install.sh"),
+        "utf8"
+    );
+
+    assert.match(installer, /COCKPIT_CONTEXT_COOKIE/);
+    assert.match(installer, /update_linux_cockpit\.sh/);
 });
 
 test("clears the token when WebZFS deletes the cookie", () => {
@@ -163,7 +195,8 @@ test("builds an authenticated http-stream2 external channel URL", () => {
         path: "/system-info-data",
         headers: {
             "HX-Request": "true",
-            Cookie: "token=secret",
+            "X-WebZFS-Context": "cockpit",
+            Cookie: "token=secret; webzfs_context=cockpit",
         },
     });
 });
@@ -185,7 +218,8 @@ test("uses Cockpit's single request object API", async () => {
         method: "GET",
         headers: {
             Accept: "text/html",
-            Cookie: "token=secret",
+            "X-WebZFS-Context": "cockpit",
+            Cookie: "token=secret; webzfs_context=cockpit",
         },
         body: "",
         path: "/",
@@ -222,7 +256,8 @@ test("forwards HTMX POST headers and body through cockpit.http", async () => {
         headers: {
             "HX-Request": "true",
             "Content-Type": "application/x-www-form-urlencoded",
-            Cookie: "token=post-secret",
+            "X-WebZFS-Context": "cockpit",
+            Cookie: "token=post-secret; webzfs_context=cockpit",
         },
         body: "file_path=%2Ftmp%2Ftest&content=saved",
         path: "/utils/text/save",
@@ -514,8 +549,9 @@ test("routes fetch requests through the bridge and parses JSON", async () => {
 test("parses server-sent event messages from a Cockpit HTTP stream", async () => {
     let streamRequest = null;
     global.cockpit.http = () => ({
-        request() {
+        request(requestOptions) {
             streamRequest = makeHttpRequest(200, { "Content-Type": "text/event-stream" }, "");
+            streamRequest.requestOptions = requestOptions;
             return streamRequest;
         },
     });
@@ -528,6 +564,7 @@ test("parses server-sent event messages from a Cockpit HTTP stream", async () =>
     streamRequest.streamCallback('data: {"execution_id":1}\n\n');
 
     assert.equal(await message, '{"execution_id":1}');
+    assert.match(streamRequest.requestOptions.headers.Cookie, /webzfs_context=cockpit/);
     eventSource.close();
 });
 
@@ -557,6 +594,7 @@ test("builds binary download requests with UTF-8 request bodies", async () => {
     assert.equal(requests.length, 1);
     assert.deepEqual(requests[0].options, { binary: true });
     assert.equal(requests[0].request.method, "POST");
+    assert.match(requests[0].request.headers.Cookie, /webzfs_context=cockpit/);
     assert.equal(
         Buffer.from(requests[0].request.body).toString("utf8"),
         "item_logs=1"

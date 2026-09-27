@@ -1,0 +1,200 @@
+{% extends "layout.jinja" %}
+{% set active_page = 'utils' %}
+{% block title %}{{ labels[action] }}{% endblock %}
+{% block content %}
+<div class="space-y-6" hx-boost="false">
+
+    <!-- Breadcrumb -->
+    <nav class="text-sm text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <a href="{{ base_url }}/?{{ {'dataset':state.dataset} | urlencode }}" class="hover:text-primary-400">ZFS Delegated Permissions</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">{{ labels[action] }}</span>
+    </nav>
+
+    <div>
+        <h1 class="text-3xl font-bold text-text-primary">{{ labels[action] }}</h1>
+        <p class="text-text-secondary mt-1">Dataset: <code class="text-sm">{{ state.dataset }}</code>. Changes are reviewed before execution.</p>
+    </div>
+
+    {% if error %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded">{{ error }}</div>
+    {% endif %}
+
+    {% if action == 'grant' %}
+    <form method="get" action="{{ base_url }}/action" class="card">
+        <div class="card-body">
+            <input type="hidden" name="dataset" value="{{ state.dataset }}"><input type="hidden" name="action" value="grant">
+            <div class="flex flex-wrap gap-3 items-end">
+                <div>
+                    <label for="scope-select" class="block text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">Scope</label>
+                    <select id="scope-select" name="scope" class="form-select">
+                        {% for key, label in [('local','Local only (-l)'),('descendants','Descendants only (-d)'),('both','Local + descendants (default)')] %}
+                        <option value="{{ key }}" {% if key == scope %}selected{% endif %} {% if state.dataset_type == 'volume' and key != 'local' %}disabled{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn-secondary">Update Scope</button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+
+    <form method="post" action="{{ base_url }}/review" class="card">
+        <div class="card-body space-y-5">
+            <input type="hidden" name="dataset" value="{{ state.dataset }}">
+            <input type="hidden" name="action" value="{{ action }}">
+            <input type="hidden" name="entry" value="{{ row.key if row else '' }}">
+            <input type="hidden" name="scope" value="{{ scope }}">
+
+            {% if row %}
+            <div class="bg-bg-elevated-2 rounded-lg p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="font-semibold text-text-primary">{{ row.kind }} {{ row.principal_display or row.principal }}</span>
+                    <span class="badge-primary text-xs">{{ row.scope }}</span>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                    {% for token in row.tokens %}
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono {% if token.startswith('@') %}bg-info-500/15 text-info-400 border border-info-500/30{% else %}bg-bg-elevated-3 text-text-secondary border border-border-subtle{% endif %}">{{ token }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if action == 'grant' %}
+            <div>
+                <label for="principal-kind" class="block text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">Principal type</label>
+                <select id="principal-kind" name="kind" class="form-select"><option value="user">User</option><option value="group">Group</option><option value="everyone">Everyone</option></select>
+            </div>
+            {% endif %}
+
+            {% if action in ['grant','set_create'] %}
+            <div>
+                <label for="principal" class="block text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">{{ 'Set name (starts with @)' if action == 'set_create' else 'Unix account name (leave empty for Everyone)' }}</label>
+                <input id="principal" name="principal" class="form-input" autocomplete="off" {% if action == 'set_create' %}required maxlength="64" placeholder="@backup"{% else %}placeholder="alice"{% endif %}>
+            </div>
+            {% endif %}
+            {% if action == 'pool' %}
+            <div>
+                <label for="pool-value" class="block text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">Pool delegation</label>
+                <select id="pool-value" name="value" class="form-select">
+                    <option value="{{ 'off' if state.pool_enabled == 'on' else 'on' }}">{{ 'Disable' if state.pool_enabled == 'on' else 'Enable' }} delegation on {{ state.pool }}</option>
+                </select>
+            </div>
+            <div class="bg-warning-900/30 border-2 border-warning-500/50 px-4 py-3 rounded flex gap-3">
+                <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <div><strong class="text-warning-400">Pool-wide effect</strong><p class="text-text-secondary text-sm mt-1">This affects all stored grants in the pool. Disabling delegation does not delete grant metadata.</p></div>
+            </div>
+            {% elif action in ['revoke','set_delete'] %}
+            <div class="bg-danger-900/30 border-2 border-danger-500/50 px-4 py-3 rounded flex gap-3">
+                <svg class="w-5 h-5 text-danger-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <div>
+                    {% if action == 'revoke' %}<strong class="text-danger-400">Revoke entire row</strong><p class="text-text-secondary text-sm mt-1">Every token in this row will be removed with its existing scope. Other rows for this principal remain.</p>
+                    {% else %}<strong class="text-danger-400">Delete permission set</strong><p class="text-text-secondary text-sm mt-1">The set definition will be removed. Known references block deletion.</p>{% endif %}
+                </div>
+            </div>
+            {% else %}
+            <fieldset>
+                <legend class="text-xs font-medium text-text-secondary uppercase tracking-wider mb-3">Select Permissions</legend>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {% for token, reason in choices %}
+                    <label class="flex items-start gap-2 p-2 rounded hover:bg-bg-elevated-2 transition-colors cursor-pointer {% if reason %}opacity-50 cursor-not-allowed{% endif %}">
+                        <input type="checkbox" name="permissions" value="{{ token }}" {% if reason %}disabled{% endif %} class="mt-0.5 accent-primary-500">
+                        <div>
+                            <code class="text-sm text-text-primary">{{ token }}</code>
+                            {% if reason %}<span class="block text-xs text-text-tertiary">{{ reason }}</span>{% endif %}
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            {% endif %}
+            {% if action in ['grant','add','set_create','set_add'] %}
+            <div class="card-nested bg-warning-500/10 border-warning-500/30">
+                <div class="flex gap-3">
+                    <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <p class="text-sm text-text-secondary">Delegations can grant destructive operations or further delegation through <code>allow</code>. Mount-dependent operations require additional native permissions on Linux.</p>
+                </div>
+            </div>
+            {% endif %}
+            {% if not confirmation %}
+            <div class="flex gap-3 pt-2">
+                <button type="submit" class="btn-primary">
+                    <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Review Exact Command
+                </button>
+                <a class="btn-secondary" href="{{ base_url }}/?{{ {'dataset':state.dataset} | urlencode }}">Cancel</a>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if confirmation %}
+    <!-- Command Preview (inline, matching pool/dataset create pattern) -->
+    <div class="card">
+        <div class="card-body space-y-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-info-500/10 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-semibold text-text-primary">Command Preview</h2>
+                        <p class="text-xs text-text-tertiary">The exact native command that will be executed</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-bg-base border border-border-subtle rounded-lg p-4 font-mono text-sm">
+                <span class="text-text-tertiary select-none">$ </span><span class="text-success-400">{{ command }}</span>
+            </div>
+
+            {% if plan.empties_set %}
+            <div class="bg-warning-900/30 border-2 border-warning-500/50 px-4 py-3 rounded flex gap-3">
+                <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <div><strong class="text-warning-400">Set will be deleted</strong><p class="text-text-secondary text-sm mt-1">Removing the last token removes the entire permission-set definition.</p></div>
+            </div>
+            {% endif %}
+
+            {% if plan.scan %}
+            <div class="bg-bg-elevated-2 rounded-lg p-4 border border-border-subtle">
+                <span class="text-xs font-medium text-text-secondary uppercase tracking-wider">Reference scan</span>
+                <p class="text-sm text-text-primary mt-1">{{ plan.scan.incomplete or 'Complete. No references found in the source and its descendants.' }}</p>
+                {% if plan.scan.references %}
+                <ul class="mt-2 text-sm text-text-secondary list-disc list-inside">
+                    {% for ref in plan.scan.references %}<li class="font-mono text-xs">{{ ref }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <form method="post" action="{{ base_url }}/apply" class="space-y-4">
+                <input type="hidden" name="confirmation" value="{{ confirmation }}">
+                {% if plan.scan and plan.scan.incomplete %}
+                <label class="flex items-start gap-2 text-warning-400 cursor-pointer">
+                    <input type="checkbox" name="acknowledge_scan" value="true" required class="mt-0.5 accent-warning-500">
+                    <span class="text-sm">I understand this incomplete reference scan may leave ineffective grants or set references behind.</span>
+                </label>
+                {% endif %}
+                <div class="flex items-start gap-2 text-xs text-info-400 bg-info-900/20 rounded-lg p-3">
+                    <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p>This confirmation expires in five minutes and is bound to your login and this exact state. Submission revalidates under the shared lock.</p>
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button class="btn-primary" type="submit">
+                        <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        Execute Confirmed Change
+                    </button>
+                    <a class="btn-secondary" href="{{ base_url }}/?{{ {'dataset':state.dataset} | urlencode }}">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

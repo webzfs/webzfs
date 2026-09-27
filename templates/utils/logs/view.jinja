@@ -47,6 +47,12 @@
     </div>
     {% endif %}
 
+    {% if category == 'shell_sessions' %}
+    <div class="card-nested bg-info-900/30 border-info-900">
+        <p class="text-sm text-text-secondary mb-0"><strong class="text-info-400">Lifecycle audit:</strong> this log records every native terminal open and close, including sessions where full recording was disabled. The <code>recording</code> field reports whether a signed Shell Session History archive was created, and <code>session_id</code> is present only for recorded sessions.</p>
+    </div>
+    {% endif %}
+
     <!-- File Info & Filters -->
     <div class="card">
         <div class="card-body">

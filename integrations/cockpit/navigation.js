@@ -13,6 +13,7 @@
         "/utils/ssh",
         "/utils/support-bundle",
         "/utils/text",
+        "/utils/zfs-delegation",
     ]);
 
     function canonicalizePagePath(path) {

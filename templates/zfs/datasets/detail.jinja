@@ -451,6 +451,11 @@
         </div>
     </div>
 
+    {% set is_encrypted = 'encryption' in dataset.properties and dataset.properties.encryption.value not in ['off', '-'] %}
+    {% set is_dataset_mounted = dataset.properties.type.value == 'filesystem' and dataset.properties.mounted.value == 'yes' %}
+    {% set is_key_loaded = 'keystatus' in dataset.properties and dataset.properties.keystatus.value == 'available' %}
+    {% set uses_passphrase_prompt = ('keylocation' not in dataset.properties or dataset.properties.keylocation.value == 'prompt') and ('keyformat' not in dataset.properties or dataset.properties.keyformat.value == 'passphrase') %}
+
     <!-- Action Buttons -->
     <div class="card">
         <div class="card-body">
@@ -524,17 +529,43 @@
                         Promote
                     </button>
                 </form>
-                {% if 'encryption' in dataset.properties and dataset.properties.encryption.value not in ['off', '-'] %}
-                <form method="post" action="/zfs/datasets/{{ dataset.name }}/load-key">
-                    <button type="submit" class="btn-info w-full inline-flex items-center justify-center gap-2"
-                            title="Load encryption key">
+                {% if is_encrypted %}
+                {% if not is_dataset_mounted and not is_key_loaded and uses_passphrase_prompt %}
+                <button type="button" class="btn-info w-full inline-flex items-center justify-center gap-2"
+                        onclick="showLoadKeyModal()"
+                        title="Load encryption key">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
+                        </svg>
+                        Load Key
+                </button>
+                {% elif not is_dataset_mounted and not is_key_loaded %}
+                <form method="post" action="/zfs/datasets/{{ dataset.name }}/load-key"
+                      class="w-full" hx-boost="false"
+                      onsubmit="return prepareKeyLoad(event)">
+                    <button type="submit" data-load-key-button
+                            class="btn-info w-full inline-flex items-center justify-center gap-2"
+                            title="Load encryption key from {{ dataset.properties.keylocation.value }}">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
                         </svg>
                         Load Key
                     </button>
                 </form>
+                {% endif %}
+                {% if is_key_loaded %}
                 <form method="post" action="/zfs/datasets/{{ dataset.name }}/unload-key" id="form-unload-key" class="w-full">
+                    {% if is_dataset_mounted %}
+                    <div class="w-full" title="Dataset must be unmounted before unloading its key">
+                        <button type="button" disabled
+                                class="btn-secondary w-full inline-flex items-center justify-center gap-2 opacity-50 cursor-not-allowed">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                            </svg>
+                            Unload Key
+                        </button>
+                    </div>
+                    {% else %}
                     <button type="button" class="btn-secondary w-full inline-flex items-center justify-center gap-2"
                             onclick="showConfirm('confirm-unload-key')"
                             title="Unload encryption key">
@@ -543,7 +574,9 @@
                         </svg>
                         Unload Key
                     </button>
+                    {% endif %}
                 </form>
+                {% endif %}
                 <form method="post" action="/zfs/datasets/{{ dataset.name }}/change-key" id="form-change-key" class="w-full">
                     <button type="button" class="btn-warning w-full inline-flex items-center justify-center gap-2"
                             onclick="showConfirm('confirm-change-key')"
@@ -616,7 +649,72 @@
 {% set confirm_action = 'document.getElementById("form-promote").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
-{% if 'encryption' in dataset.properties and dataset.properties.encryption.value not in ['off', '-'] %}
+{% if is_encrypted %}
+{% if not is_dataset_mounted and not is_key_loaded and uses_passphrase_prompt %}
+<div id="load-key-modal" class="modal-overlay" style="display: none;"
+     role="dialog" aria-modal="true" aria-labelledby="load-key-title">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" onclick="hideLoadKeyModal()"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="modal modal-sm">
+                <h3 id="load-key-title" class="text-xl font-semibold text-text-primary mb-2">
+                    Load Encryption Key
+                </h3>
+                <p class="text-text-secondary mb-6">
+                    Enter the passphrase for <strong class="font-mono text-text-primary">{{ dataset.name }}</strong>.
+                    Loading the key does not mount the dataset.
+                </p>
+                <form method="post" action="/zfs/datasets/{{ dataset.name }}/load-key"
+                      hx-boost="false" class="space-y-4"
+                      onsubmit="return prepareKeyLoad(event)">
+                    <div>
+                        <label for="load-key-passphrase" class="form-label">Passphrase</label>
+                        <input type="password" id="load-key-passphrase" name="passphrase"
+                               class="form-input" minlength="8" required autocomplete="current-password">
+                    </div>
+                    <div class="flex gap-3">
+                        <button type="button" class="btn-secondary flex-1" onclick="hideLoadKeyModal()">
+                            Cancel
+                        </button>
+                        <button type="submit" data-load-key-button
+                                class="btn-info flex-1 inline-flex items-center justify-center gap-2">
+                            Load Key
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not is_dataset_mounted and not is_key_loaded %}
+<div id="load-key-progress-overlay" class="modal-overlay" style="display: none;"
+     role="dialog" aria-modal="true" aria-busy="true"
+     aria-labelledby="load-key-progress-title"
+     aria-describedby="load-key-progress-message">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="modal modal-sm text-center">
+                <div class="flex items-center justify-center mb-4">
+                    <div class="loading-spinner loading-spinner-lg" aria-hidden="true"></div>
+                </div>
+                <h3 id="load-key-progress-title" class="text-xl font-semibold text-text-primary mb-2">
+                    Loading Encryption Key
+                </h3>
+                <p id="load-key-progress-message" class="text-text-secondary">
+                    Loading the encryption key for
+                    <strong class="font-mono text-text-primary">{{ dataset.name }}</strong>.
+                    Please wait. The operation will stop if the configured key location does not respond.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if is_key_loaded and not is_dataset_mounted %}
 {% set id = 'confirm-unload-key' %}
 {% set title = 'Unload Encryption Key' %}
 {% set message = 'Unload encryption key for ' ~ dataset.name ~ '? The dataset will remain encrypted but unmountable until the key is loaded again.' %}
@@ -624,6 +722,7 @@
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-unload-key").submit()' %}
 {% include 'partials/confirm.jinja' %}
+{% endif %}
 
 {% set id = 'confirm-change-key' %}
 {% set title = 'Change Encryption Key' %}
@@ -643,6 +742,42 @@
 {% endif %}
 
 <script>
+var keyLoadSubmitting = false;
+
+function showLoadKeyModal() {
+    var modal = document.getElementById('load-key-modal');
+    if (!modal) return;
+    modal.style.display = 'block';
+    var passphrase = document.getElementById('load-key-passphrase');
+    if (passphrase) passphrase.focus();
+}
+
+function hideLoadKeyModal() {
+    var modal = document.getElementById('load-key-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function prepareKeyLoad(event) {
+    var form = event.currentTarget;
+    if (!form || keyLoadSubmitting) return false;
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return false;
+    }
+
+    keyLoadSubmitting = true;
+    hideLoadKeyModal();
+
+    document.querySelectorAll('[data-load-key-button]').forEach(function(button) {
+        button.disabled = true;
+        button.classList.add('opacity-50', 'cursor-not-allowed');
+    });
+
+    var overlay = document.getElementById('load-key-progress-overlay');
+    if (overlay) overlay.style.display = 'block';
+    return true;
+}
+
 // Parse human-readable size string (e.g., "160G", "1T", "48.7M") to bytes
 function parseSizeToBytes(sizeStr) {
     if (!sizeStr) return 0;
