@@ -1,0 +1,65 @@
+{# Edit Custom Properties modal. Loaded via HTMX into #vdev-modal-container and self-opens. Context: pool, node, selected, groups, base_url. #}
+{% set v = node.props %}
+{% set close = "open = false; document.getElementById('vdev-modal-container').innerHTML = ''" %}
+<div id="vdev-edit-modal" class="modal-overlay" x-data="{ open: true }" x-show="open" x-on:keydown.escape.window="{{ close }}">
+  <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" x-on:click="{{ close }}"></div>
+  <div class="fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex min-h-full items-center justify-center p-4">
+      <div class="modal modal-lg w-full max-w-3xl" x-on:click.stop>
+
+        <div class="flex items-start justify-between gap-4 mb-3 pb-3 border-b border-border-subtle">
+          <div class="min-w-0">
+            <h3 class="text-lg font-semibold text-text-primary mb-0">Edit Custom Properties</h3>
+            <p class="text-xs text-text-tertiary mt-1 mb-0 break-all">
+              {% if node.kind == 'pool' %}Pool {{ pool }} (root-0){% elif node.kind == 'vdev' %}{{ node.name|upper }} / {{ node.type|upper }}{% else %}{{ node.name }} / {{ node.group|upper }}{% endif %}
+              / values are stored as native ZFS vdev user properties.
+            </p>
+          </div>
+          <button type="button" class="text-text-secondary hover:text-text-primary rounded-lg p-1.5 transition-colors flex-shrink-0" x-on:click="{{ close }}" aria-label="Close">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <form method="post" action="{{ base_url }}/save" hx-boost="false" id="vdev-edit-form">
+          <input type="hidden" name="pool" value="{{ pool }}">
+          <input type="hidden" name="selected" value="{{ selected }}">
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {% for group_id, group_label, definitions in groups %}
+            <div class="md:col-span-2 text-xs uppercase tracking-wider font-semibold text-text-secondary {% if not loop.first %}mt-2{% endif %}">{{ group_label }}</div>
+            {% for d in definitions %}
+            <div class="{% if d.value_type == 'textarea' %}md:col-span-2{% endif %}">
+              <label for="field-{{ d.form_name }}" class="form-label mb-1 text-xs">{{ d.label }} <code class="text-[9.5px] text-text-tertiary bg-transparent px-1">{{ d.key }}</code></label>
+              {% if d.value_type == 'enum' %}
+              <select id="field-{{ d.form_name }}" name="{{ d.form_name }}" class="form-select text-sm">
+                <option value="">Not set</option>
+                {% for option in d.enum_values %}<option value="{{ option }}" {% if v[d.key] == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+              </select>
+              {% elif d.value_type == 'date' %}
+              <input id="field-{{ d.form_name }}" type="date" name="{{ d.form_name }}" class="form-input text-sm" value="{{ v[d.key] }}">
+              {% elif d.value_type == 'textarea' %}
+              <textarea id="field-{{ d.form_name }}" name="{{ d.form_name }}" rows="4" class="form-textarea text-sm" maxlength="4096">{{ v[d.key] }}</textarea>
+              {% else %}
+              <input id="field-{{ d.form_name }}" type="text" name="{{ d.form_name }}" class="form-input text-sm {% if d.key.endswith(('serial', 'wwn', 'firmware')) %}font-mono{% endif %}" value="{{ v[d.key] }}" maxlength="2048" autocomplete="off">
+              {% endif %}
+              {% if d.description %}<p class="form-help text-xs mb-0">{{ d.description }}</p>{% endif %}
+            </div>
+            {% endfor %}
+            {% endfor %}
+          </div>
+
+          <p class="text-xs text-text-tertiary mt-3 mb-0">Clearing a field and saving removes that property from ZFS. Only changed values are written; each change runs one <code>zpool set</code>.</p>
+
+          <div class="mt-3 rounded-lg border border-border-default bg-bg-base px-3 py-2 font-mono text-[11px] text-primary-300 break-all">
+            Example: zpool set {{ groups[0][2][0].key }}='&lt;value&gt;' {{ pool }} {{ 'root-0' if node.kind == 'pool' else node.name }}
+          </div>
+
+          <div class="flex justify-end gap-2 pt-4 mt-4 border-t border-border-subtle">
+            <button type="button" class="btn-secondary" x-on:click="{{ close }}">Cancel</button>
+            <button type="submit" class="btn-primary">Save Properties</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

@@ -83,6 +83,118 @@
                 </div>
             </a>
 
+            <!-- ZED Event Scripts -->
+            <a href="/utils/zed" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-cyan-500/10 rounded-lg group-hover:bg-cyan-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-info-400 transition-colors">ZED Event Scripts</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Manage ZFS Event Daemon ZEDLETs: enable packaged handlers, create custom event hooks, and edit zed.rc</p>
+                        </div>
+                        <div class="flex items-center text-info-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage ZEDLETs</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Custom VDEV Properties -->
+            <a href="/utils/vdev-properties/" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-teal-500/10 rounded-lg group-hover:bg-teal-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 12h.01M7 17h.01M11 7h6M11 12h6M11 17h6M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-teal-400 transition-colors">Custom VDEV Properties</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Annotate pools, vdevs, and leaf disks with inventory metadata (serial, WWN, warranty, location) stored as native ZFS user properties</p>
+                        </div>
+                        <div class="flex items-center text-teal-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage Properties</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- ZFS Delegated Permissions -->
+            {% if delegation_allowed and not cockpit_context %}
+            <a href="/utils/zfs-delegation/" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.075s;">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-indigo-500/10 rounded-lg group-hover:bg-indigo-500/20 transition-colors flex-shrink-0">
+                            <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xl font-semibold text-text-primary group-hover:text-indigo-400 transition-colors">ZFS Delegated Permissions</h2>
+                            <p class="text-text-secondary text-sm mt-0.5">Manage Unix user and group grants and reusable permission sets. Existing create-time configuration is read-only.</p>
+                        </div>
+                        <div class="flex items-center text-indigo-400 font-medium gap-2 flex-shrink-0">
+                            <span class="hidden sm:inline">Manage Delegations</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </a>
+            {% elif cockpit_context %}
+            <div class="card opacity-60 animate-fade-in" style="animation-delay: 0.075s;" aria-disabled="true">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-bg-elevated-2 rounded-lg flex-shrink-0">
+                            <svg class="w-7 h-7 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-xl font-semibold text-text-secondary">ZFS Delegated Permissions</h2>
+                                <span class="badge-secondary">Not available in Cockpit</span>
+                            </div>
+                            <p class="text-text-tertiary text-sm mt-0.5">Manage Unix user and group grants and reusable permission sets. Existing create-time configuration is read-only.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card opacity-60 animate-fade-in" style="animation-delay: 0.075s;" aria-disabled="true">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-bg-elevated-2 rounded-lg flex-shrink-0">
+                            <svg class="w-7 h-7 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-xl font-semibold text-text-secondary">ZFS Delegated Permissions</h2>
+                                <span class="badge-secondary">Access not granted</span>
+                            </div>
+                            <p class="text-text-tertiary text-sm mt-0.5">Manage Unix user and group grants and reusable permission sets. Existing create-time configuration is read-only.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- SSH Connections -->
             <a href="/utils/ssh" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.1s;">
                 <div class="card-body py-4">
@@ -176,7 +288,47 @@
             </a>
 
             <!-- Shell -->
-            <a href="/utils/shell" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.25s;">
+            {% if cockpit_context %}
+            <div class="card opacity-60 animate-fade-in" style="animation-delay: 0.25s;" aria-disabled="true">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-bg-elevated-2 rounded-lg flex-shrink-0">
+                            <svg class="w-7 h-7 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-xl font-semibold text-text-secondary">Shell</h2>
+                                <span class="badge-secondary">Not available in Cockpit</span>
+                            </div>
+                            <p class="text-text-tertiary text-sm mt-0.5">Use Cockpit's built-in Terminal for shell access on this host.</p>
+                        </div>
+                        <button type="button" class="btn-secondary flex-shrink-0" onclick="WebZFSApp.openCockpitTerminal()">Open Cockpit Terminal</button>
+                    </div>
+                </div>
+            </div>
+            {% elif not shell_allowed %}
+            <div class="card opacity-60 animate-fade-in" style="animation-delay: 0.25s;" aria-disabled="true">
+                <div class="card-body py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-bg-elevated-2 rounded-lg flex-shrink-0">
+                            <svg class="w-7 h-7 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-xl font-semibold text-text-secondary">Shell</h2>
+                                <span class="badge-secondary">Access not granted</span>
+                            </div>
+                            <p class="text-text-tertiary text-sm mt-0.5">Your username is not included in the administrator-managed terminal allowlist.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <a href="/utils/shell" hx-boost="false" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.25s;">
                 <div class="card-body py-4">
                     <div class="flex items-center gap-4">
                         <div class="p-3 bg-red-500/10 rounded-lg group-hover:bg-red-500/20 transition-colors flex-shrink-0">
@@ -197,6 +349,7 @@
                     </div>
                 </div>
             </a>
+            {% endif %}
 
             <!-- Text Editor -->
             <a href="/utils/text" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group" style="animation-delay: 0.3s;">
@@ -209,7 +362,7 @@
                         </div>
                         <div class="flex-1 min-w-0">
                             <h2 class="text-xl font-semibold text-text-primary group-hover:text-primary-400 transition-colors">Text Editor</h2>
-                            <p class="text-text-secondary text-sm mt-0.5">Edit text files and configuration files directly from your browser with syntax highlighting</p>
+                            <p class="text-text-secondary text-sm mt-0.5">Edit text files and configuration files directly from your browser</p>
                         </div>
                         <div class="flex items-center text-primary-400 font-medium gap-2 flex-shrink-0">
                             <span class="hidden sm:inline">Edit Files</span>

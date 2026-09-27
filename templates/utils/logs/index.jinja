@@ -45,7 +45,7 @@
     </div>
 
     <!-- Log Files Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         
         <!-- Authentication Log -->
         {% set auth_info = logs_info.get('auth', {}) %}
@@ -202,6 +202,65 @@
                 </div>
             </div>
         </div>
+
+        <!-- Shell Session History -->
+        {% if cockpit_context %}
+        <div class="card opacity-60 animate-fade-in" aria-disabled="true">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="p-3 bg-bg-elevated-2 rounded-lg">
+                        <svg class="w-8 h-8 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-secondary">Shell Session History</h2>
+                        <span class="badge-secondary">Not available in Cockpit</span>
+                    </div>
+                </div>
+                <p class="text-text-tertiary text-sm mb-0">WebZFS does not start, record, or expose terminal sessions inside Cockpit. Cockpit Terminal auditing must be configured separately.</p>
+            </div>
+        </div>
+        {% elif not shell_history_allowed %}
+        <div class="card opacity-60 animate-fade-in" aria-disabled="true">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="p-3 bg-bg-elevated-2 rounded-lg">
+                        <svg class="w-8 h-8 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-secondary">Shell Session History</h2>
+                        <span class="badge-secondary">Audit access not granted</span>
+                    </div>
+                </div>
+                <p class="text-text-tertiary text-sm mb-0">Your username is not included in the administrator-managed shell recording auditor allowlist.</p>
+            </div>
+        </div>
+        {% else %}
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="p-3 bg-warning-500/10 border border-warning-500/20 rounded-lg">
+                        <svg class="w-8 h-8 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-text-primary">Shell Session History</h2>
+                        <span class="{% if shell_history.recording_enabled %}badge-warning{% else %}badge-secondary{% endif %}">{% if shell_history.recording_enabled %}Recording enabled{% else %}Recording disabled{% endif %}</span>
+                    </div>
+                </div>
+                <div class="space-y-2 text-sm mb-6">
+                    <div class="flex justify-between"><span class="text-text-secondary">Sessions:</span><span class="text-text-primary">{{ shell_history.session_count }}</span></div>
+                    <div class="flex justify-between"><span class="text-text-secondary">Archive Size:</span><span class="text-text-primary">{{ shell_history.total_size_display }}</span></div>
+                    <div class="flex justify-between"><span class="text-text-secondary">Integrity:</span><span class="{% if shell_history.all_valid and shell_history.ledger.valid %}text-success-400{% else %}text-danger-400{% endif %}">{% if shell_history.all_valid and shell_history.ledger.valid %}Verified{% else %}Attention required{% endif %}</span></div>
+                </div>
+                <a href="/utils/logs/shell-history" class="btn-primary w-full">View History</a>
+            </div>
+        </div>
+        {% endif %}
 
     </div>
 

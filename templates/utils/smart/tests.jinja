@@ -54,7 +54,7 @@
                 </div>
             </div>
             <div class="mt-4">
-                <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/test/abort" class="inline" id="form-abort-test">
+                <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/test/abort" class="inline" id="form-abort-test" hx-boost="false">
                     <button type="button" 
                             class="bg-red-600 hover:bg-red-700 text-text-primary px-4 py-2 rounded"
                             onclick="showConfirm('modal-abort-test')">
@@ -77,7 +77,7 @@
                         Quick test (typically 1-2 minutes) that checks electrical and mechanical performance 
                         and reads a portion of the disk surface.
                     </p>
-                    <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/test/short" id="form-short-test">
+                    <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/test/short" id="form-short-test" hx-boost="false">
                         <button type="button" 
                                 class="bg-blue-600 hover:bg-blue-700 text-text-primary px-6 py-2 rounded w-full"
                                 onclick="showConfirm('modal-short-test')">
@@ -93,7 +93,7 @@
                         Comprehensive test (can take several hours) that reads the entire disk surface 
                         and performs additional diagnostic tests.
                     </p>
-                    <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/test/long" id="form-long-test">
+                    <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/test/long" id="form-long-test" hx-boost="false">
                         <button type="button" 
                                 class="bg-green-600 hover:bg-green-700 text-text-primary px-6 py-2 rounded w-full"
                                 onclick="showConfirm('modal-long-test')">
@@ -179,30 +179,27 @@
 </div>
 
 <!-- Confirmation Modals -->
-{% set modal_id = 'modal-abort-test' %}
-{% set modal_title = 'Abort Test' %}
-{% set modal_message = 'Abort running test on ' + disk_path + '?' %}
+{% set id = 'modal-abort-test' %}
+{% set title = 'Abort Test' %}
+{% set message = 'Abort running test on ' + disk_path + '?' %}
 {% set confirm_text = 'Abort' %}
 {% set confirm_class = 'danger' %}
-{% set action_url = '/smart/disk/' + disk_path.lstrip('/') + '/test/abort' %}
-{% set method = 'post' %}
+{% set confirm_action = 'document.getElementById("form-abort-test").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
-{% set modal_id = 'modal-short-test' %}
-{% set modal_title = 'Start Short Test' %}
-{% set modal_message = 'Start short test on ' + disk_path + '?' %}
+{% set id = 'modal-short-test' %}
+{% set title = 'Start Short Test' %}
+{% set message = 'Start short test on ' + disk_path + '?' %}
 {% set confirm_text = 'Start' %}
 {% set confirm_class = 'primary' %}
-{% set action_url = '/smart/disk/' + disk_path.lstrip('/') + '/test/short' %}
-{% set method = 'post' %}
+{% set confirm_action = 'document.getElementById("form-short-test").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
-{% set modal_id = 'modal-long-test' %}
-{% set modal_title = 'Start Long Test' %}
-{% set modal_message = 'Start long test on ' + disk_path + '? This may take several hours.' %}
+{% set id = 'modal-long-test' %}
+{% set title = 'Start Long Test' %}
+{% set message = 'Start long test on ' + disk_path + '? This may take several hours.' %}
 {% set confirm_text = 'Start' %}
 {% set confirm_class = 'primary' %}
-{% set action_url = '/smart/disk/' + disk_path.lstrip('/') + '/test/long' %}
-{% set method = 'post' %}
+{% set confirm_action = 'document.getElementById("form-long-test").submit()' %}
 {% include 'partials/confirm.jinja' %}
 {% endblock %}

@@ -1,0 +1,27 @@
+{# One leaf vdev row. Expects `leaf` and `selected` in context. Inline chips are filtered by data-inline-modes. #}
+{% set v = leaf.props %}
+{% set leaf_search = (leaf.name ~ ' ' ~ leaf.path ~ ' ' ~ leaf.physpath ~ ' ' ~ leaf.state ~ ' ' ~ (v.values()|join(' ')))|lower %}
+<div class="border rounded-xl cursor-pointer transition-colors hover:border-border-strong p-2.5 bg-bg-elevated {% if selected == leaf.token %}border-primary-400 ring-1 ring-primary-400/30{% else %}border-border-subtle{% endif %} {% if leaf.missing %}border-dashed{% endif %}"
+     data-node="{{ leaf.token }}" data-leaf-search="{{ leaf_search }}"
+     onclick="event.stopPropagation(); selectVdevNode('{{ leaf.token }}')" role="button" tabindex="0"
+     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();selectVdevNode('{{ leaf.token }}')}">
+    <div class="flex justify-between items-center gap-3 flex-wrap">
+        <div class="flex items-center gap-3 min-w-0">
+            <div class="w-9 h-9 rounded-lg border border-border-default bg-bg-elevated-2 flex items-center justify-center text-primary-400 flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke-width="2"/><path stroke-width="2" d="M4 16h16"/></svg>
+            </div>
+            <div class="min-w-0">
+                <div class="text-[12.5px] font-bold text-text-primary truncate max-w-[420px]" title="{{ leaf.name }}">{{ leaf.name }}</div>
+                <div class="text-[10.5px] text-text-tertiary truncate max-w-[420px]" title="{{ leaf.path }}">{{ leaf.path or 'no device path' }}</div>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5 justify-end">
+            <span class="badge badge-{{ leaf.alert_class }}">{{ leaf.alert_label }}</span>
+            {% if leaf.state != 'ONLINE' %}<span class="badge badge-danger">{{ leaf.state }}</span>{% endif %}
+            {% if v['webzfs:disk.model'] %}<span class="inline-flex items-center px-2 py-0.5 rounded-full border border-border-default bg-bg-elevated-3/40 text-[10.5px] font-mono text-text-secondary whitespace-nowrap" data-inline-modes="balanced identity">{{ v['webzfs:disk.model'].split(' ')[0] }}</span>{% endif %}
+            {% if v['webzfs:disk.serial'] %}<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border-default bg-bg-elevated-3/40 text-[10.5px] font-mono text-text-secondary whitespace-nowrap" data-inline-modes="balanced identity">SN <strong class="text-text-primary">{{ v['webzfs:disk.serial'] }}</strong></span>{% endif %}
+            {% if v['webzfs:disk.location'] %}<span class="inline-flex items-center px-2 py-0.5 rounded-full border border-border-default bg-bg-elevated-3/40 text-[10.5px] font-mono text-text-secondary whitespace-nowrap" data-inline-modes="balanced location">{{ v['webzfs:disk.location'] }}</span>{% endif %}
+            {% if v['webzfs:disk.warranty_expiry'] %}<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border-default bg-bg-elevated-3/40 text-[10.5px] font-mono text-text-secondary whitespace-nowrap" data-inline-modes="balanced">Warranty <strong class="text-text-primary">{{ v['webzfs:disk.warranty_expiry'] }}</strong></span>{% endif %}
+        </div>
+    </div>
+</div>

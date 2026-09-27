@@ -1,0 +1,67 @@
+{# Inspector for the selected pool / top-level vdev / leaf. Context: pool, node, selected, groups (catalog groups for this scope), base_url. #}
+{% set v = node.props %}
+{% macro prop_row(definition, value) %}
+<div class="grid grid-cols-[minmax(140px,0.8fr)_minmax(0,1fr)] gap-3 px-3 py-2.5 border-b border-border-subtle last:border-b-0 items-start">
+    <div>
+        <div class="text-[11px] text-text-tertiary">{{ definition.label }}</div>
+        <code class="block mt-0.5 text-[9.5px] text-text-secondary bg-transparent px-0 py-0">{{ definition.key }}</code>
+    </div>
+    <div class="text-right">
+        {% if value %}
+        <div class="text-[12px] text-text-primary break-words {% if definition.key.endswith(('serial', 'wwn', 'firmware')) %}font-mono{% endif %}">{{ value }}</div>
+        {% else %}
+        <div class="text-[12px] text-text-tertiary italic">Not set</div>
+        {% endif %}
+        <div class="text-[9.5px] text-text-tertiary mt-0.5 flex items-center justify-end gap-2">
+            <span>{{ 'discoverable' if definition.discoverable else 'manual' }}</span>
+            {% if value %}
+            <form method="post" action="{{ base_url }}/clear" class="inline" hx-boost="false">
+                <input type="hidden" name="pool" value="{{ pool }}">
+                <input type="hidden" name="selected" value="{{ selected }}">
+                <input type="hidden" name="key" value="{{ definition.key }}">
+                <button type="submit" class="text-danger-400 hover:text-danger-300 underline px-0 py-0 rounded-none bg-transparent" title="Clear {{ definition.label }}">clear</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+<div class="px-5 py-4 border-b border-border-subtle flex justify-between gap-3 items-start">
+    <div class="min-w-0">
+        <h2 class="text-base font-semibold text-text-primary mb-0">Inspector</h2>
+        <p class="text-xs text-text-tertiary mt-1 mb-0">Full metadata for the selected pool/vdev/disk.</p>
+    </div>
+    <div class="flex gap-2 flex-wrap justify-end">
+        {% if node.kind == 'leaf' %}
+        <button type="button" class="btn-info btn-sm inline-flex items-center gap-2"
+                hx-get="{{ base_url }}/discover?pool={{ pool|urlencode }}&selected={{ selected|urlencode }}"
+                hx-target="#vdev-modal-container" hx-swap="innerHTML" hx-indicator="#discover-one-indicator">
+            <span id="discover-one-indicator" class="htmx-indicator"><div class="loading-spinner loading-spinner-sm"></div></span>Discover
+        </button>
+        {% endif %}
+        <button type="button" class="btn-primary btn-sm"
+                hx-get="{{ base_url }}/edit?pool={{ pool|urlencode }}&selected={{ selected|urlencode }}"
+                hx-target="#vdev-modal-container" hx-swap="innerHTML">Edit</button>
+    </div>
+</div>
+
+<div class="p-4 space-y-3">
+    {% include 'utils/vdev_properties/_inspector_summary.jinja' %}
+
+    {% for group_id, group_label, definitions in groups %}
+    <div class="flex justify-between items-center gap-3 pt-2">
+        <h4 class="text-xs uppercase tracking-wider font-semibold text-text-secondary mb-0">{{ group_label }}</h4>
+        {% if group_id == 'identity' %}<span class="badge badge-info">discoverable</span>{% endif %}
+    </div>
+    {% if group_id == 'notes' %}
+    {% for definition in definitions %}
+    <div class="rounded-lg border border-border-subtle bg-bg-elevated-2/40 p-3 text-xs text-text-secondary leading-relaxed whitespace-pre-wrap">{{ v[definition.key] or 'No notes saved for this disk.' }}</div>
+    {% endfor %}
+    {% else %}
+    <div class="rounded-lg border border-border-subtle overflow-hidden">
+        {% for definition in definitions %}{{ prop_row(definition, v[definition.key]) }}{% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>

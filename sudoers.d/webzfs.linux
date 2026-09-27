@@ -1,0 +1,27 @@
+# WebZFS Linux service account privileges.
+# Installed as /etc/sudoers.d/webzfs by both Linux deployment scripts.
+# sudo-rs does not accept embedded wildcard arguments.
+
+# ZFS and SMART tools
+webzfs ALL=(ALL) NOPASSWD: /usr/sbin/zpool, /usr/sbin/zfs, /usr/sbin/zdb -l *, /usr/bin/zpool, /usr/bin/zfs, /usr/bin/zdb -l *, /sbin/zpool, /sbin/zfs, /sbin/zdb -l *
+webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /sbin/smartctl
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsof, /usr/bin/lslocks, /bin/lsof, /bin/lslocks
+webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid, /usr/bin/syncoid, /usr/local/sbin/sanoid, /usr/local/sbin/syncoid
+
+# System services and scheduled tasks use systemctl link/disable.
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
+# Configuration editing and ZED script creation
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
+
+# ZED management also needs ln, rm, mv, chown, chmod and kill. sudo-rs
+# cannot express the previous dynamic zed.d filename globs. The existing
+# unrestricted tee and systemctl grants already convey root-equivalent access;
+# these command grants preserve ZED operations without incompatible globs.
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/ln, /bin/ln, /usr/bin/rm, /bin/rm, /usr/bin/mv, /bin/mv
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/chown, /bin/chown, /usr/bin/chmod, /bin/chmod
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/kill -HUP *, /bin/kill -HUP *
+
+# Observability and support bundles
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl, /usr/bin/tail, /bin/tail
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/grep, /bin/grep, /usr/bin/dmesg, /bin/dmesg

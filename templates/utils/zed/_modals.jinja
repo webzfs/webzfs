@@ -1,0 +1,133 @@
+{# Create ZEDLET Modal #}
+<div id="create-modal" x-data="{ open: false }" x-show="open" x-on:keydown.escape.window="open = false" style="display: none;"
+     class="fixed inset-0 z-50"
+     x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" x-on:click="open = false"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="card w-full max-w-2xl" x-on:click.stop>
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-text-primary">Create ZEDLET</h3>
+                        <button type="button" class="text-text-secondary hover:text-text-primary p-1.5 rounded-lg" x-on:click="open = false">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <form method="post" action="/utils/zed/create" hx-boost="false">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="form-label" for="create-event-prefix">Event Class</label>
+                                <select id="create-event-prefix" name="event_prefix" class="form-input w-full" onchange="updateFilenamePreview()">
+                                    {% for prefix in event_prefixes %}
+                                    <option value="{{ prefix }}">{{ prefix }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" for="create-handler-name">Handler Name</label>
+                                <input type="text" id="create-handler-name" name="handler_name" class="form-input w-full" placeholder="my-handler" oninput="updateFilenamePreview()">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label">Filename Preview</label>
+                            <div id="create-filename-preview" class="px-3 py-2 rounded-lg border border-border-default bg-bg-elevated-2 text-primary-400 font-mono text-sm">select event and enter handler name</div>
+                        </div>
+                        <div class="flex items-center gap-6 mb-4">
+                            <label class="flex items-center gap-2 text-text-secondary text-sm cursor-pointer">
+                                <input type="checkbox" id="create-sync-check" name="is_sync" class="form-checkbox" onchange="updateFilenamePreview()">
+                                Synchronous (blocks other ZEDLETs)
+                            </label>
+                            <label class="flex items-center gap-2 text-text-secondary text-sm cursor-pointer">
+                                <input type="checkbox" name="enable" value="true" checked class="form-checkbox">
+                                Enable immediately
+                            </label>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label" for="create-content">Script Content</label>
+                            <textarea id="create-content" name="content" rows="14" class="form-input w-full font-mono text-xs resize-y" style="tab-size:4">#!/bin/sh
+#
+# Custom WebZFS ZEDLET
+#
+# Environment variables available:
+#   ZEVENT_CLASS, ZEVENT_SUBCLASS, ZEVENT_TIME
+#   ZEVENT_POOL, ZEVENT_VDEV_PATH, ZEVENT_VDEV_GUID
+#   ZPOOL, ZFS, ZED (binary paths)
+#
+
+# Source ZED helper functions if available
+[ -f "${ZED_ZEDLET_DIR}/zed-functions.sh" ] && . "${ZED_ZEDLET_DIR}/zed-functions.sh"
+
+exit 0
+</textarea>
+                        </div>
+                        <div class="flex justify-end gap-3">
+                            <button type="button" class="btn btn-secondary" x-on:click="open = false">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Create Script</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Script Edit Modal #}
+<div id="script-modal" x-data="{ open: false }" x-show="open" x-on:keydown.escape.window="open = false" style="display: none;"
+     class="fixed inset-0 z-50"
+     x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" x-on:click="open = false"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="card w-full max-w-2xl" x-on:click.stop>
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-text-primary">Edit Script</h3>
+                        <button type="button" class="text-text-secondary hover:text-text-primary p-1.5 rounded-lg" x-on:click="open = false">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <div id="script-edit-body">
+                        <div class="flex items-center justify-center py-8">
+                            <svg class="animate-spin h-8 w-8 text-primary-400" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# zed.rc Edit Modal #}
+<div id="rc-modal" x-data="{ open: false }" x-show="open" x-on:keydown.escape.window="open = false" style="display: none;"
+     class="fixed inset-0 z-50"
+     x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" x-on:click="open = false"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="card w-full max-w-2xl" x-on:click.stop>
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-text-primary">Edit zed.rc</h3>
+                        <button type="button" class="text-text-secondary hover:text-text-primary p-1.5 rounded-lg" x-on:click="open = false">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <div id="rc-edit-body">
+                        <div class="flex items-center justify-center py-8">
+                            <svg class="animate-spin h-8 w-8 text-primary-400" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

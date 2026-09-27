@@ -1,0 +1,86 @@
+{# Deferred content fragment: metrics, toolbar, topology and inspector. #}
+{% set metrics = summary.metrics %}
+
+<!-- Out-of-band status strip values -->
+<div id="status-topology" hx-swap-oob="true" class="mt-1 text-sm font-semibold text-text-primary">{{ summary.topology_summary }}</div>
+<div id="status-coverage" hx-swap-oob="true" class="mt-1 text-sm font-semibold {% if metrics.missing == 0 %}text-success-400{% else %}text-warning-400{% endif %}">
+    <span aria-hidden="true">&#9679;</span> {{ metrics.covered }} / {{ metrics.leaf_count }} leaf vdevs
+</div>
+
+<div class="space-y-4">
+    <!-- Summary metrics -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="card"><div class="card-body py-4">
+            <div class="text-xs uppercase tracking-wider font-semibold text-text-tertiary">Leaf disks</div>
+            <div class="mt-1 text-2xl font-bold text-primary-400">{{ metrics.leaf_count }}</div>
+            <div class="text-xs text-text-tertiary mt-1">across all vdev classes</div>
+        </div></div>
+        <div class="card"><div class="card-body py-4">
+            <div class="text-xs uppercase tracking-wider font-semibold text-text-tertiary">Missing metadata</div>
+            <div class="mt-1 text-2xl font-bold text-warning-400">{{ metrics.missing }}</div>
+            <div class="text-xs text-text-tertiary mt-1">discovery candidate{{ 's' if metrics.missing != 1 else '' }}</div>
+        </div></div>
+        <div class="card"><div class="card-body py-4">
+            <div class="text-xs uppercase tracking-wider font-semibold text-text-tertiary">Warranty alerts</div>
+            <div class="mt-1 text-2xl font-bold text-danger-400">{{ metrics.warranty_alerts }}</div>
+            <div class="text-xs text-text-tertiary mt-1">expired or near expiry</div>
+        </div></div>
+        <div class="card"><div class="card-body py-4">
+            <div class="text-xs uppercase tracking-wider font-semibold text-text-tertiary">Discoverable fields</div>
+            <div class="mt-1 text-2xl font-bold text-info-400">{{ metrics.discoverable_fields }}</div>
+            <div class="text-xs text-text-tertiary mt-1">model / serial / WWN / FW / interface / form factor</div>
+        </div></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="card">
+        <div class="card-body py-3 flex flex-wrap items-end gap-3">
+            <div class="flex-1 min-w-[250px]">
+                <label for="vdev-search" class="form-label mb-1 text-xs uppercase tracking-wider text-text-tertiary">Find disk, serial, model, location, or property value</label>
+                <div class="relative">
+                    <svg class="w-4 h-4 text-text-tertiary absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" d="m20 20-3.5-3.5"/></svg>
+                    <input type="search" id="vdev-search" class="form-input pl-9 text-sm" placeholder="Search serial, slot, model, vendor..." oninput="filterVdevTree()">
+                </div>
+            </div>
+            <div class="min-w-[180px]">
+                <label for="vdev-inline-mode" class="form-label mb-1 text-xs uppercase tracking-wider text-text-tertiary">Inline metadata</label>
+                <select id="vdev-inline-mode" class="form-select text-sm" onchange="setInlineMode(this.value)">
+                    <option value="balanced">Balanced</option>
+                    <option value="identity">Identity only</option>
+                    <option value="location">Location focused</option>
+                    <option value="minimal">Minimal</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workspace: topology + inspector -->
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(370px,0.85fr)] gap-4 items-start">
+        <div class="card overflow-hidden">
+            <div class="px-5 py-4 border-b border-border-subtle flex flex-wrap justify-between gap-3 items-start">
+                <div>
+                    <h2 class="text-base font-semibold text-text-primary mb-0">{% if pool == 'all' %}Pool Topologies{% else %}Pool Topology{% endif %}</h2>
+                    <p class="text-xs text-text-tertiary mt-1 mb-0">Select the pool, a top-level vdev, or a leaf vdev to inspect its saved metadata.{% if pool == 'all' %} Each pool renders in its own topology card.{% endif %}</p>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="badge badge-success">Healthy</span>
+                    <span class="badge badge-warning">Warranty alert</span>
+                    <span class="badge badge-info">Missing metadata</span>
+                </div>
+            </div>
+            <div class="p-4">
+                <div class="space-y-4">
+                {% for topology in topologies %}
+                    {% include 'utils/vdev_properties/_topology.jinja' %}
+                {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <aside class="card overflow-hidden lg:sticky lg:top-20">
+            <div id="vdev-inspector">
+                {% include 'utils/vdev_properties/_inspector.jinja' %}
+            </div>
+        </aside>
+    </div>
+</div>

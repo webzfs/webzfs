@@ -317,6 +317,8 @@ if [ ! -f "${DATA_DIR}/health_schedules.json" ]; then
     echo '{"schedules": [], "next_id": 1}' > "${DATA_DIR}/health_schedules.json"
 fi
 
+install -d -o "$WEBZFS_USER" -g "$WEBZFS_USER" -m 0755 \
+    "${DATA_DIR}/generated/systemd"
 chown -R "$WEBZFS_USER:$WEBZFS_USER" "$DATA_DIR"
 echo -e "${GREEN}✓${NC} Data directory and files created"
 echo
@@ -397,82 +399,43 @@ chown "$WEBZFS_USER:$WEBZFS_USER" "$TEMP_INSTALL_SCRIPT"
 if ! su -s /bin/bash "$WEBZFS_USER" -c "bash $TEMP_INSTALL_SCRIPT"; then
     echo -e "${RED}Error: Installation failed${NC}"
     echo "Check $LOG_FILE for details"
-    rm -f "$TEMP_INSTALL_SCRIPT"
+    unlink "$TEMP_INSTALL_SCRIPT"
     exit 1
 fi
+unlink "$TEMP_INSTALL_SCRIPT"
 
-# Clean up the temporary script
-rm -f "$TEMP_INSTALL_SCRIPT"
-
-echo
-echo -e "${GREEN}✓${NC} Python dependencies installed"
-echo -e "${GREEN}✓${NC} Node.js dependencies installed"
-echo -e "${GREEN}✓${NC} Static assets built"
-echo -e "${GREEN}✓${NC} Configuration file created"
-echo
-
-# Configure sudo permissions
+# Validate the complete policy before replacing a live sudoers file.
 SUDOERS_FILE="/etc/sudoers.d/webzfs"
+SUDOERS_SRC="${SOURCE_DIR}/sudoers.d/webzfs.linux"
 echo "Configuring sudo permissions..."
-
-cat > "$SUDOERS_FILE" << 'SUDO_EOF'
-# WebZFS sudo permissions
-# Allow webzfs user to execute ZFS and SMART commands
-
-# ZFS commands (multiple paths for different distributions)
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/zpool, /usr/sbin/zfs, /usr/sbin/zdb -l *, /usr/bin/zpool, /usr/bin/zfs, /usr/bin/zdb -l *, /sbin/zpool, /sbin/zfs, /sbin/zdb -l *
-
-# SMART monitoring (multiple paths for different distributions)
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /sbin/smartctl
-
-# Disk utilities
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
-
-# Open file / lock inspection (pool export busy investigation)
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsof, /usr/bin/lslocks, /bin/lsof, /bin/lslocks
-
-# Sanoid/Syncoid (optional)
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid, /usr/bin/syncoid, /usr/local/sbin/sanoid, /usr/local/sbin/syncoid
-
-# Service management (systemctl for system services page)
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
-
-# Crontab editing
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/crontab
-
-# Scheduled syncoid job timers.
-# Unit files are created and edited with "sudo tee" (covered by the
-# general tee entry below) and enabled/disabled/reloaded with
-# "sudo systemctl" (covered by the systemctl entry above). The explicit
-# tee entries here document that intent and keep timer management
-# working even if the general tee entry is ever narrowed. rm is
-# restricted to WebZFS-owned unit files only.
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/webzfs-syncoid-job-*, /bin/tee /etc/systemd/system/webzfs-syncoid-job-*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/webzfs-syncoid-job-*, /bin/rm -f /etc/systemd/system/webzfs-syncoid-job-*
-
-# Unified Scheduling Hub timers. All scheduled task types (scrub, SMART
-# self-test, health check, and replication) use the webzfs-task-* unit
-# naming scheme managed by services/job_scheduler.py.
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/webzfs-task-*, /bin/tee /etc/systemd/system/webzfs-task-*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/webzfs-task-*, /bin/rm -f /etc/systemd/system/webzfs-task-*
-
-# File editing (for config files like smartd.conf, sanoid.conf)
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
-
-# Read system journal and plain-text syslog files for the
-# Observability -> System Log page. journalctl needs sudo (or
-# systemd-journal group) on most distros. tail covers Debian/Ubuntu
-# (/var/log/syslog) and old RHEL (/var/log/messages).
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl, /usr/bin/tail, /bin/tail
-
-# Support bundle log collection. Reading /var/log/messages and
-# /var/log/syslog (typically mode 640 root:adm) and the kernel ring
-# buffer requires elevated privileges for the unprivileged webzfs user.
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/grep, /bin/grep, /usr/bin/dmesg, /bin/dmesg
-SUDO_EOF
-
-
-chmod 0440 "$SUDOERS_FILE"
+if [ ! -f "$SUDOERS_SRC" ] || ! command_exists visudo || \
+   ! visudo -c -f "$SUDOERS_SRC"; then
+    echo "Invalid or missing WebZFS sudoers policy; installation stopped."
+    exit 1
+fi
+SUDOERS_BACKUP="$(mktemp)"
+if [ -f "$SUDOERS_FILE" ]; then
+    cp -p "$SUDOERS_FILE" "$SUDOERS_BACKUP"
+else
+    unlink "$SUDOERS_BACKUP"
+fi
+SUDOERS_STAGED="${SUDOERS_FILE}.staged"
+install -o root -g root -m 0440 "$SUDOERS_SRC" "$SUDOERS_STAGED"
+mv -f "$SUDOERS_STAGED" "$SUDOERS_FILE"
+if ! visudo -c || ! sudo -n -l >/dev/null 2>&1; then
+    echo "Sudoers validation failed; restoring the previous policy."
+    if [ -f "$SUDOERS_BACKUP" ]; then
+        install -o root -g root -m 0440 "$SUDOERS_BACKUP" "$SUDOERS_STAGED"
+        mv -f "$SUDOERS_STAGED" "$SUDOERS_FILE"
+        unlink "$SUDOERS_BACKUP"
+    else
+        unlink "$SUDOERS_FILE"
+    fi
+    exit 1
+fi
+if [ -f "$SUDOERS_BACKUP" ]; then
+    unlink "$SUDOERS_BACKUP"
+fi
 echo -e "${GREEN}✓${NC} Sudo permissions configured"
 
 echo

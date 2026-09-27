@@ -9,7 +9,7 @@
                 </svg></span>
             Download All SMART Data (ZIP)
         </a>
-        <form method="post" action="/utils/smart/test/all/short" class="inline">
+        <form method="post" action="/utils/smart/test/all/short" class="inline" id="form-short-test-all" hx-boost="false">
             <button type="button"
                     class="bg-blue-600 hover:bg-blue-700 text-text-primary px-4 py-2 rounded inline-flex items-center"
                     onclick="showConfirm('confirm-short-test-all')">
@@ -19,7 +19,7 @@
                 Run Short Test on All Disks
             </button>
         </form>
-        <form method="post" action="/utils/smart/test/all/long" class="inline">
+        <form method="post" action="/utils/smart/test/all/long" class="inline" id="form-long-test-all" hx-boost="false">
             <button type="button"
                     class="bg-green-600 hover:bg-green-700 text-text-primary px-4 py-2 rounded inline-flex items-center"
                     onclick="showConfirm('confirm-long-test-all')">
@@ -153,21 +153,19 @@
 
 <!-- Confirmation Modals (only rendered when disks are present) -->
 {% if disks and disks|length > 0 %}
-{% set modal_id = 'confirm-short-test-all' %}
-{% set modal_title = 'Run Short Test on All Disks' %}
-{% set modal_message = 'Start short SMART test on all SMART-enabled disks? This will run a quick diagnostic test on each disk.' %}
+{% set id = 'confirm-short-test-all' %}
+{% set title = 'Run Short Test on All Disks' %}
+{% set message = 'Start short SMART test on all SMART-enabled disks? This will run a quick diagnostic test on each disk.' %}
 {% set confirm_text = 'Start Tests' %}
 {% set confirm_class = 'primary' %}
-{% set action_url = '/utils/smart/test/all/short' %}
-{% set method = 'post' %}
+{% set confirm_action = 'document.getElementById("form-short-test-all").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
-{% set modal_id = 'confirm-long-test-all' %}
-{% set modal_title = 'Run Long Test on All Disks' %}
-{% set modal_message = 'Start long SMART test on all SMART-enabled disks? This comprehensive test may take several hours per disk and will impact disk performance.' %}
+{% set id = 'confirm-long-test-all' %}
+{% set title = 'Run Long Test on All Disks' %}
+{% set message = 'Start long SMART test on all SMART-enabled disks? This comprehensive test may take several hours per disk and will impact disk performance.' %}
 {% set confirm_text = 'Start Tests' %}
 {% set confirm_class = 'warning' %}
-{% set action_url = '/utils/smart/test/all/long' %}
-{% set method = 'post' %}
+{% set confirm_action = 'document.getElementById("form-long-test-all").submit()' %}
 {% include 'partials/confirm.jinja' %}
 {% endif %}

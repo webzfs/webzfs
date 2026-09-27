@@ -1,0 +1,138 @@
+{% extends "layout.jinja" %}
+{% set active_page = 'utils' %}
+{% block title %}Custom VDEV Properties{% endblock %}
+{% block content %}
+<div class="space-y-6" hx-boost="false" id="vdev-props-page" data-pool="{{ pool }}" data-selected="{{ selected }}" data-selected-pool="{{ selected.split('|')[1] if '|' in selected else pool }}">
+
+    <!-- Breadcrumb -->
+    <nav class="text-sm text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Custom VDEV Properties</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary">Custom VDEV Properties</h1>
+            <p class="text-text-secondary mt-1 max-w-3xl">Annotate pools, top-level vdevs, and leaf disks with inventory metadata stored as native ZFS user properties. The topology stays compact while the selected object's complete metadata is shown in the inspector.</p>
+        </div>
+        {% if pool %}
+        <div class="flex flex-wrap gap-2 md:justify-end flex-shrink-0">
+            <button type="button" class="btn-info inline-flex items-center gap-2"
+                    hx-get="{{ base_url }}/discover-all" hx-include="#vdev-selection" hx-target="#vdev-modal-container" hx-swap="innerHTML" hx-indicator="#bulk-discover-indicator">
+                <span id="bulk-discover-indicator" class="htmx-indicator"><div class="loading-spinner loading-spinner-sm"></div></span>
+                Discover Blank Metadata
+            </button>
+            <button type="button" class="btn-primary"
+                    hx-get="{{ base_url }}/edit" hx-include="#vdev-selection" hx-target="#vdev-modal-container" hx-swap="innerHTML">Edit Selected</button>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Messages -->
+    {% if error %}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded">{{ error }}</div>
+    {% endif %}
+    {% if message %}
+    <div class="bg-success-900/30 border-2 border-success-500/50 text-success-400 px-4 py-3 rounded">{{ message }}</div>
+    {% endif %}
+
+    {% if not pools %}
+    <div class="card"><div class="card-body text-text-secondary">No imported pools were found. Import a pool to manage its vdev properties.</div></div>
+    {% else %}
+
+    <!-- Hidden selection state shared by header actions -->
+    <form id="vdev-selection" class="hidden">
+        <input type="hidden" name="pool" value="{{ pool }}">
+        <input type="hidden" name="selected" id="vdev-selected-input" value="{{ selected }}">
+    </form>
+
+    <!-- Status strip -->
+    <div class="card">
+        <div class="card-body py-4 grid grid-cols-1 md:grid-cols-[minmax(160px,220px)_1fr_1fr_1fr_auto] gap-4 items-end">
+            <div>
+                <label for="pool-select" class="form-label mb-1 text-xs uppercase tracking-wider text-text-tertiary">Pool</label>
+                <select id="pool-select" class="form-select text-sm" onchange="window.location='{{ base_url }}/?pool='+encodeURIComponent(this.value)">
+                    {% for name in pools %}<option value="{{ name }}" {% if name == pool %}selected{% endif %}>{{ 'All Pools' if name == 'all' else name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div><div class="text-xs uppercase tracking-wider font-semibold text-text-tertiary">Topology</div><div id="status-topology" class="mt-1 text-sm font-semibold text-text-primary">Loading...</div></div>
+            <div><div class="text-xs uppercase tracking-wider font-semibold text-text-tertiary">Metadata coverage</div><div id="status-coverage" class="mt-1 text-sm font-semibold text-text-primary">Loading...</div></div>
+            <div><div class="text-xs uppercase tracking-wider font-semibold text-text-tertiary">Property namespace</div><div class="mt-1 text-sm font-semibold font-mono text-text-primary">webzfs:*</div></div>
+            <button type="button" class="btn-secondary btn-sm" onclick="refreshVdevContent()">Refresh</button>
+        </div>
+    </div>
+
+    <!-- Deferred content: metrics, toolbar, topology, inspector -->
+    <div id="vdev-content"
+         hx-get="{{ base_url }}/content?pool={{ pool|urlencode }}&selected={{ selected|urlencode }}"
+         hx-trigger="load" hx-swap="innerHTML">
+        <div class="card"><div class="card-body flex items-center gap-3 text-text-secondary"><div class="loading-spinner loading-spinner-sm"></div>Reading vdev properties from ZFS...</div></div>
+    </div>
+    {% endif %}
+</div>
+
+<div id="vdev-modal-container"></div>
+
+<script>
+function vdevPageUrl(path, selected) {
+    const page = document.getElementById('vdev-props-page');
+    return '{{ base_url }}' + path + '?pool=' + encodeURIComponent(page.dataset.pool) + '&selected=' + encodeURIComponent(selected);
+}
+function refreshVdevContent() {
+    const selected = document.getElementById('vdev-selected-input').value;
+    htmx.ajax('GET', vdevPageUrl('/content', selected), {target: '#vdev-content', swap: 'innerHTML'});
+}
+function selectVdevNode(name) {
+    const page = document.getElementById('vdev-props-page');
+    document.getElementById('vdev-selected-input').value = name;
+    page.dataset.selected = name;
+    const parts = name.split('|', 3);
+    page.dataset.selectedPool = parts.length === 3 ? parts[1] : page.dataset.pool;
+    document.querySelectorAll('[data-node]').forEach(el => {
+        const active = el.dataset.node === name;
+        el.classList.toggle('border-primary-400', active);
+        el.classList.toggle('ring-1', active);
+        el.classList.toggle('ring-primary-400/30', active);
+    });
+    document.querySelectorAll('[data-pool-card]').forEach(el => {
+        const active = el.dataset.poolCard === page.dataset.selectedPool;
+        el.classList.toggle('border-primary-400', active);
+        el.classList.toggle('ring-1', active);
+        el.classList.toggle('ring-primary-400/30', active);
+    });
+    const url = new URL(window.location);
+    url.searchParams.set('selected', name);
+    url.searchParams.delete('message');
+    url.searchParams.delete('error');
+    history.replaceState(null, '', url);
+    htmx.ajax('GET', vdevPageUrl('/inspector', name), {target: '#vdev-inspector', swap: 'innerHTML'});
+}
+function filterVdevTree() {
+    const query = (document.getElementById('vdev-search').value || '').toLowerCase().trim();
+    document.querySelectorAll('[data-leaf-search]').forEach(row => {
+        row.style.display = !query || row.dataset.leafSearch.includes(query) ? '' : 'none';
+    });
+    document.querySelectorAll('[data-group-search]').forEach(group => {
+        const visibleLeaves = Array.from(group.querySelectorAll('[data-leaf-search]')).filter(row => row.style.display !== 'none').length;
+        group.style.display = !query || visibleLeaves || group.dataset.groupSearch.includes(query) ? '' : 'none';
+    });
+}
+function setInlineMode(mode) {
+    document.querySelectorAll('[data-inline-modes]').forEach(chip => {
+        chip.style.display = chip.dataset.inlineModes.split(' ').includes(mode) ? '' : 'none';
+    });
+    try { localStorage.setItem('webzfs-vdev-inline-mode', mode); } catch (e) {}
+}
+document.body.addEventListener('htmx:afterSwap', function (event) {
+    if (event.target.id !== 'vdev-content') return;
+    const select = document.getElementById('vdev-inline-mode');
+    if (!select) return;
+    let mode = 'balanced';
+    try { mode = localStorage.getItem('webzfs-vdev-inline-mode') || 'balanced'; } catch (e) {}
+    select.value = mode;
+    setInlineMode(mode);
+});
+</script>
+{% endblock %}

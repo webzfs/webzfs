@@ -251,7 +251,7 @@
         <h2 class="text-xl font-bold text-text-primary mb-4">Actions</h2>
         <div class="flex flex-wrap gap-2">
             {% if smart_data.info.smart_enabled %}
-            <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/disable" class="inline" id="form-disable-smart">
+            <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/disable" class="inline" id="form-disable-smart" hx-boost="false">
                 <button type="button" 
                         class="bg-orange-600 hover:bg-orange-700 text-text-primary px-4 py-2 rounded"
                         onclick="showConfirm('modal-disable-smart')">
@@ -259,7 +259,7 @@
                 </button>
             </form>
             {% else %}
-            <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/enable" class="inline" id="form-enable-smart">
+            <form method="post" action="/utils/smart/disk/{{ disk_path.lstrip('/') }}/enable" class="inline" id="form-enable-smart" hx-boost="false">
                 <button type="button" 
                         class="bg-green-600 hover:bg-green-700 text-text-primary px-4 py-2 rounded"
                         onclick="showConfirm('modal-enable-smart')">
@@ -275,21 +275,19 @@
 </div>
 
 <!-- Confirmation Modals -->
-{% set modal_id = 'modal-disable-smart' %}
-{% set modal_title = 'Disable SMART' %}
-{% set modal_message = 'Disable SMART monitoring on ' + disk_path + '?' %}
+{% set id = 'modal-disable-smart' %}
+{% set title = 'Disable SMART' %}
+{% set message = 'Disable SMART monitoring on ' + disk_path + '?' %}
 {% set confirm_text = 'Disable' %}
 {% set confirm_class = 'warning' %}
-{% set action_url = '/smart/disk/' + disk_path.lstrip('/') + '/disable' %}
-{% set method = 'post' %}
+{% set confirm_action = 'document.getElementById("form-disable-smart").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
-{% set modal_id = 'modal-enable-smart' %}
-{% set modal_title = 'Enable SMART' %}
-{% set modal_message = 'Enable SMART monitoring on ' + disk_path + '?' %}
+{% set id = 'modal-enable-smart' %}
+{% set title = 'Enable SMART' %}
+{% set message = 'Enable SMART monitoring on ' + disk_path + '?' %}
 {% set confirm_text = 'Enable' %}
 {% set confirm_class = 'primary' %}
-{% set action_url = '/smart/disk/' + disk_path.lstrip('/') + '/enable' %}
-{% set method = 'post' %}
+{% set confirm_action = 'document.getElementById("form-enable-smart").submit()' %}
 {% include 'partials/confirm.jinja' %}
 {% endblock %}

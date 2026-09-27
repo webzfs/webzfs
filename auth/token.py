@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Any
 
 from jose import JWTError, jwt
 
@@ -22,12 +23,19 @@ def create_token(username: str) -> str:
 
 
 def get_username_from_token(token: str) -> str:
+    return get_token_claims(token)["username"]
+
+
+def get_token_claims(token: str) -> dict[str, Any]:
+    """Decode and validate a WebZFS token, returning its complete claims."""
     try:
         claims = jwt.decode(
             token,
             key=settings.SECRET_KEY,
             algorithms=[settings.TOKEN_ALGORITHM],
         )
-        return claims["username"]
+        if not claims.get("username") or claims.get("exp") is None:
+            raise KeyError
+        return claims
     except (JWTError, KeyError):
         raise InvalidToken

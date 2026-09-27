@@ -1,0 +1,97 @@
+{% set scope_names = {'local':'Local only', 'descendants':'Descendants only', 'both':'Local + descendants', 'set':'Permission set', 'create_time':'Creation template'} %}
+{% set scope_flags = {'local':'-l', 'descendants':'-d', 'both':'(default)'} %}
+{% for section, title, desc in [
+    ('grants', 'Permission Grants', 'A principal can occupy three scope rows. Revoke removes only the selected row\'s tokens. Equivalent direct or ancestor grants remain.'),
+    ('sets', 'Permission Sets', 'Reusable @set definitions evaluated dynamically by ZFS. Changes affect every grant referencing the set.'),
+    ('create_time', 'Create-time Configuration', 'Native creation templates grant permissions at dataset creation, not inherited rights on this existing dataset. WebZFS does not modify these templates.')
+] %}
+<section class="card">
+    <div class="card-body">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h2 class="text-xl font-semibold text-text-primary">{{ title }}</h2>
+                <p class="text-sm text-text-secondary mt-0.5">{{ desc }}</p>
+            </div>
+            {% if section == 'create_time' %}<span class="badge-warning">Read-only</span>{% endif %}
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-border-default">
+                <thead class="bg-bg-elevated-2">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Principal / Set</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Permissions</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Scope / Source</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-text-secondary uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-border-subtle">
+                {% set count = namespace(value=0) %}
+                {% for row in state.entries %}
+                {% if (section == 'grants' and row.kind in ['user','group','everyone']) or (section == 'sets' and row.kind == 'set') or (section == 'create_time' and row.kind == 'create_time') %}
+                {% set count.value = count.value + 1 %}
+                {% set is_inherited = row.source != state.dataset %}
+                <tr class="{% if is_inherited %}opacity-75{% endif %} hover:bg-bg-elevated-2 transition-colors">
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-2">
+                            {% if row.kind == 'user' %}
+                            <svg class="w-4 h-4 text-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="2"/><path stroke-width="2" d="M4 21a8 8 0 0116 0"/></svg>
+                            {% elif row.kind == 'group' %}
+                            <svg class="w-4 h-4 text-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4" stroke-width="2"/><path stroke-width="2" d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                            {% elif row.kind == 'everyone' %}
+                            <svg class="w-4 h-4 text-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-width="2" d="M2 12h20"/></svg>
+                            {% elif row.kind == 'set' %}
+                            <svg class="w-4 h-4 text-info-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+                            {% endif %}
+                            <div>
+                                <span class="font-medium text-text-primary">{% if row.kind == 'create_time' %}create-time{% else %}{{ row.principal_display or row.principal or row.kind }}{% endif %}</span>
+                                <span class="block text-xs text-text-tertiary">{{ row.kind }}</span>
+                            </div>
+                        </div>
+                        {% if row.kind in ['user','group'] and accounts.get(row.key) is none %}
+                        <span class="badge-warning text-xs mt-1 inline-block">Missing local account{% if row.principal.isdecimal() %} ({{ 'UID' if row.kind == 'user' else 'GID' }}){% endif %}</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="flex flex-wrap gap-1">
+                            {% for token in row.tokens %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono {% if token.startswith('@') %}bg-info-500/15 text-info-400 border border-info-500/30{% else %}bg-bg-elevated-3 text-text-secondary border border-border-subtle{% endif %}">{{ token }}</span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if row.kind not in ['set','create_time'] %}
+                        <span class="text-text-primary text-sm">{{ scope_names[row.scope] }}</span>
+                        <span class="block text-xs font-mono text-text-tertiary">{{ scope_flags.get(row.scope, '') }}</span>
+                        {% endif %}
+                        <span class="block text-xs text-text-tertiary mt-1">{{ row.source }}</span>
+                        {% if is_inherited %}<span class="badge-secondary text-xs">Inherited</span>
+                        {% else %}<span class="badge-primary text-xs">Direct</span>{% endif %}
+                        {% if section == 'grants' and not row.applies_to(state.dataset) %}<span class="block text-xs text-text-tertiary mt-1">Does not apply here</span>{% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        {% if is_inherited %}
+                        <a class="btn-ghost btn-sm" href="{{ base_url }}/?{{ {'dataset':row.source} | urlencode }}">View source</a>
+                        {% elif state.support.writable and row.kind != 'create_time' %}
+                        {% set actions = ['set_add','set_remove','set_delete'] if row.kind == 'set' else ['add','remove','revoke'] %}
+                        <div class="flex flex-wrap gap-1 justify-end">
+                            {% for action in actions %}
+                            {% if action != 'add' or (accounts.get(row.key) is not none and not row.principal.isdecimal()) %}
+                            <a class="{% if action in ['revoke','set_delete'] %}text-danger-400 hover:text-danger-300{% else %}text-primary-400 hover:text-primary-300{% endif %} text-xs font-medium px-2 py-1 rounded hover:bg-bg-elevated-3 transition-colors" href="{{ base_url }}/action?{{ {'dataset':state.dataset,'action':action,'entry':row.key} | urlencode }}">{{ labels[action] }}</a>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% else %}<span class="text-text-tertiary text-xs">Read-only</span>{% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                {% if not count.value %}
+                <tr><td colspan="4" class="px-4 py-6 text-center text-text-tertiary">No entries in this section.</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endfor %}
+
