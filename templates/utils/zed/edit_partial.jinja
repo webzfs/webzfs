@@ -1,0 +1,29 @@
+{# Script edit form loaded into the script-modal via HTMX #}
+{% if origin == 'package' %}
+<div class="bg-warning-900/30 border border-warning-900 rounded-lg p-3 mb-4 text-sm text-warning-400">
+    <strong>Package-managed script.</strong> Saving will create a local override. The original package version can be restored later.
+</div>
+{% endif %}
+
+<form method="post" action="/utils/zed/save/{{ name }}" hx-boost="false">
+    <input type="hidden" name="content_hash" value="{{ content_hash }}">
+    <div class="mb-3">
+        <div class="flex items-center justify-between">
+            <label class="form-label mb-0">{{ name }}</label>
+            {% if origin == 'override' %}
+            <span class="badge badge-warning text-xs">Override</span>
+            {% elif origin == 'custom' %}
+            <span class="badge badge-info text-xs">Custom</span>
+            {% elif origin == 'package' %}
+            <span class="badge badge-primary text-xs">Package</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="mb-4">
+        <textarea name="content" rows="20" class="form-input w-full font-mono text-xs resize-y" style="tab-size:4">{{ content }}</textarea>
+    </div>
+    <div class="flex justify-end gap-3">
+        <button type="button" class="btn btn-secondary" onclick="closeZedModal('script-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Script</button>
+    </div>
+</form>

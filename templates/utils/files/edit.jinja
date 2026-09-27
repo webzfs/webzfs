@@ -1,10 +1,26 @@
-{% extends "layout_main.jinja" %}
+{% extends "layout.jinja" %}
 
-{% set active_page = "files" %}
+{% set active_page = "utils" %}
 
-{% block caption %}Edit File{% endblock %}
+{% block content %}
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <a href="/utils/files" class="hover:text-primary-400">File Browser</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Edit File</span>
+    </nav>
 
-{% block inner %}
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h1 class="text-3xl font-bold text-text-primary mb-0">Edit File</h1>
+        <a href="/utils/text" class="btn-secondary inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Open Another File
+        </a>
+    </div>
+
     <div id="edit">
         {% include "utils/files/edit_form.jinja" %}
     </div>

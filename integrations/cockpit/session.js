@@ -2,6 +2,7 @@
     "use strict";
 
     const TOKEN_COOKIE = "token";
+    const CONTEXT_COOKIE = "webzfs_context=cockpit";
     let webzfsToken = null;
 
     function getHeader(headers, name) {
@@ -47,9 +48,11 @@
 
     function addCookieHeader(headers) {
         const requestHeaders = Object.assign({}, headers || {});
+        const cookies = [CONTEXT_COOKIE];
         if (webzfsToken) {
-            requestHeaders.Cookie = `${TOKEN_COOKIE}=${webzfsToken}`;
+            cookies.unshift(`${TOKEN_COOKIE}=${webzfsToken}`);
         }
+        requestHeaders.Cookie = cookies.join("; ");
         return requestHeaders;
     }
 
@@ -60,6 +63,7 @@
     const api = {
         addCookieHeader,
         clear,
+        CONTEXT_COOKIE,
         extractToken,
         getHeader,
         getHeaderValues,

@@ -3,6 +3,8 @@
 
     const WEBZFS_PORT = 26619;
     const WEBZFS_PARSE_ORIGIN = `http://127.0.0.1:${WEBZFS_PORT}`;
+    const WEBZFS_CONTEXT_HEADER = "X-WebZFS-Context";
+    const WEBZFS_CONTEXT_VALUE = "cockpit";
     const WEBZFS_ORIGINS = new Set([
         WEBZFS_PARSE_ORIGIN,
         `http://localhost:${WEBZFS_PORT}`,
@@ -34,10 +36,21 @@
         return result;
     }
 
+    function addCockpitContextHeader(headers) {
+        const result = normalizeHeaders(headers);
+        Object.keys(result).forEach(name => {
+            if (name.toLowerCase() === WEBZFS_CONTEXT_HEADER.toLowerCase()) {
+                delete result[name];
+            }
+        });
+        result[WEBZFS_CONTEXT_HEADER] = WEBZFS_CONTEXT_VALUE;
+        return result;
+    }
+
     function createRequestOptions(method, headers, body) {
         const options = {
             method: String(method || "GET").toUpperCase(),
-            headers: global.WebZFSSession.addCookieHeader(normalizeHeaders(headers)),
+            headers: global.WebZFSSession.addCookieHeader(addCockpitContextHeader(headers)),
         };
         if (body !== undefined && body !== null) {
             options.body = body;
@@ -92,7 +105,7 @@
         const requestOptions = options || {};
         const normalizedPath = normalizePath(path);
         const headers = global.WebZFSSession.addCookieHeader(
-            normalizeHeaders(requestOptions.headers)
+            addCockpitContextHeader(requestOptions.headers)
         );
         let body = requestOptions.body;
         if (typeof body === "string") {
@@ -152,7 +165,7 @@
             method: String(method || "GET").toUpperCase(),
             port: WEBZFS_PORT,
             path,
-            headers: global.WebZFSSession.addCookieHeader(normalizeHeaders(headers)),
+            headers: global.WebZFSSession.addCookieHeader(addCockpitContextHeader(headers)),
         };
         const encodedChannel = global.btoa(JSON.stringify(channel));
         return `/cockpit/channel/${global.cockpit.transport.csrf_token}?${encodedChannel}`;
@@ -507,7 +520,9 @@
                 method: "GET",
                 path: this.url,
                 body: "",
-                headers: global.WebZFSSession.addCookieHeader({ Accept: "text/event-stream" }),
+                headers: global.WebZFSSession.addCookieHeader(
+                    addCockpitContextHeader({ Accept: "text/event-stream" })
+                ),
             };
             this.httpRequest = httpClient.request(requestOptions);
             this.httpRequest.response(status => {
@@ -572,6 +587,9 @@
     const api = {
         WEBZFS_PORT,
         WEBZFS_PARSE_ORIGIN,
+        WEBZFS_CONTEXT_HEADER,
+        WEBZFS_CONTEXT_VALUE,
+        addCockpitContextHeader,
         buildExternalChannelUrl,
         CockpitEventSource,
         CockpitXMLHttpRequest,

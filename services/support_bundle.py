@@ -3,6 +3,7 @@ Support Bundle Service
 Collects system diagnostic data and packages it into a downloadable zip file
 for sharing with support or community assistance.
 """
+
 import io
 import json
 import os
@@ -11,7 +12,7 @@ import subprocess
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from services.utils import (
     get_os_type,
@@ -177,15 +178,13 @@ class SupportBundleService:
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             # Always include a manifest
             manifest_lines = [
-                f"WebZFS Support Bundle",
+                "WebZFS Support Bundle",
                 f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 f"Hostname: {hostname}",
                 f"OS: {get_os_type()} {platform.release()}",
                 f"Items included: {', '.join(selected_keys)}",
             ]
-            zf.writestr(
-                f"{prefix}/MANIFEST.txt", "\n".join(manifest_lines) + "\n"
-            )
+            zf.writestr(f"{prefix}/MANIFEST.txt", "\n".join(manifest_lines) + "\n")
 
             # Dispatch each selected item to its collector
             collectors = {
@@ -226,19 +225,13 @@ class SupportBundleService:
     #  Each returns (filename, text_content).                            #
     # ------------------------------------------------------------------ #
 
-    def _run_cmd(
-        self, cmd: List[str], timeout: float = 30, use_zfs: bool = True
-    ) -> str:
+    def _run_cmd(self, cmd: List[str], timeout: float = 30, use_zfs: bool = True) -> str:
         """Helper to run a command and return stdout, falling back to stderr."""
         try:
             if use_zfs:
-                result = run_zfs_command(
-                    cmd, check=False, timeout=timeout
-                )
+                result = run_zfs_command(cmd, check=False, timeout=timeout)
             else:
-                result = run_privileged_command(
-                    cmd, check=False, timeout=timeout
-                )
+                result = run_privileged_command(cmd, check=False, timeout=timeout)
             output = result.stdout or ""
             if result.returncode != 0 and result.stderr:
                 output += f"\n--- stderr ---\n{result.stderr}"
@@ -257,8 +250,13 @@ class SupportBundleService:
         return (
             "zpool_list.txt",
             self._run_cmd(
-                ["zpool", "list", "-v", "-o",
-                 "name,size,alloc,free,frag,cap,dedup,health"]
+                [
+                    "zpool",
+                    "list",
+                    "-v",
+                    "-o",
+                    "name,size,alloc,free,frag,cap,dedup,health",
+                ]
             ),
         )
 
@@ -285,8 +283,12 @@ class SupportBundleService:
         return (
             "zfs_list.txt",
             self._run_cmd(
-                ["zfs", "list", "-o",
-                 "name,used,avail,refer,mountpoint,type,origin,compress,atime"]
+                [
+                    "zfs",
+                    "list",
+                    "-o",
+                    "name,used,avail,refer,mountpoint,type,origin,compress,atime",
+                ]
             ),
         )
 
@@ -300,8 +302,7 @@ class SupportBundleService:
         return (
             "snapshot_list.txt",
             self._run_cmd(
-                ["zfs", "list", "-t", "snapshot", "-o",
-                 "name,used,refer,creation"]
+                ["zfs", "list", "-t", "snapshot", "-o", "name,used,refer,creation"]
             ),
         )
 
@@ -310,9 +311,7 @@ class SupportBundleService:
     def _collect_zfs_version(self):
         version_output = get_zfs_version() or "Could not determine ZFS version."
         # Also grab zpool upgrade -v for feature flags
-        feature_flags = self._run_cmd(
-            ["zpool", "upgrade", "-v"], timeout=10
-        )
+        feature_flags = self._run_cmd(["zpool", "upgrade", "-v"], timeout=10)
         return (
             "zfs_version.txt",
             f"{version_output}\n\n--- Feature Flags ---\n{feature_flags}",
@@ -490,9 +489,7 @@ class SupportBundleService:
                     days = int(uptime_seconds // 86400)
                     hours = int((uptime_seconds % 86400) // 3600)
                     minutes = int((uptime_seconds % 3600) // 60)
-                    lines.append(
-                        f"Uptime: {days}d {hours}h {minutes}m"
-                    )
+                    lines.append(f"Uptime: {days}d {hours}h {minutes}m")
             else:
                 result = subprocess.run(
                     ["uptime"],
@@ -511,11 +508,10 @@ class SupportBundleService:
             import psutil
 
             mem = psutil.virtual_memory()
-            total_gb = mem.total / (1024 ** 3)
-            used_gb = mem.used / (1024 ** 3)
+            total_gb = mem.total / (1024**3)
+            used_gb = mem.used / (1024**3)
             lines.append(
-                f"Memory: {used_gb:.1f} GB / {total_gb:.1f} GB "
-                f"({mem.percent}% used)"
+                f"Memory: {used_gb:.1f} GB / {total_gb:.1f} GB " f"({mem.percent}% used)"
             )
         except Exception:
             lines.append("Memory: unavailable")
@@ -531,16 +527,11 @@ class SupportBundleService:
     # -- Health Reports --
 
     def _collect_health_reports(self):
-        report_path = (
-            Path.home() / ".config" / "webzfs" / "health_reports.json"
-        )
+        report_path = Path.home() / ".config" / "webzfs" / "health_reports.json"
         if not report_path.exists():
             return (
                 "health_reports.json",
-                json.dumps(
-                    {"message": "No health reports found."}, indent=2
-                )
-                + "\n",
+                json.dumps({"message": "No health reports found."}, indent=2) + "\n",
             )
         try:
             content = report_path.read_text(encoding="utf-8")
@@ -558,6 +549,8 @@ class SupportBundleService:
     def _collect_audit_logs(self):
         combined = []
         for category in LogCategory:
+            if category is LogCategory.SHELL:
+                continue
             log_path = audit_logger.log_dir / f"{category.value}.log"
             combined.append(f"=== {category.value} ===")
             if log_path.exists():

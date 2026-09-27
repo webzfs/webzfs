@@ -30,6 +30,13 @@ if [ ! -d "$WEBZFS_DIR" ]; then
     exit 1
 fi
 
+CONTEXT_HELPER="$WEBZFS_DIR/core/request_context.py"
+if [ ! -f "$CONTEXT_HELPER" ] || ! grep -q 'COCKPIT_CONTEXT_COOKIE' "$CONTEXT_HELPER"; then
+    printf '%s\n' "Error: The installed WebZFS backend does not support the live-compatible Cockpit context cookie." >&2
+    printf '%s\n' "Run the combined update_linux_cockpit.sh workflow so both /opt/webzfs and the Cockpit package are updated together." >&2
+    exit 1
+fi
+
 for file in \
     "$ASSET_DIR/static/css/styles.css" \
     "$ASSET_DIR/static/css/corner_styles.css" \
@@ -61,9 +68,12 @@ install -m 0644 "$ASSET_DIR/static/css/corner_styles.css" "$STAGING_DIR/static/c
 install -m 0644 "$ASSET_DIR/static/css/themes/"*.css "$STAGING_DIR/static/css/themes/"
 install -m 0644 "$ASSET_DIR/static/img/"* "$STAGING_DIR/static/img/"
 
-if find "$ASSET_DIR/static/js" -maxdepth 1 -type f | grep -q .; then
-    install -m 0644 "$ASSET_DIR/static/js/"* "$STAGING_DIR/static/js/"
-fi
+for file in "$ASSET_DIR/static/js/"*
+do
+    if [ -f "$file" ]; then
+        install -m 0644 "$file" "$STAGING_DIR/static/js/"
+    fi
+done
 
 install -m 0644 "$ASSET_DIR/node_modules/htmx.org/dist/htmx.min.js" "$STAGING_DIR/static/vendor/htmx.min.js"
 install -m 0644 "$ASSET_DIR/node_modules/alpinejs/dist/cdn.min.js" "$STAGING_DIR/static/vendor/alpine.min.js"

@@ -34,7 +34,7 @@ def read(request: Request, file_path: Annotated[str, Form()]):
 def save(
     request: Request, file_path: Annotated[str, Form()], content: Annotated[str, Form()]
 ):
-    context: dict[str, Any] = {"content": content}
+    context: dict[str, Any] = {"content": content, "file_path": file_path}
 
     try:
         save_file(file_path, content)

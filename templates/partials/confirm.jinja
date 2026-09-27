@@ -113,9 +113,21 @@
   // Function to show confirmation dialog
   function showConfirm(dialogId) {
     const dialog = document.getElementById(dialogId);
-    if (dialog && dialog.__x) {
-      dialog.__x.$data.open = true;
+    if (!dialog) {
+      return;
     }
+    if (window.Alpine && typeof window.Alpine.$data === 'function') {
+      const component = window.Alpine.$data(dialog);
+      if (component) {
+        component.open = true;
+        return;
+      }
+    }
+    if (dialog.__x) {
+      dialog.__x.$data.open = true;
+      return;
+    }
+    dialog.style.display = 'block';
   }
 </script>
 

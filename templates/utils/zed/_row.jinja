@@ -1,0 +1,72 @@
+<tr class="zedlet-row border-b border-border-subtle/50 hover:bg-bg-elevated-2/50 transition-colors"
+    data-name="{{ z.name|lower }}" data-enabled="{{ 'true' if z.enabled else 'false' }}" data-origin="{{ z.origin }}">
+    {# ZEDLET: icon + name + description #}
+    <td class="py-3 pr-4">
+        <div class="flex items-center gap-2.5">
+            <span class="text-text-tertiary flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+            </span>
+            <div>
+                <div class="font-mono text-sm font-medium {% if z.enabled %}text-text-primary{% else %}text-text-tertiary{% endif %}">{{ z.name }}</div>
+                {% if z.detail %}<div class="text-text-tertiary text-xs mt-0.5">{{ z.detail }}</div>{% endif %}
+            </div>
+        </div>
+    </td>
+    {# Event / Match + sync #}
+    <td class="py-3 px-4">
+        <div class="font-mono text-sm text-text-secondary">{{ z.event }}</div>
+        {% if z.is_sync %}<div class="text-warning-400 text-[10px] font-semibold uppercase mt-0.5">synchronous</div>
+        {% else %}<div class="text-text-tertiary text-[10px] mt-0.5">asynchronous</div>{% endif %}
+    </td>
+    {# Origin #}
+    <td class="py-3 px-4">
+        {% if z.origin == 'package' %}
+        <span class="badge badge-success">ZFS packaged</span>
+        {% elif z.origin == 'custom' %}
+        <span class="badge badge-info">Custom</span>
+        {% elif z.origin == 'override' %}
+        <span class="badge badge-warning">Override</span>
+        {% endif %}
+    </td>
+    {# Filesystem #}
+    <td class="py-3 px-4 hidden lg:table-cell">
+        <div class="text-text-tertiary text-xs font-mono">
+            {% if z.enabled_path and z.is_link %}{{ z.enabled_path }} &rarr; {{ status.package_dir }}{% elif z.enabled_path %}{{ z.enabled_path }}{% elif z.package_path %}{{ z.package_path }}{% endif %}
+        </div>
+    </td>
+    {# State #}
+    <td class="py-3 px-4">
+        {% if z.enabled %}
+        <span class="inline-flex items-center gap-1.5 text-xs font-medium text-success-400"><span class="w-1.5 h-1.5 rounded-full bg-success-400"></span> Enabled</span>
+        {% else %}
+        <span class="text-xs font-medium text-text-tertiary">Disabled</span>
+        {% endif %}
+    </td>
+    {# Actions: Enable/Disable, Edit, Protected/Restore/Delete #}
+    <td class="py-3 pl-4 text-right">
+        <div class="flex items-center justify-end gap-2">
+            <form method="post" action="/utils/zed/toggle/{{ z.name }}" class="inline" hx-boost="false">
+                {% if z.enabled %}
+                <button type="submit" class="btn btn-secondary btn-sm" title="Disable {{ z.name }}">Disable</button>
+                {% else %}
+                <button type="submit" class="btn btn-secondary btn-sm" title="Enable {{ z.name }}">Enable</button>
+                {% endif %}
+            </form>
+            <button type="button" class="btn btn-secondary btn-sm inline-flex items-center gap-1" hx-get="/utils/zed/edit/{{ z.name }}" hx-target="#script-edit-body" hx-swap="innerHTML" onclick="showZedModal('script-modal')">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                Edit
+            </button>
+            {% if z.origin == 'override' %}
+            <form method="post" action="/utils/zed/restore/{{ z.name }}" class="inline" hx-boost="false">
+                <button type="submit" class="btn btn-secondary btn-sm" onclick="return confirm('Restore {{ z.name }} to the packaged version?')">Restore</button>
+            </form>
+            {% elif z.origin == 'custom' %}
+            <form method="post" action="/utils/zed/delete/{{ z.name }}" class="inline" hx-boost="false">
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete {{ z.name }}?')">Delete</button>
+            </form>
+            {% else %}
+            <button class="btn btn-secondary btn-sm" disabled>Protected</button>
+            {% endif %}
+        </div>
+    </td>
+</tr>

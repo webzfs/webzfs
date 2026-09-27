@@ -1,336 +1,181 @@
-"""Shell service for maintaining interactive shell sessions."""
-import glob
+"""POSIX pseudo-terminal lifecycle for the native WebZFS terminal."""
+
+import asyncio
+import errno
+import fcntl
+import hashlib
 import os
+import pty
+import signal
+import struct
 import subprocess
-from datetime import datetime
+import termios
 from pathlib import Path
 
-from core.exceptions import ProcessError
+from services.shell_settings import ProcessIdentity, get_process_identity
+
+LOCK_DIR = Path.home() / ".config" / "webzfs" / "terminal-locks"
 
 
-class ShellSession:
-    """Maintains state for an interactive shell session."""
-    
-    # Cache for available system commands (shared across all instances)
-    _command_cache: list[str] | None = None
+class TerminalBusyError(Exception):
+    """Raised when a username already owns an active terminal."""
 
-    def __init__(self, initial_cwd: str = None):
-        """Initialize a shell session with a working directory."""
-        self.cwd = initial_cwd or os.getcwd()
-        self.history: list[dict] = []
 
-    def execute_command(self, command: str) -> tuple[str, str | None]:
-        """
-        Execute a command in the current working directory.
-        
-        Args:
-            command: The command to execute
-            
-        Returns:
-            Tuple of (output, error) where error is None if successful
-        """
-        command = command.strip()
-        if not command:
-            return "", None
+def _minimal_environment(identity: ProcessIdentity) -> dict[str, str]:
+    environment = {
+        "HOME": identity.home,
+        "USER": identity.username,
+        "LOGNAME": identity.username,
+        "SHELL": identity.shell,
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+    }
+    for name in ("LANG", "LC_ALL", "LC_CTYPE"):
+        if os.environ.get(name):
+            environment[name] = os.environ[name]
+    return environment
 
-        # Handle cd command specially to change working directory
-        if command.startswith("cd "):
-            return self._handle_cd(command[3:].strip())
-        elif command == "cd":
-            # cd with no args goes to home directory
-            return self._handle_cd("~")
 
-        # Execute the command in the current working directory
+class TerminalProcess:
+    """Own one shell process, PTY master descriptor, and username lock."""
+
+    def __init__(self, authenticated_user: str, columns: int = 120, rows: int = 32):
+        self.authenticated_user = authenticated_user
+        self.identity = get_process_identity()
+        self.columns = columns
+        self.rows = rows
+        self.master_fd: int | None = None
+        self.process: subprocess.Popen | None = None
+        self.lock_handle = None
+
+    def start(self) -> None:
+        """Acquire the username lock and start an interactive shell on a PTY."""
+        self.acquire_lock()
+        master_fd, slave_fd = pty.openpty()
         try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=self.cwd,
-                capture_output=True,
-                text=True,
-                timeout=30,  # 30 second timeout
+            self.master_fd = master_fd
+            self.resize(self.columns, self.rows)
+            self.process = subprocess.Popen(
+                [self.identity.shell, "-i"],
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                cwd=self.identity.home,
+                env=_minimal_environment(self.identity),
+                close_fds=True,
+                start_new_session=True,
             )
-            
-            output = result.stdout
-            if result.stderr:
-                output += result.stderr
-            
-            # Record in history
-            self.history.append({
-                "timestamp": datetime.now().isoformat(),
-                "command": command,
-                "cwd": self.cwd,
-                "output": output,
-                "returncode": result.returncode,
-            })
-            
-            if result.returncode != 0:
-                return output, f"Command exited with status {result.returncode}"
-            
-            return output, None
-            
-        except subprocess.TimeoutExpired:
-            error_msg = "Command timed out after 30 seconds"
-            self.history.append({
-                "timestamp": datetime.now().isoformat(),
-                "command": command,
-                "cwd": self.cwd,
-                "output": error_msg,
-                "returncode": -1,
-            })
-            return "", error_msg
-        except Exception as exc:
-            error_msg = f"Command failed: {str(exc)}"
-            self.history.append({
-                "timestamp": datetime.now().isoformat(),
-                "command": command,
-                "cwd": self.cwd,
-                "output": error_msg,
-                "returncode": -1,
-            })
-            return "", error_msg
-
-    def _handle_cd(self, path: str) -> tuple[str, str | None]:
-        """
-        Handle the cd (change directory) command.
-        
-        Args:
-            path: The path to change to
-            
-        Returns:
-            Tuple of (output, error) where error is None if successful
-        """
-        if not path or path == "~":
-            # Go to home directory
-            path = str(Path.home())
-        elif path.startswith("~/"):
-            # Expand home directory
-            path = str(Path.home() / path[2:])
-        elif not os.path.isabs(path):
-            # Make relative path absolute based on current directory
-            path = os.path.join(self.cwd, path)
-        
-        # Normalize the path
-        path = os.path.normpath(path)
-        
-        # Check if directory exists
-        if not os.path.exists(path):
-            error_msg = f"cd: {path}: No such file or directory"
-            self.history.append({
-                "timestamp": datetime.now().isoformat(),
-                "command": f"cd {path}",
-                "cwd": self.cwd,
-                "output": error_msg,
-                "returncode": 1,
-            })
-            return "", error_msg
-        
-        if not os.path.isdir(path):
-            error_msg = f"cd: {path}: Not a directory"
-            self.history.append({
-                "timestamp": datetime.now().isoformat(),
-                "command": f"cd {path}",
-                "cwd": self.cwd,
-                "output": error_msg,
-                "returncode": 1,
-            })
-            return "", error_msg
-        
-        # Update current working directory
-        old_cwd = self.cwd
-        self.cwd = path
-        
-        self.history.append({
-            "timestamp": datetime.now().isoformat(),
-            "command": f"cd {path}",
-            "cwd": old_cwd,
-            "output": f"Changed directory to {self.cwd}",
-            "returncode": 0,
-        })
-        
-        return f"Changed directory to {self.cwd}", None
-
-    def get_history_text(self) -> str:
-        """
-        Get the command history as formatted text.
-        
-        Returns:
-            Formatted text representation of command history
-        """
-        lines = [
-            "=" * 80,
-            "SHELL COMMAND HISTORY",
-            f"Generated: {datetime.now().isoformat()}",
-            "=" * 80,
-            "",
-        ]
-        
-        for entry in self.history:
-            lines.append(f"[{entry['timestamp']}] {entry['cwd']}")
-            lines.append(f"# {entry['command']}")
-            if entry['output']:
-                lines.append(entry['output'])
-            lines.append(f"Exit code: {entry['returncode']}")
-            lines.append("-" * 80)
-            lines.append("")
-        
-        return "\n".join(lines)
-
-    def tab_complete(self, partial_command: str) -> list[str]:
-        """
-        Provide tab completion suggestions for a partial command.
-        
-        Args:
-            partial_command: The partial command to complete
-            
-        Returns:
-            List of completion suggestions
-        """
-        partial_command = partial_command.strip()
-        
-        # Split command into parts
-        parts = partial_command.split()
-        
-        if not parts:
-            return []
-        
-        # If only one part or completing the first word, suggest commands
-        if len(parts) == 1 and not partial_command.endswith(' '):
-            return self._complete_command(parts[0])
-        
-        # Otherwise, complete file paths
-        # Get the last part that might be a path
-        if partial_command.endswith(' '):
-            # Starting a new argument
-            path_to_complete = ""
-        else:
-            # Completing current argument
-            path_to_complete = parts[-1]
-        
-        return self._complete_path(path_to_complete)
-    
-    def _complete_command(self, partial: str) -> list[str]:
-        """
-        Complete command names from system binary directories.
-        
-        Args:
-            partial: Partial command name
-            
-        Returns:
-            List of matching commands
-        """
-        # Build command cache if not already built
-        if ShellSession._command_cache is None:
-            ShellSession._command_cache = self._build_command_cache()
-        
-        # Filter commands that match the partial input
-        matching_commands = [
-            cmd for cmd in ShellSession._command_cache 
-            if cmd.startswith(partial)
-        ]
-        
-        # Limit to 20 suggestions and sort
-        return sorted(matching_commands[:20])
-    
-    def _build_command_cache(self) -> list[str]:
-        """
-        Build a cache of available commands from system binary directories.
-        
-        Returns:
-            List of available command names
-        """
-        commands = set()
-        
-        # Directories to scan for binaries
-        binary_dirs = ['/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/local/sbin', '/usr/local/bin']
-        
-        for directory in binary_dirs:
-            try:
-                if os.path.isdir(directory):
-                    # List all files in the directory
-                    for filename in os.listdir(directory):
-                        filepath = os.path.join(directory, filename)
-                        # Check if it's a file and executable
-                        if os.path.isfile(filepath) and os.access(filepath, os.X_OK):
-                            commands.add(filename)
-            except (PermissionError, OSError):
-                # Skip directories we can't read
-                continue
-        
-        return list(commands)
-    
-    def _complete_path(self, partial: str) -> list[str]:
-        """
-        Complete file and directory paths.
-        
-        Args:
-            partial: Partial path
-            
-        Returns:
-            List of matching paths
-        """
-        try:
-            # Handle home directory expansion
-            if partial.startswith('~'):
-                partial = os.path.expanduser(partial)
-            
-            # If path is relative, make it relative to current directory
-            if not os.path.isabs(partial):
-                partial = os.path.join(self.cwd, partial)
-            
-            # Add wildcard for globbing
-            pattern = partial + '*'
-            
-            # Get matches
-            matches = glob.glob(pattern)
-            
-            # Convert back to relative paths if original was relative
-            results = []
-            for match in matches[:20]:  # Limit to 20 results
-                # Get the display name
-                if match.startswith(self.cwd):
-                    # Make relative to current directory
-                    display = os.path.relpath(match, self.cwd)
-                else:
-                    display = match
-                
-                # Add trailing slash for directories
-                if os.path.isdir(match):
-                    display += '/'
-                
-                results.append(display)
-            
-            return sorted(results)
         except Exception:
-            return []
+            os.close(master_fd)
+            self.master_fd = None
+            self._release_lock()
+            raise
+        finally:
+            os.close(slave_fd)
 
+    def _acquire_lock(self) -> None:
+        if self.lock_handle is not None:
+            return
+        LOCK_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(LOCK_DIR, 0o700)
+        digest = hashlib.sha256(self.authenticated_user.encode("utf-8")).hexdigest()
+        lock_path = LOCK_DIR / f"{digest}.lock"
+        self.lock_handle = lock_path.open("a+b")
+        os.chmod(lock_path, 0o600)
+        try:
+            fcntl.flock(self.lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            self.lock_handle.close()
+            self.lock_handle = None
+            raise TerminalBusyError("This user already has an active terminal") from exc
 
-# Global dictionary to store sessions per user
-# In production, this should use Redis or a database
-_sessions: dict[str, ShellSession] = {}
+    def acquire_lock(self) -> None:
+        """Reserve the authenticated username before starting a shell process."""
+        self._acquire_lock()
 
+    async def read(self, size: int = 65536) -> bytes:
+        """Wait asynchronously for PTY output and return one byte chunk."""
+        if self.master_fd is None:
+            return b""
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
 
-def get_shell_session(session_id: str) -> ShellSession:
-    """
-    Get or create a shell session for the given session ID.
-    
-    Args:
-        session_id: Unique identifier for the session (e.g., username)
-        
-    Returns:
-        ShellSession instance
-    """
-    if session_id not in _sessions:
-        _sessions[session_id] = ShellSession()
-    return _sessions[session_id]
+        def read_ready() -> None:
+            if future.done() or self.master_fd is None:
+                return
+            try:
+                future.set_result(os.read(self.master_fd, size))
+            except OSError as exc:
+                if exc.errno in {errno.EBADF, errno.EIO}:
+                    future.set_result(b"")
+                else:
+                    future.set_exception(exc)
 
+        loop.add_reader(self.master_fd, read_ready)
+        try:
+            return await future
+        finally:
+            if self.master_fd is not None:
+                loop.remove_reader(self.master_fd)
 
-def clear_shell_session(session_id: str) -> None:
-    """
-    Clear the shell session for the given session ID.
-    
-    Args:
-        session_id: Unique identifier for the session
-    """
-    if session_id in _sessions:
-        del _sessions[session_id]
+    def write(self, data: bytes) -> None:
+        if self.master_fd is None:
+            raise BrokenPipeError("Terminal is closed")
+        view = memoryview(data)
+        while view:
+            written = os.write(self.master_fd, view)
+            view = view[written:]
+
+    def resize(self, columns: int, rows: int) -> None:
+        self.columns = max(2, min(int(columns), 500))
+        self.rows = max(1, min(int(rows), 300))
+        if self.master_fd is None:
+            return
+        window_size = struct.pack("HHHH", self.rows, self.columns, 0, 0)
+        fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, window_size)
+
+    def poll(self) -> int | None:
+        return self.process.poll() if self.process else None
+
+    def terminate(self) -> int | None:
+        """Terminate the shell process group while leaving PTY output readable."""
+        process = self.process
+        if process and process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGHUP)
+                process.wait(timeout=2)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                if process.poll() is None:
+                    try:
+                        os.killpg(process.pid, signal.SIGTERM)
+                        process.wait(timeout=2)
+                    except (ProcessLookupError, subprocess.TimeoutExpired):
+                        if process.poll() is None:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            process.wait(timeout=2)
+        return process.poll() if process else None
+
+    def close(self) -> int | None:
+        """Terminate the shell, close its PTY, and release the username lock."""
+        exit_code = self.terminate()
+        if self.master_fd is not None:
+            try:
+                os.close(self.master_fd)
+            except OSError:
+                pass
+            self.master_fd = None
+        self.process = None
+        self._release_lock()
+        return exit_code
+
+    def _release_lock(self) -> None:
+        if self.lock_handle is not None:
+            try:
+                fcntl.flock(self.lock_handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                self.lock_handle.close()
+                self.lock_handle = None

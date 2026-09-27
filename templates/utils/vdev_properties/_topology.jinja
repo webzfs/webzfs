@@ -1,0 +1,75 @@
+{# One pool topology card. Expects `topology` and global `selected` in context. #}
+{% macro chip(label, value, modes) %}
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border-default bg-bg-elevated-3/40 text-[10.5px] font-mono text-text-secondary whitespace-nowrap" data-inline-modes="{{ modes }}">{% if label %}{{ label }} {% endif %}<strong class="text-text-primary">{{ value }}</strong></span>
+{% endmacro %}
+{% macro node_classes(token) %}border rounded-xl cursor-pointer transition-colors hover:border-border-strong {% if selected == token %}border-primary-400 ring-1 ring-primary-400/30{% else %}border-border-subtle{% endif %}{% endmacro %}
+
+<div class="border rounded-xl overflow-hidden {% if topology.pool.name == node.pool %}border-primary-400 ring-1 ring-primary-400/30{% else %}border-border-subtle{% endif %}" data-pool-card="{{ topology.pool.name }}">
+    {% if pool == 'all' %}
+    <div class="px-4 py-3 border-b border-border-subtle bg-bg-elevated-2/60 flex items-center justify-between gap-3">
+        <div>
+            <h3 class="text-sm font-semibold text-text-primary mb-0">Pool: {{ topology.pool.name }}</h3>
+            <p class="text-[11px] text-text-tertiary mt-1 mb-0">{{ topology.topology_summary }}</p>
+        </div>
+        <span class="badge badge-secondary">{{ topology.metrics.leaf_count }} leaf{{ 's' if topology.metrics.leaf_count != 1 else '' }}</span>
+    </div>
+    {% endif %}
+
+<div class="p-3 space-y-3">
+    <!-- Pool node -->
+    <div class="{{ node_classes(topology.pool.token) }} p-3 bg-primary-500/5 border-primary-400/30" data-node="{{ topology.pool.token }}" onclick="selectVdevNode('{{ topology.pool.token }}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVdevNode('{{ topology.pool.token }}')}">
+        <div class="flex justify-between items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-9 h-9 rounded-lg border border-border-default bg-bg-elevated-2 flex items-center justify-center text-primary-400 flex-shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3" stroke-width="2"/><path stroke-width="2" d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+                </div>
+                <div class="min-w-0">
+                    <div class="text-sm font-bold text-text-primary truncate">Pool: {{ topology.pool.name }}</div>
+                    <div class="text-[10.5px] text-text-tertiary truncate">Pool-level inventory metadata and location scheme</div>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-1.5 justify-end">
+                {% if topology.pool.props['webzfs:inventory.owner'] %}{{ chip('Owner', topology.pool.props['webzfs:inventory.owner'], 'balanced identity location') }}{% endif %}
+                {% if topology.pool.props['webzfs:inventory.last_audit'] %}{{ chip('Audit', topology.pool.props['webzfs:inventory.last_audit'], 'balanced identity location') }}{% endif %}
+                <span class="badge badge-{{ 'success' if topology.pool.state == 'ONLINE' else 'warning' }}">{{ topology.pool.state }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top-level vdevs -->
+    <div class="ml-4 pl-4 border-l-2 border-border-subtle space-y-2.5">
+        {% for group in topology.groups %}
+        {% set group_search = (group.name ~ ' ' ~ group.type ~ ' ' ~ group.section ~ ' ' ~ (group.props.values()|join(' ')))|lower %}
+        <div data-group-search="{{ group_search }}">
+            {% if group.is_group %}
+            <div class="{{ node_classes(group.token) }} p-3 bg-bg-elevated-2" data-node="{{ group.token }}" onclick="selectVdevNode('{{ group.token }}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVdevNode('{{ group.token }}')}">
+                <div class="flex justify-between items-center gap-3 flex-wrap">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-9 h-9 rounded-lg border border-border-default bg-bg-elevated flex items-center justify-center text-primary-400 flex-shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" stroke-width="2"/><path stroke-width="2" d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="text-sm font-bold text-text-primary truncate">{{ group.name|upper }}</div>
+                            <div class="text-[10.5px] text-text-tertiary truncate">{{ group.type|upper }} / {{ group.section }}{% if group.props['webzfs:vdev.role'] %} / role {{ group.props['webzfs:vdev.role'] }}{% endif %}</div>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 justify-end">
+                        <span class="badge badge-secondary">{{ group.leaves|length }} leaf{{ 's' if group.leaves|length != 1 else '' }}</span>
+                        <span class="badge badge-{{ 'success' if group.state == 'ONLINE' else 'warning' }}">{{ group.state }}</span>
+                    </div>
+                </div>
+                <div class="mt-2.5 space-y-2">
+                    {% for leaf in group.leaves %}{% include 'utils/vdev_properties/_leaf_node.jinja' %}{% endfor %}
+                </div>
+            </div>
+            {% else %}
+            {% for leaf in group.leaves %}{% include 'utils/vdev_properties/_leaf_node.jinja' %}{% endfor %}
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% if not topology.groups %}
+        <div class="text-sm text-text-tertiary">No vdevs reported for this pool.</div>
+        {% endif %}
+    </div>
+</div>
+</div>
