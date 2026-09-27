@@ -208,7 +208,7 @@ echo
 # sanoid - ZFS snapshot management (includes syncoid for replication)
 # libsodium - runtime dependency of pynacl (used by paramiko for SSH)
 # Note: rust, gmake are NOT needed when using pre-compiled wheels
-pkg install -y python312 py312-pip node npm smartmontools sanoid libsodium
+pkg install -y python312 py312-pip node npm smartmontools sanoid libsodium expat
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
