@@ -12,8 +12,8 @@ task domains behind one common unit/cron naming scheme:
     webzfs-task-health-<id>
 
 Platform behavior:
-- Linux: creates a systemd service/timer unit pair per task via
-  sudo tee and enables it with sudo systemctl. The service runs the
+- Linux: writes a systemd service/timer pair under WebZFS state, links
+  it with sudo systemctl, and enables the timer. The service runs the
   generic runner CLI as the same account the web application runs as
   (webzfs), so state files it writes keep webzfs ownership. Privileged
   child commands (zpool, syncoid, smartctl) still elevate through sudo
@@ -27,6 +27,7 @@ Schedules are stored as 5-field cron expressions and converted to
 systemd OnCalendar syntax on Linux by services/schedule_utils.
 """
 import grp
+import fcntl
 import logging
 import os
 import platform
@@ -34,6 +35,8 @@ import pwd
 import re
 import subprocess
 import sys
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -54,11 +57,18 @@ LEGACY_CRON_MARKERS = [
 ]
 
 SYSTEMD_UNIT_DIR = "/etc/systemd/system"
+GENERATED_SUBDIR = Path(".config/webzfs/generated/systemd")
 UNIT_PREFIX = "webzfs-task-"
 
 # Units written by the Syncoid-only implementation. sync_all() removes
 # these so a system that ran the older version converges cleanly.
 LEGACY_UNIT_PREFIX = "webzfs-syncoid-job-"
+
+
+def _generated_unit_dir() -> Path:
+    unit_dir = Path.home() / GENERATED_SUBDIR
+    unit_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
+    return unit_dir
 
 TASK_TYPES = ("syncoid", "scrub", "smart", "health")
 
@@ -204,6 +214,39 @@ class TaskSchedulerError(Exception):
 class TaskScheduler:
     """Manage OS-level schedule registration for all WebZFS task types."""
 
+    @contextmanager
+    def _unit_lock(self):
+        """Serialize unit changes across web workers and startup reconciliation."""
+        try:
+            with (_generated_unit_dir() / ".lock").open("a") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except OSError as error:
+            raise TaskSchedulerError(f"Cannot access generated units: {error}") from error
+
+    def _error_path(self, base_name: str) -> Path:
+        return _generated_unit_dir() / f"{base_name}.error"
+
+    def _set_error(self, base_name: str, message: str) -> None:
+        self._write_unit_file(self._error_path(base_name), message)
+        logger.error("Could not register %s: %s", base_name, message)
+
+    def _clear_error(self, base_name: str) -> None:
+        self._error_path(base_name).unlink(missing_ok=True)
+
+    def get_registration_error(self, task_type: str, task_id: Any) -> str:
+        """Return a cross-worker registration failure without calling systemctl."""
+        if not _is_linux():
+            return ""
+        try:
+            path = self._error_path(unit_base_name(task_type, task_id))
+            return path.read_text() if path.is_file() else ""
+        except OSError:
+            return "Unable to read scheduler registration state"
+
     # Public API
 
     def register_task(
@@ -231,14 +274,22 @@ class TaskScheduler:
             return
 
         if _is_linux():
-            self._write_systemd_units(task_type, task_id, schedule, description)
+            base_name = unit_base_name(task_type, task_id)
+            with self._unit_lock():
+                try:
+                    self._write_systemd_units(task_type, task_id, schedule, description)
+                except TaskSchedulerError as error:
+                    self._set_error(base_name, str(error))
+                    raise
+                self._clear_error(base_name)
         else:
             self._sync_crontab_block()
 
     def unregister_task(self, task_type: str, task_id: Any) -> None:
         """Remove the OS schedule entry for a task."""
         if _is_linux():
-            self._remove_systemd_units(task_type, task_id)
+            with self._unit_lock():
+                self._remove_systemd_units(task_type, task_id)
         else:
             self._sync_crontab_block()
 
@@ -246,19 +297,28 @@ class TaskScheduler:
         """Reconcile OS scheduler state with all four schedule stores.
 
         Registers every enabled task, removes entries for disabled or
-        deleted tasks, and cleans up units left behind by the older
-        Syncoid-only naming scheme.
+        deleted tasks. The root-running Linux updater handles legacy
+        Syncoid-only unit files.
         """
-        tasks = collect_scheduled_tasks()
-
         if _is_linux():
+            with self._unit_lock():
+                self._sync_systemd(collect_scheduled_tasks())
+        else:
+            self._sync_crontab_block(collect_scheduled_tasks())
+
+    def _sync_systemd(self, tasks: List[Dict[str, Any]]) -> None:
+        """Rebuild enabled Linux timers from the authoritative schedule stores."""
+        try:
             wanted = set()
+            removal_errors = []
             for task in tasks:
                 if not task.get("enabled", True):
                     continue
                 schedule = (task.get("schedule") or "").strip()
                 if not schedule:
                     continue
+                base_name = unit_base_name(task["task_type"], task["task_id"])
+                wanted.add(base_name)
                 try:
                     self._write_systemd_units(
                         task["task_type"],
@@ -266,24 +326,42 @@ class TaskScheduler:
                         schedule,
                         task.get("description", ""),
                     )
+                    self._clear_error(base_name)
                 except TaskSchedulerError as register_error:
-                    logger.warning(
-                        f"Could not register {task['task_type']} task "
-                        f"{task['task_id']}: {register_error}"
-                    )
-                    continue
-                wanted.add(unit_base_name(task["task_type"], task["task_id"]))
+                    self._set_error(base_name, str(register_error))
 
             for base_name in self._list_installed_unit_names():
                 if base_name not in wanted:
-                    self._remove_units_by_base_name(base_name)
-        else:
-            self._sync_crontab_block(tasks)
+                    try:
+                        self._remove_units_by_base_name(base_name)
+                    except TaskSchedulerError as error:
+                        logger.warning("Could not remove obsolete unit %s: %s", base_name, error)
+                        removal_errors.append(base_name)
+            for error_file in _generated_unit_dir().glob(f"{UNIT_PREFIX}*.error"):
+                if error_file.name[:-len(".error")] not in wanted:
+                    error_file.unlink(missing_ok=True)
+            errors = [
+                path.name for path in _generated_unit_dir().glob(f"{UNIT_PREFIX}*.error")
+                if path.name[:-len(".error")] in wanted
+            ]
+            if errors or removal_errors:
+                raise TaskSchedulerError(
+                    "Scheduler reconciliation failed for: "
+                    + ", ".join(sorted(errors + removal_errors))
+                )
+        except OSError as error:
+            raise TaskSchedulerError(f"Cannot reconcile generated units: {error}") from error
 
     def get_scheduler_status(self, task_type: str, task_id: Any) -> Dict[str, Any]:
         """Return best-effort OS scheduler state for a task (for the UI)."""
         if _is_linux():
             timer_name = f"{unit_base_name(task_type, task_id)}.timer"
+            error_message = self.get_registration_error(task_type, task_id)
+            if error_message:
+                return {
+                    "backend": "systemd", "unit": timer_name,
+                    "state": "error", "message": error_message,
+                }
             try:
                 result = subprocess.run(
                     ["sudo", "systemctl", "is-active", timer_name],
@@ -297,11 +375,47 @@ class TaskScheduler:
 
     # Linux: systemd timer units
 
-    def _unit_paths(self, base_name: str) -> Tuple[str, str]:
+    def _unit_paths(self, base_name: str) -> Tuple[Path, Path]:
         return (
-            f"{SYSTEMD_UNIT_DIR}/{base_name}.service",
-            f"{SYSTEMD_UNIT_DIR}/{base_name}.timer",
+            _generated_unit_dir() / f"{base_name}.service",
+            _generated_unit_dir() / f"{base_name}.timer",
         )
+
+    def _write_unit_file(self, path: Path, content: str) -> None:
+        """Replace a generated file without exposing a partial write."""
+        name = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", dir=path.parent, prefix=".webzfs-", delete=False
+            ) as handle:
+                name = handle.name
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(name, 0o644)
+            os.replace(name, path)
+        except OSError as error:
+            raise TaskSchedulerError(f"Failed to write {path}: {error}") from error
+        finally:
+            if name and os.path.exists(name):
+                try:
+                    os.unlink(name)
+                except OSError:
+                    logger.warning("Could not clean up temporary unit file %s", name)
+
+    def _check_unit_collision(self, source: Path) -> None:
+        target = Path(SYSTEMD_UNIT_DIR) / source.name
+        if not target.exists() and not target.is_symlink():
+            return
+        if target.is_symlink() and os.readlink(target) == str(source):
+            return
+        raise TaskSchedulerError(f"{target} is not a WebZFS link; refusing to replace it")
+
+    def _check_generated_source(self, source: Path) -> None:
+        if source.is_symlink() or (source.exists() and not source.is_file()):
+            raise TaskSchedulerError(f"{source} is not a regular generated unit")
+        if source.exists() and (source.stat().st_uid != os.getuid()):
+            raise TaskSchedulerError(f"{source} is not owned by the WebZFS process")
 
     def _write_systemd_units(
         self,
@@ -358,8 +472,15 @@ class TaskScheduler:
             "WantedBy=timers.target\n"
         )
 
-        self._sudo_write_file(service_path, service_content)
-        self._sudo_write_file(timer_path, timer_content)
+        # Check both targets before changing any unit source.
+        self._check_unit_collision(service_path)
+        self._check_unit_collision(timer_path)
+        self._check_generated_source(service_path)
+        self._check_generated_source(timer_path)
+        self._write_unit_file(service_path, service_content)
+        self._write_unit_file(timer_path, timer_content)
+        self._systemctl("link", str(service_path))
+        self._systemctl("link", str(timer_path))
         self._systemctl("daemon-reload")
         self._systemctl("enable", "--now", f"{base_name}.timer")
         logger.info(f"Registered systemd timer {base_name}.timer")
@@ -371,51 +492,44 @@ class TaskScheduler:
         service_path, timer_path = self._unit_paths(base_name)
         timer_name = f"{base_name}.timer"
 
-        # Stop and disable first; ignore errors when units do not exist.
+        # Do not disable or remove a foreign unit, even after a partial failure.
+        self._check_unit_collision(service_path)
+        self._check_unit_collision(timer_path)
+        self._check_generated_source(service_path)
+        self._check_generated_source(timer_path)
         self._systemctl("disable", "--now", timer_name, check=False)
-
+        self._systemctl("disable", timer_name, f"{base_name}.service", check=False)
+        # If links remain, keep their source files so systemd never sees dangling links.
+        wants_link = Path(SYSTEMD_UNIT_DIR) / "timers.target.wants" / timer_name
+        if wants_link.is_symlink():
+            raise TaskSchedulerError(f"systemd did not disable {timer_name}")
         for unit_path in (service_path, timer_path):
-            try:
-                subprocess.run(
-                    ["sudo", "rm", "-f", unit_path],
-                    capture_output=True, text=True, timeout=15, check=True,
-                )
-            except subprocess.CalledProcessError as remove_error:
-                logger.warning(
-                    f"Could not remove unit file {unit_path}: "
-                    f"{remove_error.stderr}"
-                )
+            target = Path(SYSTEMD_UNIT_DIR) / unit_path.name
+            if target.is_symlink():
+                raise TaskSchedulerError(f"systemd did not remove {target}")
+        try:
+            for unit_path in (service_path, timer_path):
+                unit_path.unlink(missing_ok=True)
+        except OSError as error:
+            raise TaskSchedulerError(f"Cannot remove generated unit: {error}") from error
+        self._clear_error(base_name)
         self._systemctl("daemon-reload", check=False)
         logger.info(f"Unregistered systemd timer {timer_name}")
 
     def _list_installed_unit_names(self) -> List[str]:
         """List base names of WebZFS timer units currently installed.
 
-        Includes units written by the older Syncoid-only prefix so they
-        are cleaned up during reconciliation.
+        Legacy regular units are migrated by the root-running updater.
         """
         names = []
-        unit_dir = Path(SYSTEMD_UNIT_DIR)
-        for prefix in (UNIT_PREFIX, LEGACY_UNIT_PREFIX):
-            try:
-                for unit_file in unit_dir.glob(f"{prefix}*.timer"):
-                    names.append(unit_file.name[: -len(".timer")])
-            except OSError:
-                continue
-        return names
-
-    def _sudo_write_file(self, path: str, content: str) -> None:
-        """Write a root-owned file using sudo tee (already in sudoers)."""
+        unit_dir = _generated_unit_dir()
         try:
-            subprocess.run(
-                ["sudo", "tee", path],
-                input=content, capture_output=True, text=True,
-                timeout=15, check=True,
-            )
-        except subprocess.CalledProcessError as write_error:
-            raise TaskSchedulerError(
-                f"Failed to write {path}: {write_error.stderr}"
-            )
+            for suffix in (".timer", ".service"):
+                for unit_file in unit_dir.glob(f"{UNIT_PREFIX}*{suffix}"):
+                    names.append(unit_file.name[:-len(suffix)])
+        except OSError as error:
+            raise TaskSchedulerError(f"Cannot list generated units: {error}") from error
+        return sorted(set(names))
 
     def _systemctl(self, *args: str, check: bool = True) -> None:
         try:

@@ -287,94 +287,107 @@ if [ ! -f "${DATA_DIR}/health_schedules.json" ]; then
 fi
 
 chown -R "$WEBZFS_USER:$WEBZFS_USER" "$DATA_DIR"
+install -d -o "$WEBZFS_USER" -g "$WEBZFS_USER" -m 0755 \
+    "${DATA_DIR}/generated/systemd"
 
-# Remove stale scheduled-task lock files created by older releases that
-# ran the task runner as root (issue #194). The /tmp sticky bit prevents
-# the webzfs account from deleting them itself, and a root-owned 0644
-# lock cannot be opened for append by webzfs. The runner recreates them
-# with webzfs ownership on the next run.
+# Remove stale root-owned task locks from older runner versions.
 rm -f /tmp/webzfs-task-*.lock
-
 echo -e "${GREEN}✓${NC} Data files verified"
 echo
 
-# Refresh sudo permissions so new privileged commands (for example grep and
-# dmesg used by the support bundle log collectors) are whitelisted on existing
-# installations. Writing the file on every update keeps it in sync with the
-# installer.
+# Keep the live policy unchanged unless the replacement parses successfully.
 SUDOERS_FILE="/etc/sudoers.d/webzfs"
+SUDOERS_SRC="${SOURCE_DIR}/sudoers.d/webzfs.linux"
 echo "Refreshing sudo permissions..."
-
-cat > "$SUDOERS_FILE" << 'SUDO_EOF'
-# WebZFS sudo permissions
-# Allow webzfs user to execute ZFS and SMART commands
-
-# ZFS commands (multiple paths for different distributions)
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/zpool, /usr/sbin/zfs, /usr/sbin/zdb -l *, /usr/bin/zpool, /usr/bin/zfs, /usr/bin/zdb -l *, /sbin/zpool, /sbin/zfs, /sbin/zdb -l *
-
-# SMART monitoring (multiple paths for different distributions)
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /sbin/smartctl
-
-# Disk utilities
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
-
-# Open file / lock inspection (pool export busy investigation)
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsof, /usr/bin/lslocks, /bin/lsof, /bin/lslocks
-
-# Sanoid/Syncoid (optional)
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid, /usr/bin/syncoid, /usr/local/sbin/sanoid, /usr/local/sbin/syncoid
-
-# Service management (systemctl for system services page)
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
-
-# Crontab editing
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/crontab
-
-# Scheduled syncoid job timers.
-# Unit files are created and edited with "sudo tee" (covered by the
-# general tee entry below) and enabled/disabled/reloaded with
-# "sudo systemctl" (covered by the systemctl entry above). The explicit
-# tee entries here document that intent and keep timer management
-# working even if the general tee entry is ever narrowed. rm is
-# restricted to WebZFS-owned unit files only.
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/webzfs-syncoid-job-*, /bin/tee /etc/systemd/system/webzfs-syncoid-job-*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/webzfs-syncoid-job-*, /bin/rm -f /etc/systemd/system/webzfs-syncoid-job-*
-
-# Unified Scheduling Hub timers. All scheduled task types (scrub, SMART
-# self-test, health check, and replication) use the webzfs-task-* unit
-# naming scheme managed by services/job_scheduler.py.
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/webzfs-task-*, /bin/tee /etc/systemd/system/webzfs-task-*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/webzfs-task-*, /bin/rm -f /etc/systemd/system/webzfs-task-*
-
-# File editing (for config files like smartd.conf, sanoid.conf)
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
-
-# ZED ZEDLET management (enable/disable/create/edit/restore scripts).
-# Restricted to the ZED enabled directory to limit scope.
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/ln -sf /usr/lib/zfs/zed.d/* /etc/zfs/zed.d/*, /bin/ln -sf /usr/lib/zfs/zed.d/* /etc/zfs/zed.d/*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/ln -sf /usr/libexec/zfs/zed.d/* /etc/zfs/zed.d/*, /bin/ln -sf /usr/libexec/zfs/zed.d/* /etc/zfs/zed.d/*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/zfs/zed.d/*, /bin/rm -f /etc/zfs/zed.d/*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/mv -f /etc/zfs/zed.d/.webzfs-tmp-* /etc/zfs/zed.d/*, /bin/mv -f /etc/zfs/zed.d/.webzfs-tmp-* /etc/zfs/zed.d/*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/chmod, /bin/chmod
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/chown root\:root /etc/zfs/zed.d/*, /bin/chown root\:root /etc/zfs/zed.d/*
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/kill -HUP *, /bin/kill -HUP *
-
-# Read system journal and plain-text syslog files for the
-# Observability -> System Log page. journalctl needs sudo (or
-# systemd-journal group) on most distros. tail covers Debian/Ubuntu
-# (/var/log/syslog) and old RHEL (/var/log/messages).
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /bin/journalctl, /usr/bin/tail, /bin/tail
-
-# Support bundle log collection. Reading /var/log/messages and
-# /var/log/syslog (typically mode 640 root:adm) and the kernel ring
-# buffer requires elevated privileges for the unprivileged webzfs user.
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/grep, /bin/grep, /usr/bin/dmesg, /bin/dmesg
-SUDO_EOF
-
-chmod 0440 "$SUDOERS_FILE"
+if [ ! -f "$SUDOERS_SRC" ] || ! command_exists visudo || \
+   ! visudo -c -f "$SUDOERS_SRC"; then
+    echo "Invalid or missing WebZFS sudoers policy; update stopped."
+    exit 1
+fi
+SUDOERS_BACKUP="$(mktemp)"
+if [ -f "$SUDOERS_FILE" ]; then
+    cp -p "$SUDOERS_FILE" "$SUDOERS_BACKUP"
+else
+    unlink "$SUDOERS_BACKUP"
+fi
+SUDOERS_STAGED="${SUDOERS_FILE}.staged"
+install -o root -g root -m 0440 "$SUDOERS_SRC" "$SUDOERS_STAGED"
+mv -f "$SUDOERS_STAGED" "$SUDOERS_FILE"
+if ! visudo -c || ! sudo -n -l >/dev/null 2>&1; then
+    echo "Sudoers validation failed; restoring the previous policy."
+    if [ -f "$SUDOERS_BACKUP" ]; then
+        install -o root -g root -m 0440 "$SUDOERS_BACKUP" "$SUDOERS_STAGED"
+        mv -f "$SUDOERS_STAGED" "$SUDOERS_FILE"
+        unlink "$SUDOERS_BACKUP"
+    else
+        unlink "$SUDOERS_FILE"
+    fi
+    exit 1
+fi
+if [ -f "$SUDOERS_BACKUP" ]; then
+    unlink "$SUDOERS_BACKUP"
+fi
 echo -e "${GREEN}✓${NC} Sudo permissions refreshed"
 echo
 
+
+# Retire only complete, recognizable WebZFS-generated unit pairs.
+# Do not touch administrator units with a similar name or new-style links.
+migrate_legacy_units() {
+    local service_file timer_file name unit_dir
+    local count=0 unresolved=0
+    local -a legacy_names=()
+    unit_dir="/etc/systemd/system"
+    for timer_file in "${unit_dir}"/webzfs-task-*.timer \
+                      "${unit_dir}"/webzfs-syncoid-job-*.timer; do
+        [ -f "$timer_file" ] || continue
+        [ -L "$timer_file" ] && continue
+        name="${timer_file##*/}"
+        name="${name%.timer}"
+        service_file="${unit_dir}/${name}.service"
+        if [ ! -f "$service_file" ] || [ -L "$service_file" ] || \
+           ! grep -Fq 'Description=WebZFS ' "$service_file" || \
+           ! grep -Fq 'Description=Timer for WebZFS ' "$timer_file" || \
+           ! grep -Fq 'WantedBy=timers.target' "$timer_file"; then
+            echo "Leaving unrecognized scheduler unit $name in place."
+            unresolved=$((unresolved + 1))
+            continue
+        fi
+        if [[ "$name" == webzfs-task-* ]]; then
+            if ! grep -Fq ' -m services.task_runner --task-type ' "$service_file"; then
+                echo "Leaving unrecognized scheduler unit $name in place."
+                unresolved=$((unresolved + 1))
+                continue
+            fi
+        elif ! grep -Fq ' -m services.syncoid_runner --job-id ' "$service_file"; then
+            echo "Leaving unrecognized scheduler unit $name in place."
+            unresolved=$((unresolved + 1))
+            continue
+        fi
+        legacy_names+=("$name")
+    done
+    if [ "$unresolved" -gt 0 ]; then
+        echo "$unresolved unrecognized scheduler unit(s) require manual review."
+        return 1
+    fi
+    for name in "${legacy_names[@]}"; do
+        service_file="${unit_dir}/${name}.service"
+        timer_file="${unit_dir}/${name}.timer"
+        systemctl disable --now "${name}.timer" || return 1
+        systemctl disable "${name}.service" >/dev/null 2>&1 || true
+        if [ -L "${unit_dir}/timers.target.wants/${name}.timer" ]; then
+            echo "Cannot retire ${name}: timer is still enabled."
+            return 1
+        fi
+        unlink "$timer_file" || return 1
+        unlink "$service_file" || return 1
+        count=$((count + 1))
+    done
+    if [ "$count" -gt 0 ]; then
+        systemctl daemon-reload || return 1
+        echo "Retired $count legacy scheduler unit pair(s)."
+    fi
+}
 
 # Update CAPTION in .env from .env.example
 ENV_FILE="${INSTALL_DIR}/.env"
@@ -458,6 +471,24 @@ echo -e "${GREEN}✓${NC} Python dependencies updated"
 echo -e "${GREEN}✓${NC} Node.js dependencies updated"
 echo -e "${GREEN}✓${NC} Static assets rebuilt"
 echo
+
+# With the application stopped, remove verified legacy units and recreate
+# schedules before starting the service. Also reconcile when it remains stopped.
+if ! migrate_legacy_units; then
+    echo "Legacy scheduler migration failed; existing unit files were retained."
+    if [ "$SERVICE_WAS_RUNNING" = true ]; then
+        systemctl start webzfs
+    fi
+    exit 1
+fi
+if ! su -s /bin/bash "$WEBZFS_USER" -c \
+    "cd '$INSTALL_DIR' && HOME='$INSTALL_DIR' '$VENV_DIR/bin/python' -c 'from services.job_scheduler import TaskScheduler; TaskScheduler().sync_all()'"; then
+    echo "Scheduler reconciliation failed. Check the scheduling page and service logs."
+    if [ "$SERVICE_WAS_RUNNING" = true ]; then
+        systemctl start webzfs
+    fi
+    exit 1
+fi
 
 # Restart service if it was running
 if [ "$SERVICE_WAS_RUNNING" = true ]; then

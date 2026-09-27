@@ -90,6 +90,9 @@
                         <td class="px-6 py-4 whitespace-nowrap">
                             {% if not task.enabled %}
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-bg-elevated-2 text-text-tertiary">Disabled</span>
+                            {% elif task.registration_error %}
+                            <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-danger-900/40 text-danger-400">Registration error</span>
+                            <div class="text-danger-400 text-xs mt-1 whitespace-normal max-w-sm">{{ task.registration_error }}</div>
                             {% elif task.last_status == 'success' %}
                             <span class="badge-success text-xs">Success</span>
                             {% elif task.last_status == 'failure' %}

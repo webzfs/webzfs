@@ -15,7 +15,6 @@ services.job_scheduler.TaskScheduler, so the stored state and the
 systemd timers or crontab block never diverge.
 """
 import threading
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, Form, Request
@@ -140,6 +139,12 @@ def _collect_tasks() -> List[Dict[str, Any]]:
             })
     except Exception:
         pass
+
+    for task in tasks:
+        if task.get("enabled"):
+            task["registration_error"] = task_scheduler.get_registration_error(
+                task["task_type"], task["task_id"]
+            )
 
     return tasks
 
