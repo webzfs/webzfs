@@ -1,4 +1,4 @@
-{# Deferred content fragment: metrics, alert, toolbar, topology and inspector. #}
+{# Deferred content fragment: metrics, toolbar, topology and inspector. #}
 {% set metrics = summary.metrics %}
 
 <!-- Out-of-band status strip values -->
@@ -30,17 +30,6 @@
             <div class="mt-1 text-2xl font-bold text-info-400">{{ metrics.discoverable_fields }}</div>
             <div class="text-xs text-text-tertiary mt-1">model / serial / WWN / FW / interface / form factor</div>
         </div></div>
-    </div>
-
-    <!-- Inspector-first note -->
-    <div class="card-nested bg-info-500/10 border-info-500/30">
-        <div class="flex gap-3">
-            <svg class="w-5 h-5 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <div class="text-sm text-text-secondary">
-                <p class="font-medium text-info-400 mb-1">Inspector-first layout</p>
-                <p class="mb-0">Only high-value cues are rendered in the pool tree. Full values, including long WWNs, procurement data, lifecycle dates, and notes, stay in the inspector so the topology remains readable.</p>
-            </div>
-        </div>
     </div>
 
     <!-- Toolbar -->
