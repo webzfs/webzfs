@@ -309,3 +309,6 @@ static/js/*
 
 # Related repos
 related-repos/
+
+# Nix build results fodler
+result
