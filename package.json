@@ -17,7 +17,7 @@
     "@xterm/xterm": "6.0.0",
     "alpinejs": "3.13.3",
     "autoprefixer": "^10.5.0",
-    "chart.js": "4.4.0",
+    "chart.js": "4.5.1",
     "htmx.org": "1.9.10",
     "onchange": "^7.1.0",
     "postcss": "^8.5.29",
