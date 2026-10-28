@@ -300,6 +300,18 @@ echo
 # Copy application files to installation directory (preserving config)
 echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
 
+# config/gunicorn.conf.py is application code, not user configuration. All
+# bind settings (BIND_IP, PORT, BIND, SOCKET_UMASK, WORKERS) live in .env and
+# are loaded by the current gunicorn.conf.py. Older installs that skipped this
+# file kept a copy that never reads .env and always binds to 127.0.0.1.
+# Back up the installed copy when it differs, then let it be replaced.
+GUNICORN_CONF="${INSTALL_DIR}/config/gunicorn.conf.py"
+if [ -f "$GUNICORN_CONF" ] && ! cmp -s "$GUNICORN_CONF" "${SOURCE_DIR}/config/gunicorn.conf.py"; then
+    cp -p "$GUNICORN_CONF" "${GUNICORN_CONF}.bak"
+    printf "${YELLOW}!${NC} Replacing config/gunicorn.conf.py; previous copy saved as config/gunicorn.conf.py.bak\n"
+    printf "${YELLOW}!${NC} Set bind options (BIND_IP, PORT, BIND) in ${INSTALL_DIR}/.env\n"
+fi
+
 # Use tar instead of rsync (more portable on FreeBSD)
 # Create a temporary exclude file for patterns
 EXCLUDE_FILE=$(mktemp)
@@ -313,7 +325,6 @@ __pycache__
 .env
 .config
 .wheels
-config/gunicorn.conf.py
 ./install_linux.sh
 ./install_freebsd.sh
 ./install_netbsd.sh

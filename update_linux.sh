@@ -234,11 +234,23 @@ echo
 
 # Copy application files to installation directory (preserving config)
 echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
+
+# config/gunicorn.conf.py is application code, not user configuration. All
+# bind settings (BIND_IP, PORT, BIND, SOCKET_UMASK, WORKERS) live in .env and
+# are loaded by the current gunicorn.conf.py. Older installs that skipped this
+# file kept a copy that never reads .env and always binds to 127.0.0.1.
+# Back up the installed copy when it differs, then let it be replaced.
+GUNICORN_CONF="${INSTALL_DIR}/config/gunicorn.conf.py"
+if [ -f "$GUNICORN_CONF" ] && ! cmp -s "$GUNICORN_CONF" "${SOURCE_DIR}/config/gunicorn.conf.py"; then
+    cp -p "$GUNICORN_CONF" "${GUNICORN_CONF}.bak"
+    echo -e "${YELLOW}!${NC} Replacing config/gunicorn.conf.py; previous copy saved as config/gunicorn.conf.py.bak"
+    echo -e "${YELLOW}!${NC} Set bind options (BIND_IP, PORT, BIND) in ${INSTALL_DIR}/.env"
+fi
+
 rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='*.log' \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='.config' \
     --exclude='/install*.sh' --exclude='/update*.sh' \
     --exclude='/integrations/cockpit/install.sh' \
-    --exclude='config/gunicorn.conf.py' \
     "${SOURCE_DIR}/" "$INSTALL_DIR/"
 
 # Remove root-level install/update entry points left by older installations.
