@@ -33,6 +33,10 @@ COMMAND_TIMEOUT = 30
 MAX_WORKERS = 8
 MAX_ISSUES = 8
 
+# Needs Attention reports a possibly undersized ARC when at least this
+# percentage of all ARC reads were ghost hits.
+GHOST_ALERT_PCT = 1.0
+
 POOL_LIST_ARGS = ["zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,cap,health"]
 POOL_SPACE_ARGS = ["zfs", "list", "-H", "-p", "-o", "name,used,avail", "-d", "0"]
 
@@ -216,6 +220,10 @@ def summarize_arc(stats: Dict[str, int]) -> Dict[str, Any]:
     mfu_hits = stats.get("mfu_hits", 0)
     ghost_hits = stats.get("mru_ghost_hits", 0) + stats.get("mfu_ghost_hits", 0)
 
+    # ghost_pct is the share of all ARC reads that were ghost hits (reads that
+    # a larger ARC would have served). It matches the dashboard "Ghost Hits"
+    # tile. The share of misses alone is not used: on a cache with a 99.9%
+    # hit rate it can be large while describing a negligible number of reads.
     return {
         "available": True,
         "size": stats.get("size", 0),
@@ -223,7 +231,7 @@ def summarize_arc(stats: Dict[str, int]) -> Dict[str, Any]:
         "hit_rate": round(percent(hits, hits + misses), 1),
         "mru_pct": round(percent(mru_hits, mru_hits + mfu_hits), 1),
         "mfu_pct": round(percent(mfu_hits, mru_hits + mfu_hits), 1),
-        "ghost_pct": round(percent(ghost_hits, misses), 1),
+        "ghost_pct": round(percent(ghost_hits, hits + misses), 2),
     }
 
 
@@ -637,9 +645,9 @@ def build_issues(servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 issues.append(_issue("info", 8, f"{label} scrub running", scrub["label"]))
 
         arc = server["system"].get("arc", {})
-        if arc.get("available") and arc["ghost_pct"] >= 8:
+        if arc.get("available") and arc["ghost_pct"] >= GHOST_ALERT_PCT:
             issues.append(_issue(
-                "info", 9, f"{server_label}: ARC ghost hits at {arc['ghost_pct']}% of misses",
+                "info", 9, f"{server_label}: {arc['ghost_pct']}% of ARC reads were ghost hits",
                 "Recently evicted data is being read back; the ARC may be too small"))
 
     if overdue:

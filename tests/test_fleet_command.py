@@ -149,7 +149,8 @@ def test_linux_probe_parsing():
     assert info["uptime"] == "1d 1h"
     assert info["arc"]["hit_rate"] == 90.0
     assert info["arc"]["mru_pct"] == 25.0
-    assert info["arc"]["ghost_pct"] == 10.0
+    # 10 ghost hits out of 1000 total reads
+    assert info["arc"]["ghost_pct"] == 1.0
     assert info["arc_of_mem_pct"] == 25.0
     assert info["other_mem_pct"] == 25.0
 
@@ -247,10 +248,24 @@ def test_build_issues_order_and_content():
     assert "big - athena is DEGRADED" in titles
     assert "big - athena is 95% full" in titles
     assert "1 pool not scrubbed in 30 days" in titles
-    assert "apollo (local): ARC ghost hits at 10.0% of misses" in titles
+    assert "apollo (local): 1.0% of ARC reads were ghost hits" in titles
     ranks = [item["rank"] for item in issues]
     assert ranks == sorted(ranks)
     assert not any("SMART" in item["title"] or "disk" in item["title"].lower() for item in issues)
+
+
+def test_ghost_ratio_uses_total_reads_not_misses():
+    # Real counters from a bug report (FreeBSD host "defiant"): 99.86% hit
+    # rate, 144,091 of 447,241 misses were ghost hits. As a share of misses
+    # that is 32.2%, which raised a false "ARC may be too small" alert.
+    stats = {"hits": 319881416, "misses": 447241,
+             "mru_ghost_hits": 100000, "mfu_ghost_hits": 44091}
+    arc = fleet_command.summarize_arc(stats)
+    assert arc["ghost_pct"] == 0.04
+
+    server = _sample_servers()[0]
+    server["system"]["arc"] = arc
+    assert fleet_command.build_issues([server]) == []
 
 
 def test_healthy_fleet_has_no_issues():
