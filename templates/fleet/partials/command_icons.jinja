@@ -1,0 +1,18 @@
+{# Icon paths and macros shared by the FleetView C&C partials.
+   Import with: {% import "fleet/partials/command_icons.jinja" as cc %} #}
+{% set warn = 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' %}
+{% set info = 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' %}
+{% set xcirc = 'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z' %}
+{% set check = 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' %}
+{% set db = 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' %}
+{% set shield = 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' %}
+{% set trend = 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' %}
+
+{% macro icon(path) -%}
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ path }}"/></svg>
+{%- endmacro %}
+
+{# Horizontal bar; segments is a list of (percent, level) pairs. #}
+{% macro bar(segments) -%}
+<div class="cc-bar">{% for width, level in segments %}<i class="cc-f-{{ level }}" style="width: {{ [[width, 0]|max, 100]|min }}%"></i>{% endfor %}</div>
+{%- endmacro %}

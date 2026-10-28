@@ -1,0 +1,256 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}FleetView C&amp;C - {{ settings.CAPTION }}{% endblock %}
+
+{% block content %}
+{# FleetView C&C: read-only server stack view of the local host and every
+   Fleet View server. Layout follows the "Server stack" design in
+   memory-bank/fleet-wall.html, with the "Needs attention" panel moved into
+   a collapsible bar at the top. All data loads from /fleet/command/data. #}
+<style>
+  @keyframes pulse-border-danger {
+    0%, 100% { border-color: rgb(239 68 68); box-shadow: 0 0 0 0 rgba(239,68,68,.7), 0 0 0 3px rgba(239,68,68,.4), 0 0 0 6px rgba(239,68,68,.1); }
+    50% { border-color: rgba(239,68,68,.5); box-shadow: 0 0 0 0 rgba(239,68,68,.3), 0 0 0 3px rgba(239,68,68,.2), 0 0 0 6px rgba(239,68,68,.05); }
+  }
+  @keyframes pulse-border-warning {
+    0%, 100% { border-color: rgb(234 179 8); box-shadow: 0 0 0 0 rgba(234,179,8,.7), 0 0 0 3px rgba(234,179,8,.4), 0 0 0 6px rgba(234,179,8,.1); }
+    50% { border-color: rgba(234,179,8,.5); box-shadow: 0 0 0 0 rgba(234,179,8,.3), 0 0 0 3px rgba(234,179,8,.2), 0 0 0 6px rgba(234,179,8,.05); }
+  }
+  .pulse-border-danger { animation: pulse-border-danger 2s cubic-bezier(.4,0,.6,1) infinite; border: 3px solid rgb(239 68 68) !important; }
+  .pulse-border-warning { animation: pulse-border-warning 2s cubic-bezier(.4,0,.6,1) infinite; border: 3px solid rgb(234 179 8) !important; }
+  @media (prefers-reduced-motion: reduce) { .pulse-border-danger, .pulse-border-warning { animation: none; } }
+
+  .cc-stack { display: flex; flex-direction: column; gap: 16px; }
+  .cc-num { font-variant-numeric: tabular-nums; }
+  .cc-t-success { color: var(--success-400); }
+  .cc-t-warning { color: var(--warning-400); }
+  .cc-t-danger { color: var(--danger-400); }
+  .cc-t-info { color: var(--info-400); }
+  .cc-t-purple { color: var(--purple-400); }
+  .cc-t-primary, .cc-t-secondary { color: var(--text-primary); }
+  .cc-t3 { color: var(--text-tertiary); }
+
+  /* Bars */
+  .cc-bar { height: 8px; background: var(--bg-elevated-3); display: flex; overflow: hidden; }
+  .cc-bar > i { display: block; height: 100%; }
+  .cc-f-success { background: var(--success-500); }
+  .cc-f-warning { background: var(--warning-500); }
+  .cc-f-danger { background: var(--danger-500); }
+  .cc-f-primary { background: var(--primary-500); }
+  .cc-f-purple { background: var(--purple-500); }
+  .cc-sw { display: inline-block; width: 8px; height: 8px; margin-right: 4px; }
+
+  /* Chips and status dots */
+  .cc-chip { display: inline-flex; align-items: center; padding: 2px 7px; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+  .cc-chip-success { background: color-mix(in srgb, var(--success-500) 18%, transparent); color: var(--success-400); }
+  .cc-chip-warning { background: color-mix(in srgb, var(--warning-500) 18%, transparent); color: var(--warning-400); }
+  .cc-chip-danger { background: color-mix(in srgb, var(--danger-500) 18%, transparent); color: var(--danger-400); }
+  .cc-chip-info { background: color-mix(in srgb, var(--info-500) 18%, transparent); color: var(--info-400); }
+  .cc-dot { width: 8px; height: 8px; display: inline-block; flex: none; }
+  .cc-dot-online { background: var(--success-500); }
+  .cc-dot-error { background: var(--danger-500); }
+
+  /* Header and clock */
+  .cc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .cc-clock { text-align: right; }
+  .cc-clock-time { font-size: 30px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+  .cc-clock-date { font-size: 12px; color: var(--text-tertiary); margin-top: 5px; }
+
+  /* Needs attention bar */
+  .cc-att-bar { overflow: hidden; }
+  .cc-att-toggle { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: transparent; border: 0; color: var(--text-primary); cursor: pointer; text-align: left; }
+  .cc-att-toggle:focus-visible { outline: 2px solid var(--primary-500); outline-offset: -2px; }
+  .cc-att-toggle h2 { font-size: 16px; font-weight: 600; margin: 0; }
+  .cc-att-counts { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .cc-chevron { width: 18px; height: 18px; transition: transform .15s; color: var(--text-tertiary); }
+  .cc-chevron-open { transform: rotate(180deg); }
+  .cc-att-list { display: flex; flex-direction: column; gap: 6px; padding: 0 16px 14px; }
+  .cc-att { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; padding: 8px 12px; border-left: 4px solid; }
+  .cc-att svg { width: 18px; height: 18px; }
+  .cc-att-danger { border-color: var(--danger-500); background: color-mix(in srgb, var(--danger-900) 28%, transparent); }
+  .cc-att-danger svg { color: var(--danger-400); }
+  .cc-att-warning { border-color: var(--warning-500); background: color-mix(in srgb, var(--warning-900) 26%, transparent); }
+  .cc-att-warning svg { color: var(--warning-400); }
+  .cc-att-info { border-color: var(--info-500); background: color-mix(in srgb, var(--info-900) 30%, transparent); }
+  .cc-att-info svg { color: var(--info-400); }
+  .cc-att-ok { border-color: var(--success-500); background: color-mix(in srgb, var(--success-900) 28%, transparent); }
+  .cc-att-ok svg { color: var(--success-400); }
+  .cc-att-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .cc-att-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; overflow-wrap: anywhere; }
+  .cc-att-more { font-size: 12px; color: var(--text-tertiary); padding: 2px 0 0 4px; }
+
+  /* Fleet totals and health strip */
+  .cc-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .cc-total { padding: 12px 8px; text-align: center; }
+  .cc-total-label { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-tertiary); margin-bottom: 4px; }
+  .cc-total-value { font-size: 22px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .cc-total-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; }
+  .cc-hstrip { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .cc-hs { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-width: 0; }
+  .cc-hs + .cc-hs { border-top: 1px solid var(--border-subtle); }
+  .cc-hs-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-tertiary); }
+  .cc-hs-value { font-size: 19px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .cc-hs-sub { font-size: 12px; color: var(--text-secondary); }
+  .cc-icon-tile { display: inline-flex; padding: 7px; border: 1px solid color-mix(in srgb, currentColor 50%, transparent); flex: none; }
+  .cc-icon-tile svg { width: 18px; height: 18px; }
+</style>
+<style>
+  /* Server card */
+  .cc-srv { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; border-left: 4px solid var(--success-500); }
+  .cc-srv-error { border-left-color: var(--danger-500); }
+  .cc-srv-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .cc-srv-name { font-size: 19px; font-weight: 600; margin: 0; color: var(--text-primary); }
+  .cc-srv-name small { font-size: 12px; font-weight: 500; color: var(--text-tertiary); margin-left: 2px; }
+  .cc-srv-right { margin-left: auto; font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+  .cc-os-line { display: flex; flex-wrap: wrap; row-gap: 2px; font-family: ui-monospace, 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: var(--text-tertiary); }
+  .cc-os-line span:not(:last-child)::after { content: "/"; margin: 0 8px; color: var(--border-strong); }
+  .cc-os-line .cc-os-name { color: var(--text-secondary); }
+  .cc-note { font-size: 12px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; overflow-wrap: anywhere; }
+  .cc-note svg { width: 16px; height: 16px; flex: none; }
+  .cc-note-danger { background: color-mix(in srgb, var(--danger-900) 25%, transparent); border: 1px solid var(--danger-900); color: var(--danger-400); }
+  .cc-metrics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .cc-metric { background: var(--bg-elevated-2); border: 1px solid var(--border-subtle); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cc-m-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+  .cc-m-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); }
+  .cc-m-val { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .cc-m-sub { font-size: 12px; line-height: 1.4; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+  /* Pool rows */
+  .cc-ptable { display: flex; flex-direction: column; }
+  .cc-prow { display: grid; grid-template-columns: minmax(0, 1fr) 96px 56px 84px; grid-template-areas: "name size cap health" "bar bar scrub disks"; gap: 5px 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; color: var(--text-primary); }
+  .cc-prow-head { display: none; }
+  .cc-a-name { grid-area: name; color: var(--primary-400); font-weight: 600; overflow-wrap: anywhere; }
+  .cc-a-bar { grid-area: bar; }
+  .cc-a-cap { grid-area: cap; text-align: right; font-weight: 600; }
+  .cc-a-size { grid-area: size; text-align: right; color: var(--text-secondary); white-space: nowrap; }
+  .cc-a-health { grid-area: health; text-align: right; }
+  .cc-a-scrub { grid-area: scrub; text-align: right; }
+  .cc-a-disks { grid-area: disks; text-align: right; white-space: nowrap; color: var(--text-secondary); }
+  .cc-empty { font-size: 12px; font-style: italic; color: var(--text-tertiary); }
+
+  @media (min-width: 768px) {
+    .cc-totals { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+    .cc-total-value { font-size: 26px; }
+    .cc-hstrip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cc-hs + .cc-hs { border-top: none; border-left: 1px solid var(--border-subtle); }
+    .cc-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cc-prow { grid-template-columns: 140px minmax(0, 1fr) 48px 130px 96px 96px 110px; grid-template-areas: "name bar cap size health scrub disks"; padding: 8px 0; }
+    .cc-prow-head { display: grid; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); border-top: none; padding: 0 0 4px; }
+    .cc-prow-head .cc-a-name, .cc-prow-head .cc-a-size, .cc-prow-head .cc-a-disks { color: var(--text-tertiary); font-weight: 400; }
+    .cc-a-health, .cc-a-scrub, .cc-a-disks { text-align: left; }
+  }
+</style>
+<div class="container-page py-8">
+
+  {# Breadcrumb Navigation #}
+  <nav class="flex mb-6 text-sm" aria-label="Breadcrumb">
+    <ol class="inline-flex items-center space-x-2">
+      <li>
+        <a href="/fleet/" class="text-text-secondary hover:text-primary-400 transition-colors">Fleet View</a>
+      </li>
+      <li>
+        <svg class="w-4 h-4 text-text-secondary" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+        </svg>
+      </li>
+      <li><span class="text-text-primary font-medium">FleetView C&amp;C</span></li>
+    </ol>
+  </nav>
+
+  {# Header: title, read-only note, refresh controls and wall clock.
+     Auto-refresh re-triggers the data request every 60 seconds and is
+     remembered in localStorage. The timer is cleared when the component
+     is removed (for example on a boosted navigation away). #}
+  <div class="cc-head mb-6"
+       x-data="{
+         enabled: localStorage.getItem('fleetCommandAutoRefresh') !== 'false',
+         interval: 60,
+         remaining: 60,
+         time: '',
+         date: '',
+         timer: null,
+         init() {
+           this.tick();
+           this.timer = setInterval(() => this.tick(), 1000);
+         },
+         destroy() {
+           if (this.timer) { clearInterval(this.timer); }
+         },
+         tick() {
+           let now = new Date();
+           this.time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+           this.date = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+           if (!this.enabled) { return; }
+           this.remaining--;
+           if (this.remaining <= 0) {
+             this.remaining = this.interval;
+             this.refresh();
+           }
+         },
+         refresh() {
+           let target = document.getElementById('cc-data');
+           if (target) { htmx.trigger(target, 'cc-refresh'); }
+         },
+         toggle() {
+           this.enabled = !this.enabled;
+           this.remaining = this.interval;
+           localStorage.setItem('fleetCommandAutoRefresh', this.enabled);
+         }
+       }">
+    <div class="min-w-0">
+      <h1 class="text-3xl font-bold text-text-primary mb-1 flex items-center">
+        <svg class="w-8 h-8 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+        </svg>
+        FleetView C&amp;C
+      </h1>
+      <p class="text-sm text-text-tertiary">Read-only status of this server and every server added to Fleet View.</p>
+      <div class="flex flex-wrap items-center gap-3 mt-3">
+        <button type="button" @click="refresh(); remaining = interval"
+                class="btn-secondary btn-sm inline-flex items-center">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          Refresh
+        </button>
+        <button type="button" @click="toggle()"
+                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                :class="enabled ? 'bg-success-500/15 text-success-400 border border-success-500/30' : 'bg-bg-elevated-2 text-text-tertiary border border-border-default hover:text-text-secondary'">
+          <span x-text="enabled ? 'Auto-Refresh On' : 'Auto-Refresh Off'"></span>
+        </button>
+        <span x-show="enabled" x-cloak class="text-xs text-text-tertiary font-mono" x-text="'Next: ' + remaining + 's'"></span>
+        <svg id="cc-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+    </div>
+    <div class="cc-clock">
+      <div class="cc-clock-time" x-text="time"></div>
+      <div class="cc-clock-date" x-text="date"></div>
+    </div>
+  </div>
+
+  {# Async content: Needs Attention bar, fleet totals, health strip and
+     one card per server. hx-sync drops a refresh while one is in flight. #}
+  <div id="cc-data"
+       hx-get="/fleet/command/data"
+       hx-trigger="load, cc-refresh"
+       hx-swap="innerHTML"
+       hx-sync="this:drop"
+       hx-indicator="#cc-spinner">
+    <div class="card">
+      <div class="card-body flex items-center justify-center py-12">
+        <svg class="w-6 h-6 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span class="ml-2 text-sm text-text-tertiary">Polling all servers...</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+

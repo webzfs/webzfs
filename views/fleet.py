@@ -10,6 +10,7 @@ from config.templates import templates
 from auth.dependencies import get_current_user
 from services.fleet_monitoring import FleetMonitoringService
 from services.ssh_connection import SSHConnectionService
+from services.fleet_command import get_command_context
 from typing import Optional, Annotated
 
 logger = logging.getLogger(__name__)
@@ -413,4 +414,40 @@ async def fleet_pools_data(request: Request):
             "summary": summary,
             "sort_by": sort_by,
         }
+    )
+
+
+# ---------------------------------------------------------------------------
+# FleetView C&C - read-only server stack view of the whole fleet
+# ---------------------------------------------------------------------------
+
+
+@router.get("/command", response_class=HTMLResponse)
+def fleet_command_page(request: Request):
+    """
+    FleetView C&C page shell. Renders immediately; the server stack and
+    the Needs Attention bar load from /fleet/command/data via HTMX.
+    """
+    return templates.TemplateResponse(
+        request,
+        name="fleet/command.jinja",
+        context={
+            "active_page": "fleet",
+        }
+    )
+
+
+@router.get("/command/data", response_class=HTMLResponse)
+def fleet_command_data(request: Request):
+    """
+    HTMX endpoint that polls the local host and every Fleet View server
+    with read-only commands and returns the C&C content partial.
+
+    Declared as a plain function so FastAPI runs the blocking SSH and
+    subprocess work in its threadpool instead of on the event loop.
+    """
+    return templates.TemplateResponse(
+        request,
+        name="fleet/partials/command_data.jinja",
+        context=get_command_context(fleet_service),
     )

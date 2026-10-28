@@ -1,0 +1,114 @@
+{# ===================================================================
+   FleetView C&C server card (Server stack layout).
+   Included from command_data.jinja inside a loop; expects `server`.
+   Metrics: CPU load, memory (ARC share highlighted), ARC hit rate.
+   SMART / disk health is intentionally not shown.
+   =================================================================== #}
+{% import "fleet/partials/command_icons.jinja" as cc %}
+{% set sys = server.system %}
+<section class="card cc-srv {% if server.status != 'online' %}cc-srv-error{% endif %} {{ server.pulse }}">
+  <div class="cc-srv-head">
+    <span class="cc-dot cc-dot-{{ 'online' if server.status == 'online' else 'error' }}"></span>
+    <h3 class="cc-srv-name">{{ server.name }}{% if server.local %} <small>(local)</small>{% endif %}</h3>
+    {% if server.status == 'online' %}
+      <span class="badge badge-success">Online</span>
+    {% else %}
+      <span class="badge badge-danger">Error</span>
+    {% endif %}
+    <span class="cc-srv-right">
+      {% if server.status == 'online' and sys.uptime %}up {{ sys.uptime }}{% elif server.last_checked %}last checked {{ server.last_checked[:19] | replace('T', ' ') }}{% endif %}
+    </span>
+  </div>
+
+  {% if server.status != 'online' %}
+    <div class="cc-note cc-note-danger">{{ cc.icon(cc.xcirc) }}<span>{{ server.error or 'Server could not be polled' }}</span></div>
+  {% else %}
+    <div class="cc-os-line">
+      <span class="cc-os-name">{{ sys.os_name or 'Unknown OS' }}</span>
+      {% if sys.kernel and sys.kernel != sys.os_name %}<span>{{ sys.kernel }}</span>{% endif %}
+      {% if sys.zfs_version %}<span>ZFS {{ sys.zfs_version }}</span>{% endif %}
+      {% if sys.cpu_model %}<span>{{ sys.cpu_model }}</span>{% endif %}
+    </div>
+
+    <div class="cc-metrics">
+      {# CPU load: 1 minute load average as a share of online threads #}
+      <div class="cc-metric">
+        <div class="cc-m-top">
+          <span class="cc-m-label">CPU Load</span>
+          <span class="cc-m-val cc-t-{{ sys.load_level }}">{{ sys.load_pct | round | int }}%</span>
+        </div>
+        {{ cc.bar([(sys.load_pct, sys.load_level)]) }}
+        <div class="cc-m-sub">
+          {{ sys.threads }} threads / load {{ '%.2f' | format(sys.load) if sys.load is not none else 'n/a' }}
+        </div>
+      </div>
+
+      {# Memory: ARC share in purple, remaining used memory in blue #}
+      <div class="cc-metric">
+        <div class="cc-m-top">
+          <span class="cc-m-label">Memory</span>
+          <span class="cc-m-val cc-t-primary">{{ sys.mem_pct | round | int }}%</span>
+        </div>
+        {{ cc.bar([(sys.arc_of_mem_pct, 'purple'), (sys.other_mem_pct, 'primary')]) }}
+        <div class="cc-m-sub">
+          {{ sys.mem_used_human }} / {{ sys.mem_total_human }}
+          {% if sys.arc.available %} / <span class="cc-sw cc-f-purple"></span>ARC {{ sys.arc_size_human }}{% endif %}
+        </div>
+      </div>
+
+      {# ARC: hit rate, MRU / MFU split, size against maximum, ghost ratio #}
+      <div class="cc-metric">
+        <div class="cc-m-top">
+          <span class="cc-m-label">ARC Hit</span>
+          {% if sys.arc.available %}
+            <span class="cc-m-val cc-t-{{ sys.arc_level }}">{{ sys.arc.hit_rate }}%</span>
+          {% else %}
+            <span class="cc-m-val cc-t3">n/a</span>
+          {% endif %}
+        </div>
+        {% if sys.arc.available %}
+          {{ cc.bar([(sys.arc.mru_pct, 'warning'), (sys.arc.mfu_pct, 'purple')]) }}
+          <div class="cc-m-sub">
+            MRU {{ sys.arc.mru_pct | round | int }}% / MFU {{ sys.arc.mfu_pct | round | int }}%<br>
+            {{ sys.arc_size_human }} / {{ sys.arc_max_human }} / ghost {{ sys.arc.ghost_pct }}%
+          </div>
+        {% else %}
+          {{ cc.bar([]) }}
+          <div class="cc-m-sub">ARC statistics not available</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="cc-ptable">
+      {% if server.pools %}
+        <div class="cc-prow cc-prow-head">
+          <span class="cc-a-name">Pool</span>
+          <span class="cc-a-bar">Capacity</span>
+          <span class="cc-a-cap"></span>
+          <span class="cc-a-size">Used / Size</span>
+          <span class="cc-a-health">Health</span>
+          <span class="cc-a-scrub">Last Scrub</span>
+          <span class="cc-a-disks">Disks / Errors</span>
+        </div>
+        {% for pool in server.pools %}
+          <div class="cc-prow">
+            <span class="cc-a-name">{{ pool.name }}</span>
+            <span class="cc-a-bar">{{ cc.bar([(pool.cap, pool.cap_level)]) }}</span>
+            <span class="cc-a-cap cc-num {% if pool.cap >= 80 %}cc-t-{{ pool.cap_level }}{% endif %}">{{ pool.cap }}%</span>
+            <span class="cc-a-size cc-num">{{ pool.used }} / {{ pool.total }}</span>
+            <span class="cc-a-health">
+              <span class="cc-chip cc-chip-{{ 'success' if pool.health == 'ONLINE' else ('warning' if pool.health == 'DEGRADED' else 'danger') }}">{{ pool.health }}</span>
+            </span>
+            <span class="cc-a-scrub"><span class="cc-chip cc-chip-{{ pool.scrub.level }}">{{ pool.scrub.label }}</span></span>
+            <span class="cc-a-disks cc-num">
+              {{ pool.disk_count }} disk{{ '' if pool.disk_count == 1 else 's' }}
+              {% if pool.error_total %}/ <span class="cc-t-danger" title="read / write / checksum">{{ pool.read_errors }}/{{ pool.write_errors }}/{{ pool.cksum_errors }}</span>{% endif %}
+            </span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="cc-empty">No ZFS pools found on this server.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>

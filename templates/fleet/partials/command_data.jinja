@@ -1,0 +1,128 @@
+{# ===================================================================
+   FleetView C&C content partial (returned by /fleet/command/data)
+
+   Context:
+     servers         list of server snapshots from services/fleet_command.py
+     totals          fleet totals and health strip values
+     issues          Needs Attention rows (already truncated)
+     issues_more     count of rows not shown
+     danger_count    total critical rows
+     warning_count   total warning rows
+     updated         local time the data was collected
+
+   The Needs Attention bar open/closed state is kept in localStorage so it
+   survives the periodic refresh that replaces this partial.
+   =================================================================== #}
+{% import "fleet/partials/command_icons.jinja" as cc %}
+{% set bar_level = 'danger' if danger_count else ('warning' if warning_count else 'success') %}
+
+<div class="cc-stack">
+
+  {# ---------------- Needs Attention (collapsible bar) ---------------- #}
+  <section class="card cc-att-bar"
+           x-data="{ open: localStorage.getItem('fleetCommandAttentionOpen') !== 'false' }">
+    <button type="button" class="cc-att-toggle" :aria-expanded="open.toString()"
+            @click="open = !open; localStorage.setItem('fleetCommandAttentionOpen', open)">
+      <span class="cc-icon-tile cc-t-{{ bar_level }}">{{ cc.icon(cc.warn) }}</span>
+      <h2>Needs Attention</h2>
+      <span class="cc-att-counts">
+        {% if danger_count %}<span class="badge badge-danger">{{ danger_count }} critical</span>{% endif %}
+        {% if warning_count %}<span class="badge badge-warning">{{ warning_count }} warning</span>{% endif %}
+        {% if not danger_count and not warning_count %}<span class="badge badge-success">All clear</span>{% endif %}
+        <svg class="cc-chevron" :class="open ? 'cc-chevron-open' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </span>
+    </button>
+    <div class="cc-att-list" x-show="open" x-cloak>
+      {% if not issues %}
+        <div class="cc-att cc-att-ok">
+          {{ cc.icon(cc.check) }}
+          <div>
+            <div class="cc-att-title">All systems healthy</div>
+            <div class="cc-att-sub">Every server responded and every pool is ONLINE, below 80% full and scrubbed within 30 days</div>
+          </div>
+        </div>
+      {% endif %}
+      {% for item in issues %}
+        <div class="cc-att cc-att-{{ item.level }}">
+          {% if item.level == 'danger' %}{{ cc.icon(cc.xcirc) }}{% elif item.level == 'warning' %}{{ cc.icon(cc.warn) }}{% else %}{{ cc.icon(cc.info) }}{% endif %}
+          <div class="min-w-0">
+            <div class="cc-att-title">{{ item.title }}</div>
+            <div class="cc-att-sub">{{ item.detail }}</div>
+          </div>
+        </div>
+      {% endfor %}
+      {% if issues_more %}
+        <div class="cc-att-more">+ {{ issues_more }} more</div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ---------------- Fleet totals ---------------- #}
+  <div class="cc-totals">
+    <div class="card cc-total">
+      <div class="cc-total-label">Total Size</div>
+      <div class="cc-total-value">{{ totals.size }}</div>
+    </div>
+    <div class="card cc-total">
+      <div class="cc-total-label">Total Used</div>
+      <div class="cc-total-value">{{ totals.used }}</div>
+      <div class="cc-total-sub">{{ totals.used_pct }}% of size</div>
+    </div>
+    <div class="card cc-total">
+      <div class="cc-total-label">Total Available</div>
+      <div class="cc-total-value">{{ totals.avail }}</div>
+    </div>
+    <div class="card cc-total">
+      <div class="cc-total-label">Total Disks</div>
+      <div class="cc-total-value">{{ totals.disks }}</div>
+    </div>
+    <div class="card cc-total">
+      <div class="cc-total-label">Systems</div>
+      <div class="cc-total-value">{{ totals.systems }}</div>
+      <div class="cc-total-sub">
+        {% if totals.unreachable %}<span class="cc-t-danger">{{ totals.unreachable }} unreachable</span>{% else %}all online{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ---------------- Health strip (disk health intentionally omitted) ---------------- #}
+  <div class="card cc-hstrip">
+    <div class="cc-hs">
+      <span class="cc-icon-tile cc-t-purple">{{ cc.icon(cc.db) }}</span>
+      <div class="min-w-0">
+        <div class="cc-hs-label">Pool Health</div>
+        <div class="cc-hs-value">{{ totals.pools_healthy }}/{{ totals.pool_count }} <span class="cc-t3 text-xs font-medium">ONLINE</span></div>
+        <div class="cc-hs-sub">
+          {% if totals.pools_unhealthy %}<span class="cc-t-warning">{{ totals.pools_unhealthy }} not ONLINE</span>{% else %}all healthy{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="cc-hs">
+      <span class="cc-icon-tile cc-t-warning">{{ cc.icon(cc.shield) }}</span>
+      <div class="min-w-0">
+        <div class="cc-hs-label">Scrubbed Within 30 Days</div>
+        <div class="cc-hs-value">{{ totals.scrub_ok }}/{{ totals.pool_count }}</div>
+        <div class="cc-hs-sub">{{ totals.scrub_note }}</div>
+      </div>
+    </div>
+    <div class="cc-hs">
+      <span class="cc-icon-tile cc-t-success">{{ cc.icon(cc.trend) }}</span>
+      <div class="min-w-0">
+        <div class="cc-hs-label">ARC Hit Rate</div>
+        <div class="cc-hs-value">
+          {% if totals.avg_hit is not none %}<span class="cc-t-{{ totals.avg_hit_level }}">{{ totals.avg_hit }}%</span>{% else %}<span class="cc-t3">n/a</span>{% endif %}
+        </div>
+        <div class="cc-hs-sub">average / {{ totals.arc_total }} cached</div>
+      </div>
+    </div>
+  </div>
+
+  {# ---------------- Server stack ---------------- #}
+  {% for server in servers %}
+    {% include "fleet/partials/command_server.jinja" %}
+  {% endfor %}
+
+  <p class="text-xs text-text-tertiary text-right">Data collected {{ updated }}</p>
+</div>
