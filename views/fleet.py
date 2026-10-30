@@ -10,7 +10,7 @@ from config.templates import templates
 from auth.dependencies import get_current_user
 from services.fleet_monitoring import FleetMonitoringService
 from services.ssh_connection import SSHConnectionService
-from services.fleet_command import get_command_context
+from services.fleet_command import get_command_context, save_order
 from typing import Optional, Annotated
 
 logger = logging.getLogger(__name__)
@@ -451,3 +451,34 @@ def fleet_command_data(request: Request):
         name="fleet/partials/command_data.jinja",
         context=get_command_context(fleet_service),
     )
+
+
+@router.post("/command/order")
+async def fleet_command_order(request: Request):
+    """
+    Save the FleetView C&C server card order. Body: {"order": [server ids]}.
+    An empty list resets to the default order.
+
+    This only stores a display preference; it does not touch any server.
+    Only application/json bodies are accepted, which a cross-site HTML form
+    cannot send without a CORS preflight.
+    """
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type != "application/json":
+        raise HTTPException(status_code=415, detail="Content-Type must be application/json")
+
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    order = body.get("order") if isinstance(body, dict) else None
+    try:
+        saved = save_order(order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        logger.error(f"Failed to save FleetView C&C card order: {exc}")
+        raise HTTPException(status_code=500, detail="Could not save the card order")
+
+    return JSONResponse({"order": saved})

@@ -216,11 +216,11 @@ def _sample_servers():
         {"big": _status("big", "DEGRADED", scrub_line=_scrub_line(2), errors=(3, 0, 14)),
          "old": _status("old", scrub_line=_scrub_line(45))},
     )
-    local = {"name": "apollo", "local": True, "status": "online", "error": None,
+    local = {"id": "local", "name": "apollo", "local": True, "status": "online", "error": None,
              "system": fleet_command.parse_system_probe(LINUX_PROBE), "pools": healthy}
-    remote = {"name": "athena", "local": False, "status": "online", "error": None,
+    remote = {"id": "1111-aaaa", "name": "athena", "local": False, "status": "online", "error": None,
               "system": fleet_command.parse_system_probe(FREEBSD_PROBE), "pools": problem}
-    down = {"name": "dionysus", "local": False, "status": "error",
+    down = {"id": "2222-bbbb", "name": "dionysus", "local": False, "status": "error",
             "error": "SSH authentication failed", "system": {}, "pools": []}
     for server in (local, remote, down):
         server["pulse"] = fleet_command.server_pulse(server["pools"])
@@ -274,8 +274,10 @@ def test_healthy_fleet_has_no_issues():
     assert fleet_command.build_issues(servers) == []
 
 
-def _client(monkeypatch, servers):
+def _client(monkeypatch, servers, home=None):
     monkeypatch.setattr(fleet_command, "collect_fleet", lambda service: servers)
+    if home is not None:
+        monkeypatch.setenv("HOME", str(home))
     app = FastAPI()
     app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static"),
               name="static")
@@ -284,8 +286,8 @@ def _client(monkeypatch, servers):
     return TestClient(app)
 
 
-def test_command_page_and_data_render(monkeypatch):
-    with _client(monkeypatch, _sample_servers()) as client:
+def test_command_page_and_data_render(monkeypatch, tmp_path):
+    with _client(monkeypatch, _sample_servers(), tmp_path) as client:
         page = client.get("/fleet/command")
         data = client.get("/fleet/command/data")
 
@@ -355,8 +357,68 @@ def test_collect_remote_quotes_probe_and_uses_sudo_for_zfs():
     assert client.commands[-1] == "sudo zpool status tank"
 
 
-def test_command_routes_are_read_only():
+def test_command_routes():
+    # The only POST stores the card order display preference.
     routes = {(route.path, method) for route in fleet_views.router.routes
               for method in route.methods if route.path.startswith("/fleet/command")}
-    assert routes == {("/fleet/command", "GET"), ("/fleet/command/data", "GET")}
+    assert routes == {("/fleet/command", "GET"), ("/fleet/command/data", "GET"),
+                      ("/fleet/command/order", "POST")}
+
+
+def test_apply_order_puts_unknown_servers_last():
+    servers = _sample_servers()
+    ordered = fleet_command.apply_order(servers, ["2222-bbbb", "local"])
+    assert [server["id"] for server in ordered] == ["2222-bbbb", "local", "1111-aaaa"]
+    # Empty order keeps the collection order (local first, then Fleet View order)
+    assert fleet_command.apply_order(servers, []) == servers
+
+
+def test_validate_order_rejects_bad_input():
+    assert fleet_command.validate_order(["local", "abc-1", "local"]) == ["local", "abc-1"]
+    for bad in ("local", [1], ["../etc/passwd"], ["a" * 65], ["x"] * 501, None):
+        try:
+            fleet_command.validate_order(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted invalid order {bad!r}")
+
+
+def test_save_and_load_order_round_trip(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert fleet_command.load_order() == []
+    fleet_command.save_order(["1111-aaaa", "local"])
+    path = tmp_path / ".config" / "webzfs" / "fleet_command_order.json"
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert fleet_command.load_order() == ["1111-aaaa", "local"]
+
+    path.write_text("not json", encoding="utf-8")
+    assert fleet_command.load_order() == []
+
+
+def test_order_endpoint_saves_and_applies_order(monkeypatch, tmp_path):
+    with _client(monkeypatch, _sample_servers(), tmp_path) as client:
+        saved = client.post("/fleet/command/order",
+                            json={"order": ["2222-bbbb", "1111-aaaa", "local"]})
+        data = client.get("/fleet/command/data").text
+
+    assert saved.status_code == 200
+    assert saved.json() == {"order": ["2222-bbbb", "1111-aaaa", "local"]}
+    positions = [data.index(f'data-server-id="{server_id}"')
+                 for server_id in ("2222-bbbb", "1111-aaaa", "local")]
+    assert positions == sorted(positions)
+
+
+def test_order_endpoint_rejects_bad_requests(monkeypatch, tmp_path):
+    with _client(monkeypatch, _sample_servers(), tmp_path) as client:
+        form = client.post("/fleet/command/order", data={"order": "local"})
+        bad_json = client.post("/fleet/command/order", content=b"{oops",
+                               headers={"Content-Type": "application/json"})
+        bad_ids = client.post("/fleet/command/order", json={"order": ["<script>"]})
+        missing = client.post("/fleet/command/order", json={})
+
+    assert form.status_code == 415
+    assert bad_json.status_code == 400
+    assert bad_ids.status_code == 400
+    assert missing.status_code == 400
+    assert not (tmp_path / ".config" / "webzfs" / "fleet_command_order.json").exists()
 

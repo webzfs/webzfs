@@ -6,8 +6,21 @@
    =================================================================== #}
 {% import "fleet/partials/command_icons.jinja" as cc %}
 {% set sys = server.system %}
-<section class="card cc-srv {% if server.status != 'online' %}cc-srv-error{% endif %} {{ server.pulse }}">
+<section class="card cc-srv {% if server.status != 'online' %}cc-srv-error{% endif %} {{ server.pulse }}"
+         data-server-id="{{ server.id }}">
   <div class="cc-srv-head">
+    {# Move controls, visible only in arrange mode #}
+    <span class="cc-move-bar">
+      <span class="cc-grip" title="Drag to move" aria-hidden="true">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg>
+      </span>
+      <button type="button" class="cc-move-btn" data-move="-1" aria-label="Move {{ server.name }} up" title="Move up">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+      </button>
+      <button type="button" class="cc-move-btn" data-move="1" aria-label="Move {{ server.name }} down" title="Move down">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+    </span>
     <span class="cc-dot cc-dot-{{ 'online' if server.status == 'online' else 'error' }}"></span>
     <h3 class="cc-srv-name">{{ server.name }}{% if server.local %} <small>(local)</small>{% endif %}</h3>
     {% if server.status == 'online' %}

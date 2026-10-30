@@ -139,6 +139,18 @@
     .cc-prow-head .cc-a-name, .cc-prow-head .cc-a-size, .cc-prow-head .cc-a-disks { color: var(--text-tertiary); font-weight: 400; }
     .cc-a-health, .cc-a-scrub, .cc-a-disks { text-align: left; }
   }
+
+  /* Arrange mode: move controls appear and cards can be dragged */
+  .cc-move-bar { display: none; align-items: center; gap: 4px; margin-right: 4px; }
+  .cc-arranging .cc-move-bar { display: inline-flex; }
+  .cc-arranging .cc-srv { cursor: grab; outline: 1px dashed var(--border-strong); outline-offset: 2px; }
+  .cc-arranging .cc-srv.cc-dragging { opacity: .45; }
+  .cc-grip { display: inline-flex; color: var(--text-tertiary); }
+  .cc-grip svg, .cc-move-btn svg { width: 16px; height: 16px; }
+  .cc-move-btn { display: inline-flex; padding: 3px; background: var(--bg-elevated-2); border: 1px solid var(--border-default); color: var(--text-secondary); cursor: pointer; }
+  .cc-move-btn:hover { color: var(--text-primary); border-color: var(--border-strong); }
+  .cc-move-btn:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 1px; }
+  .cc-move-btn:disabled { opacity: .35; cursor: default; }
 </style>
 <div class="container-page py-8">
 
@@ -169,6 +181,9 @@
          time: '',
          date: '',
          timer: null,
+         arranging: false,
+         saving: false,
+         message: '',
          init() {
            this.tick();
            this.timer = setInterval(() => this.tick(), 1000);
@@ -180,7 +195,7 @@
            let now = new Date();
            this.time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
            this.date = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-           if (!this.enabled) { return; }
+           if (!this.enabled || this.arranging) { return; }
            this.remaining--;
            if (this.remaining <= 0) {
              this.remaining = this.interval;
@@ -195,6 +210,38 @@
            this.enabled = !this.enabled;
            this.remaining = this.interval;
            localStorage.setItem('fleetCommandAutoRefresh', this.enabled);
+         },
+         startArrange() {
+           if (!document.getElementById('cc-servers')) { return; }
+           this.arranging = true;
+           this.message = '';
+           window.fleetCommandArrange.start();
+         },
+         cancelArrange() {
+           this.arranging = false;
+           window.fleetCommandArrange.stop();
+           this.refresh();
+         },
+         async saveOrder(order) {
+           this.saving = true;
+           this.message = '';
+           try {
+             let response = await fetch('/fleet/command/order', {
+               method: 'POST',
+               credentials: 'same-origin',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ order: order })
+             });
+             if (!response.ok) { throw new Error('HTTP ' + response.status); }
+             this.arranging = false;
+             window.fleetCommandArrange.stop();
+             this.message = order.length ? 'Card order saved.' : 'Card order reset to default.';
+             this.remaining = this.interval;
+             this.refresh();
+           } catch (error) {
+             this.message = 'Could not save the card order (' + error.message + ').';
+           }
+           this.saving = false;
          }
        }">
     <div class="min-w-0">
@@ -206,7 +253,7 @@
       </h1>
       <p class="text-sm text-text-tertiary">Read-only status of this server and every server added to Fleet View.</p>
       <div class="flex flex-wrap items-center gap-3 mt-3">
-        <button type="button" @click="refresh(); remaining = interval"
+        <button type="button" @click="refresh(); remaining = interval" :disabled="arranging"
                 class="btn-secondary btn-sm inline-flex items-center">
           <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -218,7 +265,29 @@
                 :class="enabled ? 'bg-success-500/15 text-success-400 border border-success-500/30' : 'bg-bg-elevated-2 text-text-tertiary border border-border-default hover:text-text-secondary'">
           <span x-text="enabled ? 'Auto-Refresh On' : 'Auto-Refresh Off'"></span>
         </button>
-        <span x-show="enabled" x-cloak class="text-xs text-text-tertiary font-mono" x-text="'Next: ' + remaining + 's'"></span>
+        <span x-show="enabled && !arranging" x-cloak class="text-xs text-text-tertiary font-mono" x-text="'Next: ' + remaining + 's'"></span>
+
+        {# Card arrangement. The order is saved on the server and shared by
+           every browser. Auto-refresh pauses while arranging. #}
+        <button type="button" x-show="!arranging" @click="startArrange()"
+                class="btn-secondary btn-sm inline-flex items-center">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+          </svg>
+          Arrange Cards
+        </button>
+        <template x-if="arranging">
+          <span class="inline-flex flex-wrap items-center gap-2">
+            <button type="button" class="btn-primary btn-sm" :disabled="saving"
+                    @click="saveOrder(window.fleetCommandArrange.order())">Save Order</button>
+            <button type="button" class="btn-secondary btn-sm" :disabled="saving"
+                    @click="cancelArrange()">Cancel</button>
+            <button type="button" class="btn-secondary btn-sm" :disabled="saving"
+                    @click="saveOrder([])">Reset to Default</button>
+            <span class="text-xs text-text-tertiary">Drag cards or use the arrows. Auto-refresh is paused.</span>
+          </span>
+        </template>
+        <span x-show="message" x-cloak class="text-xs text-text-secondary" x-text="message"></span>
         <svg id="cc-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -251,6 +320,119 @@
   </div>
 
 </div>
+
+<script>
+/* FleetView C&C card arrangement.
+   start() turns on arrange mode for the cards inside #cc-servers: native
+   HTML5 drag and drop plus up / down buttons for keyboard users.
+   order() returns the data-server-id values in the current DOM order.
+   stop() turns arrange mode off. While arranging, any HTMX swap into
+   #cc-data is cancelled so a refresh that was already in flight cannot
+   discard the user's unsaved changes. */
+(function() {
+    if (window.fleetCommandArrange) { return; }
+
+    /* Arrange state lives on the DOM (the cc-arranging class), not in a
+       variable, so it resets naturally when the cards are re-rendered or
+       the user navigates away and back with hx-boost. */
+    var dragged = null;
+
+    function container() { return document.getElementById("cc-servers"); }
+    function isArranging() {
+        var box = container();
+        return !!box && box.classList.contains("cc-arranging");
+    }
+    function cards() {
+        var box = container();
+        return box ? Array.prototype.slice.call(box.querySelectorAll(":scope > .cc-srv")) : [];
+    }
+
+    function updateButtons() {
+        var list = cards();
+        list.forEach(function(card, index) {
+            card.querySelector('[data-move="-1"]').disabled = index === 0;
+            card.querySelector('[data-move="1"]').disabled = index === list.length - 1;
+        });
+    }
+
+    function setDraggable(enabled) {
+        cards().forEach(function(card) {
+            if (enabled) { card.setAttribute("draggable", "true"); }
+            else { card.removeAttribute("draggable"); }
+        });
+    }
+
+    function start() {
+        var box = container();
+        if (!box) { return; }
+        box.classList.add("cc-arranging");
+        setDraggable(true);
+        updateButtons();
+    }
+
+    function stop() {
+        dragged = null;
+        var box = container();
+        if (box) { box.classList.remove("cc-arranging"); }
+        setDraggable(false);
+    }
+
+    function order() {
+        return cards().map(function(card) { return card.getAttribute("data-server-id"); });
+    }
+
+    document.addEventListener("click", function(event) {
+        var button = event.target.closest(".cc-move-btn");
+        if (!button || !isArranging()) { return; }
+        var card = button.closest(".cc-srv");
+        if (button.getAttribute("data-move") === "-1" && card.previousElementSibling) {
+            card.parentNode.insertBefore(card, card.previousElementSibling);
+        } else if (button.getAttribute("data-move") === "1" && card.nextElementSibling) {
+            card.parentNode.insertBefore(card.nextElementSibling, card);
+        }
+        updateButtons();
+        button.focus();
+    });
+
+    document.addEventListener("dragstart", function(event) {
+        var card = event.target.closest && event.target.closest("#cc-servers > .cc-srv");
+        if (!isArranging() || !card) { return; }
+        dragged = card;
+        card.classList.add("cc-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", card.getAttribute("data-server-id"));
+    });
+
+    document.addEventListener("dragover", function(event) {
+        if (!isArranging() || !dragged) { return; }
+        var target = event.target.closest && event.target.closest("#cc-servers > .cc-srv");
+        if (!target) { return; }
+        event.preventDefault();
+        if (target === dragged) { return; }
+        var box = target.getBoundingClientRect();
+        var after = event.clientY > box.top + box.height / 2;
+        target.parentNode.insertBefore(dragged, after ? target.nextElementSibling : target);
+    });
+
+    document.addEventListener("drop", function(event) {
+        if (isArranging() && dragged) { event.preventDefault(); }
+    });
+
+    document.addEventListener("dragend", function() {
+        if (dragged) { dragged.classList.remove("cc-dragging"); }
+        dragged = null;
+        updateButtons();
+    });
+
+    document.addEventListener("htmx:beforeSwap", function(event) {
+        if (isArranging() && event.detail.target && event.detail.target.id === "cc-data") {
+            event.detail.shouldSwap = false;
+        }
+    });
+
+    window.fleetCommandArrange = { start: start, stop: stop, order: order };
+})();
+</script>
 {% endblock %}
 
 

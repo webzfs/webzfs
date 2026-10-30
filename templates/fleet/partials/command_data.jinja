@@ -119,10 +119,15 @@
     </div>
   </div>
 
-  {# ---------------- Server stack ---------------- #}
-  {% for server in servers %}
-    {% include "fleet/partials/command_server.jinja" %}
-  {% endfor %}
+  {# ---------------- Server stack ----------------
+     Cards are rendered in the saved order. In arrange mode the page
+     reorders the children of #cc-servers and saves their data-server-id
+     values (see fleet/command.jinja). #}
+  <div id="cc-servers" class="cc-stack">
+    {% for server in servers %}
+      {% include "fleet/partials/command_server.jinja" %}
+    {% endfor %}
+  </div>
 
   <p class="text-xs text-text-tertiary text-right">Data collected {{ updated }}</p>
 </div>

@@ -15,13 +15,16 @@ The same parsers are used for local and remote output so both paths
 produce identical data structures. SMART / disk health is intentionally
 not collected.
 """
+import json
 import logging
+import os
 import re
 import shlex
 import socket
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from services.dashboard import _parse_pool_status_counts, _parse_scrub_info
@@ -36,6 +39,13 @@ MAX_ISSUES = 8
 # Needs Attention reports a possibly undersized ARC when at least this
 # percentage of all ARC reads were ghost hits.
 GHOST_ALERT_PCT = 1.0
+
+# Card order: the local host always uses this id, remote servers use their
+# Fleet View UUID. Ids are validated before they are saved.
+LOCAL_SERVER_ID = "local"
+ORDER_FILE_NAME = "fleet_command_order.json"
+MAX_ORDER_LENGTH = 500
+SERVER_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 POOL_LIST_ARGS = ["zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,cap,health"]
 POOL_SPACE_ARGS = ["zfs", "list", "-H", "-p", "-o", "name,used,avail", "-d", "0"]
@@ -459,8 +469,8 @@ def server_pulse(pools: List[Dict[str, Any]]) -> str:
 
 def collect_local() -> Dict[str, Any]:
     """Collect the snapshot for the local WebZFS host."""
-    server = {"name": socket.gethostname(), "local": True, "status": "online",
-              "error": None, "system": {}, "pools": [], "pulse": ""}
+    server = {"id": LOCAL_SERVER_ID, "name": socket.gethostname(), "local": True,
+              "status": "online", "error": None, "system": {}, "pools": [], "pulse": ""}
     try:
         probe = subprocess.run(["sh", "-c", SYSTEM_PROBE], capture_output=True,
                                text=True, timeout=COMMAND_TIMEOUT, check=False)
@@ -492,9 +502,9 @@ def _run_remote(client, command: str) -> str:
 
 def collect_remote(fleet_service, server_record: Dict[str, Any]) -> Dict[str, Any]:
     """Collect the snapshot for one Fleet View server over a single SSH session."""
-    server = {"name": server_record.get("name", ""), "local": False, "status": "online",
-              "error": None, "system": {}, "pools": [], "pulse": "",
-              "last_checked": server_record.get("last_checked")}
+    server = {"id": server_record.get("id", ""), "name": server_record.get("name", ""),
+              "local": False, "status": "online", "error": None, "system": {},
+              "pools": [], "pulse": "", "last_checked": server_record.get("last_checked")}
     try:
         full_record = fleet_service._get_server_by_id(server_record["id"])
         client = fleet_service._create_ssh_client(full_record)
@@ -659,9 +669,75 @@ def build_issues(servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return issues
 
 
+# ---------------------------------------------------------------------------
+# Card order (saved per WebZFS instance, shared by every browser)
+# ---------------------------------------------------------------------------
+
+
+def order_file() -> Path:
+    """Location of the saved card order, next to fleet_servers.json."""
+    return Path.home() / ".config" / "webzfs" / ORDER_FILE_NAME
+
+
+def validate_order(order: Any) -> List[str]:
+    """
+    Return a clean list of server ids, or raise ValueError.
+    Duplicates are dropped, keeping the first position.
+    """
+    if not isinstance(order, list):
+        raise ValueError("order must be a list")
+    if len(order) > MAX_ORDER_LENGTH:
+        raise ValueError("order is too long")
+    clean = []
+    for server_id in order:
+        if not isinstance(server_id, str) or not SERVER_ID_PATTERN.match(server_id):
+            raise ValueError("order contains an invalid server id")
+        if server_id not in clean:
+            clean.append(server_id)
+    return clean
+
+
+def load_order() -> List[str]:
+    """Read the saved card order. Missing or invalid files give an empty list."""
+    path = order_file()
+    try:
+        if path.is_file():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return validate_order(data.get("order", []))
+    except (OSError, ValueError, AttributeError) as exc:
+        logger.warning(f"FleetView C&C: ignoring saved card order: {exc}")
+    return []
+
+
+def save_order(order: Any) -> List[str]:
+    """
+    Validate and save the card order. Writes a temporary file and renames it
+    so a reader in another worker never sees a partial file.
+    Raises ValueError for invalid input and OSError if the write fails.
+    """
+    clean = validate_order(order)
+    path = order_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(path.name + ".tmp")
+    temp_path.write_text(json.dumps({"order": clean}, indent=2) + "\n", encoding="utf-8")
+    os.chmod(temp_path, 0o600)
+    os.replace(temp_path, path)
+    return clean
+
+
+def apply_order(servers: List[Dict[str, Any]], order: List[str]) -> List[Dict[str, Any]]:
+    """
+    Sort servers by the saved order. Servers missing from the saved order,
+    for example newly added ones, keep their default order after the rest.
+    """
+    position = {server_id: index for index, server_id in enumerate(order)}
+    default_rank = len(order)
+    return sorted(servers, key=lambda server: position.get(server["id"], default_rank))
+
+
 def get_command_context(fleet_service) -> Dict[str, Any]:
     """Collect the fleet and return the template context for the data partial."""
-    servers = collect_fleet(fleet_service)
+    servers = apply_order(collect_fleet(fleet_service), load_order())
     issues = build_issues(servers)
     return {
         "servers": servers,
