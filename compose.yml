@@ -1,0 +1,15 @@
+services:
+  webzfs:
+    build: .
+    container_name: WebZFS
+    ports:
+      - 26619:26619
+    environment:
+      - ADMIN_PASSWORD=<my-secret-password>  # Set password
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - /dev/zfs:/dev/zfs  # Kernel device for ZFS
+      - config:/opt/webzfs/.config/webzfs
+volumes:
+  config:
