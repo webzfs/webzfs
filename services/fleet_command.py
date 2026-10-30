@@ -551,11 +551,6 @@ def collect_fleet(fleet_service) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def _arc_ready(server: Dict[str, Any]) -> bool:
-    """True when the server is online and reported ARC statistics."""
-    return server["status"] == "online" and server["system"].get("arc", {}).get("available", False)
-
-
 def build_totals(servers: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Fleet totals card values and the health strip values."""
     pools = [pool for server in servers for pool in server["pools"]]
@@ -570,11 +565,8 @@ def build_totals(servers: List[Dict[str, Any]]) -> Dict[str, Any]:
     scrub_running = sum(1 for pool in pools if pool["scrub"]["state"] == "running")
     scrub_never = sum(1 for pool in pools if pool["scrub"]["state"] == "never")
 
-    arc_servers = [server for server in servers if _arc_ready(server)]
-    hit_rates = [server["system"]["arc"]["hit_rate"] for server in arc_servers]
-    arc_bytes = sum(server["system"]["arc"]["size"] for server in arc_servers)
-    avg_hit = round(sum(hit_rates) / len(hit_rates), 1) if hit_rates else None
-
+    # No fleet-wide ARC average: idle or monitoring-only hosts report a near
+    # 0% hit rate that misrepresents the fleet. ARC is shown per server.
     scrub_notes = []
     if scrub_running:
         scrub_notes.append(f"{scrub_running} running")
@@ -594,9 +586,6 @@ def build_totals(servers: List[Dict[str, Any]]) -> Dict[str, Any]:
         "pools_unhealthy": len(pools) - healthy,
         "scrub_ok": scrub_ok,
         "scrub_note": " / ".join(scrub_notes) if scrub_notes else "none overdue",
-        "avg_hit": avg_hit,
-        "avg_hit_level": level_for_hit_rate(avg_hit),
-        "arc_total": format_bytes(arc_bytes),
     }
 
 

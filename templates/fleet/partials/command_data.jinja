@@ -87,7 +87,11 @@
     </div>
   </div>
 
-  {# ---------------- Health strip (disk health intentionally omitted) ---------------- #}
+  {# ---------------- Health strip ----------------
+     Disk health is intentionally omitted. A fleet average ARC hit rate is
+     also omitted: an idle or monitoring-only host reports a near 0% rate
+     that drags the average down and misrepresents the fleet. Per-server
+     ARC figures are shown on each card instead. #}
   <div class="card cc-hstrip">
     <div class="cc-hs">
       <span class="cc-icon-tile cc-t-purple">{{ cc.icon(cc.db) }}</span>
@@ -105,16 +109,6 @@
         <div class="cc-hs-label">Scrubbed Within 30 Days</div>
         <div class="cc-hs-value">{{ totals.scrub_ok }}/{{ totals.pool_count }}</div>
         <div class="cc-hs-sub">{{ totals.scrub_note }}</div>
-      </div>
-    </div>
-    <div class="cc-hs">
-      <span class="cc-icon-tile cc-t-success">{{ cc.icon(cc.trend) }}</span>
-      <div class="min-w-0">
-        <div class="cc-hs-label">ARC Hit Rate</div>
-        <div class="cc-hs-value">
-          {% if totals.avg_hit is not none %}<span class="cc-t-{{ totals.avg_hit_level }}">{{ totals.avg_hit }}%</span>{% else %}<span class="cc-t3">n/a</span>{% endif %}
-        </div>
-        <div class="cc-hs-sub">average / {{ totals.arc_total }} cached</div>
       </div>
     </div>
   </div>

@@ -235,7 +235,8 @@ def test_build_totals():
     assert totals["pool_count"] == 3
     assert totals["pools_healthy"] == 2
     assert totals["scrub_ok"] == 2
-    assert totals["avg_hit"] == 94.5
+    # A fleet average ARC hit rate is intentionally not computed
+    assert "avg_hit" not in totals
     assert "disk_health" not in totals
 
 
@@ -302,7 +303,8 @@ def test_command_page_and_data_render(monkeypatch, tmp_path):
     assert "SSH authentication failed" in data.text
     assert "apollo" in data.text and "(local)" in data.text
     assert "pulse-border-warning" in data.text
-    assert "ARC Hit Rate" in data.text
+    assert "ARC Hit Rate" not in data.text
+    assert "ARC Hit" in data.text  # per-server tiles remain
     assert "Disk Health" not in data.text and "SMART" not in data.text
 
 
