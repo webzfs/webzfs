@@ -1,5 +1,5 @@
-# Python image based on Debian 13 Trixie
-FROM python:3.12-slim-trixie
+# Python image based on Debian
+FROM python:3.14-slim-trixie
 
 # Define working directory
 WORKDIR /webzfs
