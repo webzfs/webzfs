@@ -105,13 +105,14 @@
                         <div>
                             <label class="form-label" for="target_dataset">Target Parent Dataset <span class="text-danger-400">*</span></label>
                             <select name="target_dataset" id="target_dataset" required class="form-select"
-                                    data-current="{{ job.target_dataset if job else '' }}">
+                                    data-current="{{ target_parent or '' }}">
                                 <option value="">-- Select target parent dataset --</option>
                             </select>
                             <p class="text-text-tertiary text-xs mt-1" id="target-hint">Syncoid replicates into the exact dataset named here, so a child name is appended to the selected parent (it is created on first replication). Selecting a parent alone would replicate on top of it and fail.</p>
                             <label class="form-label mt-2" for="target_new_child">Child Dataset Name <span class="text-danger-400">*</span></label>
                             <input type="text" name="target_new_child" id="target_new_child" class="form-input"
-                                   placeholder="e.g. acestep (auto-filled from source)">
+                                   value="{{ target_child or '' }}"
+                                   placeholder="e.g. acestep (auto-filled from source when creating)">
                             <p class="text-text-tertiary text-xs mt-1">Full target: <code id="target-full-preview" class="text-info-400">-- select parent and child --</code></p>
                         </div>
                     </div>
@@ -377,32 +378,6 @@
         return [];
     }
 
-    // On the edit form the saved target is the full dataset name
-    // (parent/child). Split it against the available parent list so
-    // the parent lands in the dropdown and the remainder in the child
-    // field. The longest matching parent wins.
-    function splitSavedTarget(names) {
-        const saved = targetSelect.value;
-        if (!saved || targetNewChild.value) { return; }
-        if (names.indexOf(saved) !== -1) { return; }
-        let bestParent = '';
-        names.forEach(function(name) {
-            if (saved.indexOf(name + '/') === 0 && name.length > bestParent.length) {
-                bestParent = name;
-            }
-        });
-        if (bestParent) {
-            targetNewChild.value = saved.slice(bestParent.length + 1);
-            // Re-select the parent; drop the "(saved value)" keep option
-            for (let i = targetSelect.options.length - 1; i >= 0; i--) {
-                if (targetSelect.options[i].value === saved) {
-                    targetSelect.remove(i);
-                }
-            }
-            targetSelect.value = bestParent;
-        }
-    }
-
     function updateTargetPreview() {
         const preview = document.getElementById('target-full-preview');
         const base = targetSelect.value;
@@ -416,10 +391,8 @@
         }
     }
 
-    // Auto-fill the child name from the source dataset's last path
-    // component (zstor/ai/acestep pushed to zdata targets
-    // zdata/acestep). Manual edits to the child field are respected.
-    let childAutoFilled = !targetNewChild.value;
+    const isEditingJob = !!document.querySelector('input[name="job_id"]');
+    let childAutoFilled = !isEditingJob && !targetNewChild.value;
     function autoFillChildFromSource() {
         if (!childAutoFilled) { return; }
         const source = sourceSelect.value;
@@ -438,7 +411,6 @@
         const direction = typeSelect.value;
         if (direction === 'pull') {
             fillSelect(targetSelect, localDatasets, '-- Select target parent dataset --');
-            splitSavedTarget(localDatasets);
             const remote = await loadRemoteDatasets();
             fillSelect(sourceSelect, remote,
                 remote.length ? '-- Select source dataset --' : '-- Select SSH connection to load remote datasets --');
@@ -447,11 +419,9 @@
             const remote = await loadRemoteDatasets();
             fillSelect(targetSelect, remote,
                 remote.length ? '-- Select target parent dataset --' : '-- Select SSH connection to load remote datasets --');
-            splitSavedTarget(remote);
         } else {
             fillSelect(sourceSelect, localDatasets, '-- Select source dataset --');
             fillSelect(targetSelect, localDatasets, '-- Select target parent dataset --');
-            splitSavedTarget(localDatasets);
         }
         autoFillChildFromSource();
         updateTargetPreview();

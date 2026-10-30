@@ -910,13 +910,35 @@ def _list_local_dataset_names():
         return []
 
 
+def _target_form_parts(job):
+    """Return (parent, child) for the target fields of the job form.
+
+    The saved full target is authoritative: it is split at the last
+    slash so that parent + "/" + child always rebuilds the exact saved
+    name, regardless of which datasets currently exist (issue 270).
+    After a validation error the raw submitted fields are reused.
+    """
+    if not job:
+        return "", ""
+    if "_form_target_parent" in job:
+        return job["_form_target_parent"], job.get("_form_target_child", "")
+    full_target = job.get("target_dataset") or ""
+    parent, separator, child = full_target.rpartition("/")
+    if separator:
+        return parent, child
+    return full_target, ""
+
+
 def _parse_job_form_error(request: Request, error: str, job=None):
     """Render the job form again with an error message."""
+    target_parent, target_child = _target_form_parts(job)
     return templates.TemplateResponse(
         request,
         name="zfs/replication/syncoid_job_form.jinja",
         context={
             "job": job,
+            "target_parent": target_parent,
+            "target_child": target_child,
             "ssh_connections": ssh_service.list_connections(),
             "schedule_presets": get_schedule_presets(),
             "local_datasets": _list_local_dataset_names(),
@@ -934,6 +956,8 @@ async def syncoid_job_create_form(request: Request):
         name="zfs/replication/syncoid_job_form.jinja",
         context={
             "job": None,
+            "target_parent": "",
+            "target_child": "",
             "ssh_connections": ssh_service.list_connections(),
             "schedule_presets": get_schedule_presets(),
             "local_datasets": _list_local_dataset_names(),
@@ -951,11 +975,14 @@ async def syncoid_job_edit_form(request: Request, job_id: int):
             url="/zfs/replication/syncoid?error=Scheduled job not found",
             status_code=303
         )
+    target_parent, target_child = _target_form_parts(job)
     return templates.TemplateResponse(
         request,
         name="zfs/replication/syncoid_job_form.jinja",
         context={
             "job": job,
+            "target_parent": target_parent,
+            "target_child": target_child,
             "ssh_connections": ssh_service.list_connections(),
             "schedule_presets": get_schedule_presets(),
             "local_datasets": _list_local_dataset_names(),
@@ -996,6 +1023,9 @@ async def syncoid_job_save(
     # child (created on first replication) must be part of the stored
     # name. Client-side combining proved unreliable, so it happens here.
     target_new_child = target_new_child.strip().strip("/")
+    # Keep the raw fields so a validation error re-renders exactly what
+    # the user submitted instead of splitting the combined name again.
+    target_parent = target_dataset
     if target_new_child:
         if target_dataset:
             target_dataset = f"{target_dataset}/{target_new_child}"
@@ -1003,6 +1033,8 @@ async def syncoid_job_save(
             target_dataset = target_new_child
     additional_flags = additional_flags.strip()
     form_job = {
+        "_form_target_parent": target_parent,
+        "_form_target_child": target_new_child,
         "id": int(job_id) if job_id else None,
         "name": name,
         "source_dataset": source_dataset,
@@ -1028,6 +1060,19 @@ async def syncoid_job_save(
         is_valid, schedule_error = validate_cron_expression(schedule)
         if not is_valid:
             return _parse_job_form_error(request, schedule_error, form_job)
+
+        if job_id and target_new_child:
+            existing_job = storage_service.get_syncoid_job(int(job_id))
+            saved_target = (existing_job or {}).get("target_dataset") or ""
+            if "/" in saved_target and target_parent == saved_target:
+                return _parse_job_form_error(
+                    request,
+                    f"The selected Target Parent Dataset '{target_parent}' is "
+                    "this job's entire saved target, so saving would nest the "
+                    f"destination as '{target_dataset}'. Reload the edit page "
+                    "and verify the Full target before saving.",
+                    form_job,
+                )
 
         # Validate dataset names before saving. Without this check a
         # mountpoint path such as /zdata is accepted, and the job later
