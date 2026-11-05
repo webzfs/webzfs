@@ -34,7 +34,7 @@ sudo ./install_freebsd.sh
 ```
 
 The installation scripts will:
-1. Check for required dependencies (Python 3.11+, Node.js v20+, npm)
+1. Check for required dependencies (Python 3.12+, Node.js v22+, npm)
 2. Create the `webzfs` system user (Linux Only)
 3. Install the application to `/opt/webzfs`
 4. Create a Python virtual environment
@@ -73,7 +73,7 @@ chmod +x setup_dev.sh
 ```
 
 The `setup_dev.sh` script will:
-- Check for required dependencies (Python 3.11+, Node.js v20+, npm, make, libsodium)
+- Check for required dependencies (Python 3.12+, Node.js v22+, npm, make, libsodium)
 - Create a Python virtual environment (`.venv`) in your current directory
 - Install all Python dependencies
 - Install Node.js dependencies
@@ -507,7 +507,7 @@ sudo service webzfs status
 # Check Python version
 python3 --version
 
-# Install Python 3.11+ using your package manager
+# Install Python 3.12+ using your package manager
 ```
 
 **Problem: Node.js not found or too old**
@@ -516,7 +516,7 @@ python3 --version
 # Check Node.js version
 node --version
 
-# Install Node.js v20+ from your package manager or https://nodejs.org
+# Install Node.js v22+ from your package manager or https://nodejs.org
 ```
 
 **Problem: Virtual environment creation fails**
@@ -527,7 +527,7 @@ sudo apt install python3-venv         # Debian/Ubuntu
 sudo dnf install python3              # RHEL/Fedora
 
 # On FreeBSD, ensure pip is installed
-sudo pkg install py311-pip
+sudo pkg install py312-pip
 ```
 
 **Problem: npm install fails**

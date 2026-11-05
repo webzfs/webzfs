@@ -113,13 +113,13 @@ fi
 
 # Node.js/npm preflight (GitHub issue #209).
 # The update rebuilds CSS with npm install and npm run build:css as the
-# webzfs service account. Verify a usable non-Snap Node.js 20+ toolchain
+# webzfs service account. Verify a usable non-Snap Node.js 22+ toolchain
 # exists before stopping the service or touching any files.
 echo "Checking Node.js/npm prerequisites..."
 
 if ! command_exists node; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js v20+ and try again"
+    echo "Please install Node.js v22+ and try again"
     exit 1
 fi
 
@@ -145,7 +145,7 @@ case "$NODE_REAL_PATH:$NPM_REAL_PATH" in
         echo "build runs as the 'webzfs' service account with HOME=/opt/webzfs,"
         echo "and snapd rejects home directories outside of /home."
         echo
-        echo "Please install a system (non-Snap) Node.js 20+ and npm, then"
+        echo "Please install a system (non-Snap) Node.js 22+ and npm, then"
         echo "rerun this updater. For example, on Debian/Ubuntu:"
         echo
         echo "  sudo apt update"
@@ -158,21 +158,21 @@ case "$NODE_REAL_PATH:$NPM_REAL_PATH" in
         ;;
 esac
 
-# Enforce the Node.js 20+ requirement
+# Enforce the Node.js 22+ requirement
 NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//')
 NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1)
 
 case "$NODE_MAJOR" in
     ''|*[!0-9]*)
         echo -e "${RED}Error: Unable to determine the Node.js version${NC}"
-        echo "Please install Node.js v20 or newer and try again"
+        echo "Please install Node.js v22 or newer and try again"
         exit 1
         ;;
 esac
 
-if [ "$NODE_MAJOR" -lt 20 ]; then
-    echo -e "${RED}Error: Node.js 20+ is required (found ${NODE_VERSION})${NC}"
-    echo "Please install Node.js v20 or newer and try again"
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo -e "${RED}Error: Node.js 22+ is required (found ${NODE_VERSION})${NC}"
+    echo "Please install Node.js v22 or newer and try again"
     exit 1
 fi
 
