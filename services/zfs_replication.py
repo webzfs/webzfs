@@ -30,6 +30,13 @@ RESUME_SEND_ALLOWED_FLAGS = ('P', 'e', 'n', 'v')
 # The token is passed as a single argv element, but validating it here keeps
 # a corrupt stored token from reaching the command line at all.
 _RESUME_TOKEN_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:+/=-]{0,4095}$')
+from services.ssh_connection import (
+    HostKeyVerificationError,
+    SSHConnectionService,
+    host_key_error_message,
+    is_host_key_error,
+    normalize_known_hosts_host,
+)
 
 
 class ReplicationType(Enum):
@@ -55,6 +62,34 @@ class ZFSReplicationService:
         # Initialize file storage and email services
         self.storage = FileStorageService()
         self.email = EmailNotificationService()
+        # SSH connection service (lazy, used for host key policy)
+        self._ssh_service = None
+    
+    def _get_ssh_service(self) -> SSHConnectionService:
+        """Get the SSH connection service (lazy load to avoid import cycles)."""
+        if self._ssh_service is None:
+            self._ssh_service = SSHConnectionService()
+        return self._ssh_service
+    
+    def _host_key_options_for(self, host: str, port: int) -> List[str]:
+        """
+        Return SSH -o options that enforce the pinned known_hosts file.
+        
+        Native replication refuses to run against a host that is not
+        pinned under SSH Connections: there is no automatic trust here.
+        
+        Raises:
+            HostKeyVerificationError: If the host key is not pinned.
+        """
+        ssh_service = self._get_ssh_service()
+        # The replication UI supplies ``user@host``; known_hosts is keyed by
+        # the bare host, so normalise before the pin lookup.
+        pinned_host = normalize_known_hosts_host(host)
+        if not ssh_service.is_host_key_pinned(pinned_host, port):
+            raise HostKeyVerificationError(
+                host_key_error_message(pinned_host, port)
+            )
+        return ssh_service.get_host_key_options()
     
     def _check_target_exists(self, target: str) -> bool:
         """
@@ -474,6 +509,8 @@ class ZFSReplicationService:
             cmd = ['ssh', '-p', str(remote_port)]
             if ssh_key:
                 cmd.extend(['-i', ssh_key])
+            for option in self._host_key_options_for(remote_host, remote_port):
+                cmd.extend(['-o', option])
             cmd.extend([remote_host, 'echo "Connection successful"'])
             
             result = subprocess.run(
@@ -496,6 +533,14 @@ class ZFSReplicationService:
                 'message': 'Connection timed out'
             }
         except subprocess.CalledProcessError as e:
+            stderr = e.stderr or ''
+            if is_host_key_error(stderr):
+                return {
+                    'status': 'host_key_error',
+                    'message': host_key_error_message(
+                        remote_host, remote_port, stderr.strip()
+                    )
+                }
             return {
                 'status': 'failure',
                 'message': f'Connection failed: {e.stderr}'
@@ -692,9 +737,9 @@ class ZFSReplicationService:
             ssh_cmd = ['ssh', '-p', str(remote_port)]
             if ssh_key:
                 ssh_cmd.extend(['-i', ssh_key])
+            for option in self._host_key_options_for(remote_host, remote_port):
+                ssh_cmd.extend(['-o', option])
             ssh_cmd.extend([
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'BatchMode=yes',
                 '-o', 'ConnectTimeout=10',
                 remote_host,
@@ -718,8 +763,16 @@ class ZFSReplicationService:
                     return all_snaps
                 # Filter to only exact dataset matches
                 return [s for s in all_snaps if s.split('@')[0] == dataset]
+            if is_host_key_error(result.stderr):
+                raise HostKeyVerificationError(
+                    host_key_error_message(
+                        remote_host, remote_port, result.stderr.strip()
+                    )
+                )
             return []
             
+        except HostKeyVerificationError:
+            raise
         except Exception:
             return []
     
@@ -872,6 +925,8 @@ class ZFSReplicationService:
         ssh_parts = ['ssh', '-p', str(remote_port)]
         if ssh_key:
             ssh_parts.extend(['-i', ssh_key])
+        for option in self._host_key_options_for(remote_host, remote_port):
+            ssh_parts.extend(['-o', option])
         ssh_parts.append(remote_host)
         ssh_parts.extend(receive_cmd)
         return ' '.join(send_cmd) + ' | ' + ' '.join(ssh_parts)
@@ -1083,12 +1138,12 @@ class ZFSReplicationService:
         
         # Build send command with sudo if needed (Linux)
         full_send_cmd = build_zfs_command(send_cmd)
-        
+
         # Build SSH command - the receive command runs on the remote system
         # so we don't add sudo here (remote system handles its own permissions).
         # _build_ssh_command is the single place the ssh argv is assembled, so
-        # the transport options stay identical for the stream itself and for
-        # the resume-token and discard commands.
+        # the host-key pin applies to the stream and to the resume-token and
+        # discard commands identically.
         ssh_cmd = self._build_ssh_command(receive_cmd, options)
         
         # Estimate total size for percentage/ETA reporting (best effort)
@@ -1124,6 +1179,15 @@ class ZFSReplicationService:
         
         # Check for failures on either side
         if ssh_process.returncode != 0 or send_process.returncode != 0:
+            # Host key failures are reported distinctly so the UI can
+            # offer the Trust host key action instead of a generic error.
+            if is_host_key_error(ssh_error_text):
+                raise HostKeyVerificationError(
+                    host_key_error_message(
+                        remote_host, remote_port, ssh_error_text
+                    )
+                )
+            
             error_parts = []
             if send_process.returncode != 0 and send_error_text:
                 error_parts.append(f"Send failed: {send_error_text}")
@@ -1153,23 +1217,28 @@ class ZFSReplicationService:
         }
     
     def _build_ssh_command(self, remote_cmd: List[str], options: Dict) -> List[str]:
-        """Build an ssh invocation that runs remote_cmd on the receive host."""
+        """Build an ssh invocation that runs remote_cmd on the receive host.
+
+        Fails closed: the host must be pinned under SSH Connections, so the
+        resume-token read and the `zfs receive -A` discard are verified on
+        the same terms as the replication stream itself.
+        """
         remote_host = options.get('remote_host')
         if not remote_host:
             raise Exception("remote_host required for remote replication")
 
-        ssh_cmd = ['ssh', '-p', str(options.get('remote_port', 22))]
+        remote_port = options.get('remote_port', 22)
+        ssh_cmd = ['ssh', '-p', str(remote_port)]
         ssh_key = options.get('ssh_key')
         if ssh_key:
             ssh_cmd.extend(['-i', ssh_key])
-        ssh_cmd.extend([
-            '-o', 'StrictHostKeyChecking=no',
-            '-o', 'UserKnownHostsFile=/dev/null',
-            '-o', 'BatchMode=yes'
-        ])
+        for option in self._host_key_options_for(remote_host, remote_port):
+            ssh_cmd.extend(['-o', option])
+        ssh_cmd.extend(['-o', 'BatchMode=yes'])
         ssh_cmd.append(remote_host)
         ssh_cmd.extend(remote_cmd)
         return ssh_cmd
+
 
     def _run_zfs_command(
         self, cmd: List[str], replication_type: ReplicationType,

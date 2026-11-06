@@ -22,6 +22,11 @@ class ZFSPoolService:
     
     # ZFS naming pattern: alphanumeric, underscore, hyphen, period, colon
     ZFS_POOL_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*$')
+
+    # Pool properties that can only be applied when a pool is imported.
+    # `zpool set` refuses them, so they must never reach the command line.
+    # `rdonly` is the documented alias of `readonly` (zpoolprops(7)).
+    IMPORT_TIME_ONLY_PROPERTIES = frozenset({'readonly', 'rdonly', 'altroot'})
     
     def __init__(self):
         """Initialize the ZFS Pool Service with settings"""
@@ -53,6 +58,30 @@ class ZFSPoolService:
                 "periods, or colons."
             )
     
+    @classmethod
+    def validate_pool_property_name(cls, property_name: str) -> None:
+        """
+        Validate a pool property name for a `zpool set` operation.
+
+        Properties listed in IMPORT_TIME_ONLY_PROPERTIES are applied only when
+        a pool is imported; `zpool set` rejects them, so they must be refused
+        before the command is built.
+
+        Args:
+            property_name: The property name to validate
+
+        Raises:
+            ValueError: If the property is empty or import-time-only
+        """
+        if not property_name:
+            raise ValueError("Property name cannot be empty")
+
+        if property_name in cls.IMPORT_TIME_ONLY_PROPERTIES:
+            raise ValueError(
+                f"Property '{property_name}' can only be set when importing a "
+                "pool and cannot be changed afterwards."
+            )
+
     @staticmethod
     def _format_bytes_zfs(size_bytes: int) -> str:
         """
@@ -379,8 +408,8 @@ class ZFSPoolService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to export pool: {e.stderr}")
     
-    def import_pool(self, pool_name: str, force: bool = False, 
-                   altroot: Optional[str] = None) -> None:
+    def import_pool(self, pool_name: str, force: bool = False,
+                   altroot: Optional[str] = None, *, readonly: bool = False) -> None:
         """
         Import a ZFS pool
         
@@ -388,6 +417,7 @@ class ZFSPoolService:
             pool_name: Name of the pool to import
             force: Force import even if previously imported
             altroot: Alternative root directory
+            readonly: Import the pool read-only (`-o readonly=on`)
         """
         self.validate_pool_name(pool_name)
         timeout = self.timeouts.get('import', self.timeouts['default'])
@@ -397,6 +427,8 @@ class ZFSPoolService:
                 cmd.append('-f')
             if altroot:
                 cmd.extend(['-R', altroot])
+            if readonly:
+                cmd.extend(['-o', 'readonly=on'])
             cmd.append(pool_name)
             
             run_zfs_command(cmd, timeout=timeout)
@@ -513,8 +545,13 @@ class ZFSPoolService:
             pool_name: Name of the pool
             property_name: Name of the property to set
             property_value: Value to set
+
+        Raises:
+            ValueError: If the pool name or property name is invalid, or the
+                property is import-time-only (e.g. readonly, altroot)
         """
         self.validate_pool_name(pool_name)
+        self.validate_pool_property_name(property_name)
         timeout = self.timeouts.get('properties', self.timeouts['default'])
         try:
             run_zfs_command(

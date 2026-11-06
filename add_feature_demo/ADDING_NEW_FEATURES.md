@@ -38,9 +38,10 @@ WebZFS follows a clean architecture pattern with three main layers:
 ### 1. Service Layer (`services/`)
 - **Purpose**: Logic and system operations
 - **Responsibilities**:
-  - Execute system commands
+  - Execute system commands through `services.utils.run_privileged_command`
+  - Read and write files through `services.file.read_file` and `save_file`
   - Parse command output
-  - Handle OS-specific differences (Linux vs FreeBSD)
+  - Handle OS-specific differences (Linux, FreeBSD, NetBSD)
   - Provide a clean API for the view layer
 - **Example**: `services/ntp.py`
 
@@ -60,7 +61,7 @@ WebZFS follows a clean architecture pattern with three main layers:
   - Display data to users
   - Provide forms for input
   - Use HTMX for dynamic updates
-  - Follow consistent styling (Tailwind CSS)
+  - Follow consistent styling with the theme design tokens
 - **Example**: `templates/utils/ntp/*.jinja`
 
 ---
@@ -71,76 +72,95 @@ WebZFS follows a clean architecture pattern with three main layers:
 
 **Location**: `services/your_feature.py`
 
-The service layer handles all logic and system interactions.
+The service layer handles all logic and system interactions. Use the shared
+helpers in `services.utils` and `services.file` instead of calling
+`subprocess`, `platform`, or `sudo` directly. Those helpers already handle
+Linux, FreeBSD, NetBSD, sudo detection, and secure file writes.
 
 **Key Components**:
 ```python
-import subprocess
-import platform
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict
+
+from services.file import read_file, save_file
+from services.utils import (
+    is_freebsd,
+    is_linux,
+    is_netbsd,
+    needs_sudo_for_privileged,
+    run_privileged_command,
+)
 
 class YourFeatureService:
     """Service for managing your feature"""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         """Initialize service, detect OS, set paths"""
         self.os_type = self._detect_os()
         self.config_path = self._get_config_path()
-    
+
     def _detect_os(self) -> str:
-        """Detect operating system (Linux or FreeBSD)"""
-        system = platform.system().lower()
-        if 'freebsd' in system:
-            return 'freebsd'
-        else:
-            # Default to Linux (handles all Linux distributions)
-            return 'linux'
-    
+        """Detect operating system using the shared platform helpers."""
+        if is_linux():
+            return "linux"
+        if is_freebsd():
+            return "freebsd"
+        if is_netbsd():
+            return "netbsd"
+        return "unknown"
+
     def _get_config_path(self) -> Path:
         """Get configuration file path based on OS"""
-        if self.os_type == 'linux':
-            return Path('/etc/your-config')
-        elif self.os_type == 'freebsd':
-            return Path('/usr/local/etc/your-config')
-        return Path('/etc/your-config')
-    
-    def get_status(self) -> Dict:
+        return Path("/etc/your-config")
+
+    def get_status(self) -> Dict[str, Any]:
         """Get feature status"""
-        # Implementation here
-        pass
-    
+        ...
+
     def update_config(self, config: str) -> bool:
         """Update configuration"""
-        # Implementation here
-        pass
+        ...
 ```
 
-**OS-Specific Handling Example**:
+**Command and File Handling Example**:
 ```python
 def restart_service(self) -> bool:
-    """Restart service - handles both Linux and FreeBSD"""
+    """Restart the service on every supported platform."""
+    if self.os_type == "linux":
+        command = ["systemctl", "restart", "your-service"]
+    elif self.os_type in ("freebsd", "netbsd"):
+        command = ["service", "your-service", "restart"]
+    else:
+        return False
+
     try:
-        if self.os_type == 'linux':
-            result = subprocess.run(
-                ['sudo', 'systemctl', 'restart', 'your-service'],
-                capture_output=True,
-                timeout=10
-            )
-        elif self.os_type == 'freebsd':
-            result = subprocess.run(
-                ['sudo', 'service', 'your-service', 'restart'],
-                capture_output=True,
-                timeout=10
-            )
-        else:
-            return False
-        
+        result = run_privileged_command(command, check=False, timeout=10)
         return result.returncode == 0
-    except Exception as e:
-        print(f"Error: {e}")
+    except Exception as restart_error:
+        logger.error("Error restarting service: %s", restart_error)
+        return False
+
+
+def update_config(self, config_content: str) -> bool:
+    """Write the configuration file through the shared file helper."""
+    if not config_content.strip():
+        raise ValueError("Configuration cannot be empty")
+
+    try:
+        save_file(
+            str(self.config_path),
+            config_content,
+            use_sudo=needs_sudo_for_privileged(),
+        )
+        return True
+    except Exception as write_error:
+        logger.error("Error updating configuration: %s", write_error)
         return False
 ```
+
+`run_privileged_command` prepends `sudo` only on Linux. `save_file` writes
+through a secure temporary file and falls back to `sudo tee` for root-owned
+files. `read_file` mirrors that behavior for reads.
 
 **See**: `add_feature_demo/services/ntp.py` for a complete example.
 
@@ -154,18 +174,21 @@ The view layer defines routes and handles HTTP requests.
 
 **Template Structure**:
 ```python
-from fastapi import APIRouter, Request, Form, Depends
-from fastapi.responses import RedirectResponse
 from typing import Annotated
-from config.templates import templates
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import RedirectResponse
+from starlette.responses import Response
+
 from auth.dependencies import get_current_user
+from config.templates import templates
 from services.your_feature import YourFeatureService
 
 # Create router with prefix
 router = APIRouter(
     prefix="/utils/your-feature",  # URL prefix (use hyphens in URLs)
-    tags=["your-feature"],          # API documentation tag
-    dependencies=[Depends(get_current_user)]  # Require authentication
+    tags=["your-feature"],  # API documentation tag
+    dependencies=[Depends(get_current_user)],  # Require authentication
 )
 
 # Initialize service
@@ -173,63 +196,64 @@ your_service = YourFeatureService()
 
 
 @router.get("/")
-async def index(request: Request):
+async def index(request: Request) -> Response:
     """Main page for your feature"""
     try:
         # Get data from service
         data = your_service.get_data()
-        
+
         # Render template with data
         return templates.TemplateResponse(
             request,
             name="utils/your-feature/index.jinja",
             context={
                 "data": data,
-                "page_title": "Your Feature"
-            }
+                "page_title": "Your Feature",
+            },
         )
-    except Exception as e:
+    except Exception as error:
         return templates.TemplateResponse(
             request,
             name="partials/error.jinja",
             context={
-                "error": str(e),
-                "back_url": "/utils"
-            }
+                "error": str(error),
+                "title": "Your Feature Error",
+            },
         )
 
 
 @router.post("/action")
 async def perform_action(
     request: Request,
-    param: Annotated[str, Form()]
-):
+    param: Annotated[str, Form()],
+) -> RedirectResponse:
     """Handle form submission"""
     try:
         success = your_service.do_something(param)
-        
+
         if success:
             return RedirectResponse(
                 url="/utils/your-feature?message=Success",
-                status_code=303
+                status_code=303,
             )
-        else:
-            return RedirectResponse(
-                url="/utils/your-feature?error=Failed",
-                status_code=303
-            )
-    except Exception as e:
         return RedirectResponse(
-            url=f"/utils/your-feature?error={str(e)}",
-            status_code=303
+            url="/utils/your-feature?error=Failed",
+            status_code=303,
+        )
+    except Exception as error:
+        return RedirectResponse(
+            url=f"/utils/your-feature?error={error}",
+            status_code=303,
         )
 ```
 
 **Important Notes**:
 - Always use `status_code=303` for POST-redirect-GET pattern
 - Use query parameters for messages: `?message=` or `?error=`
+- Pass `request` first to `TemplateResponse`, then `name=` and `context=`
+- Annotate every handler return type with `Response` or `RedirectResponse`
+- Pass `title=` to `partials/error.jinja`; the template no longer uses `back_url`
 - Handle exceptions gracefully
-- Return appropriate templates or redirects
 
 **See**: `add_feature_demo/views/utils_ntp.py` for a complete example.
 
@@ -255,77 +279,73 @@ templates/
 ```jinja
 {% extends "layout_main.jinja" %}
 
-{% block content %}
-<div class="container mx-auto px-4 py-6">
-    <!-- Page Header -->
-    <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
-            Your Feature Title
-        </h1>
-        <p class="text-gray-600 dark:text-gray-400 mt-2">
-            Feature description
-        </p>
-    </div>
+{% block title %}{{ page_title }}{% endblock %}
 
+{% block caption %}{{ page_title }}{% endblock %}
+
+{% block inner %}
     <!-- Display Messages -->
     {% if request.query_params.get('message') %}
-    <div class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+    <div class="mb-4 p-4 bg-success-900/30 border border-success-600/40 text-success-400 rounded-lg">
         {{ request.query_params.get('message') }}
     </div>
     {% endif %}
-    
+
     {% if request.query_params.get('error') %}
-    <div class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+    <div class="mb-4 p-4 bg-danger-900/30 border border-danger-600/40 text-danger-400 rounded-lg">
         {{ request.query_params.get('error') }}
     </div>
     {% endif %}
 
     <!-- Content Card -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">
+    <div class="bg-bg-elevated rounded-lg border border-border-subtle p-6 mb-6">
+        <h2 class="text-xl font-semibold text-text-primary mb-4">
             Section Title
         </h2>
-        
-        <!-- Your content here -->
-        <p class="text-gray-600 dark:text-gray-400">
+
+        <p class="text-text-secondary">
             {{ your_data }}
         </p>
     </div>
 
     <!-- Actions Card -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mt-6">
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">
+    <div class="bg-bg-elevated rounded-lg border border-border-subtle p-6">
+        <h2 class="text-xl font-semibold text-text-primary mb-4">
             Actions
         </h2>
-        
-        <div class="flex flex-wrap gap-4">
-            <form method="POST" action="/utils/your-feature/action">
-                <button type="submit" 
-                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                    Perform Action
-                </button>
-            </form>
-        </div>
+
+        <form method="POST" action="/utils/your-feature/action">
+            <button type="submit" class="btn-primary px-4 py-2">
+                Perform Action
+            </button>
+        </form>
     </div>
-</div>
 {% endblock %}
 ```
 
+`layout_main.jinja` already renders the breadcrumb, the page card, and the
+error container. Override `title`, `caption`, and `inner`. Do not override
+`content`; that replaces the whole layout, including the breadcrumb and card.
+
 **Styling Guidelines**:
-- Use Tailwind CSS classes
-- Support dark mode (`dark:` prefix)
-- Use consistent spacing (mb-4, mb-6, p-6, etc.)
-- Use rounded corners (rounded-lg)
-- Use shadows (shadow-md)
-- Make buttons clear and actionable
+- Use the design tokens from `static/css/styles.css`, not raw palette classes
+- Surfaces: `bg-bg-elevated`, `bg-bg-elevated-2`, `bg-bg-elevated-3`
+- Text: `text-text-primary`, `text-text-secondary`, `text-text-tertiary`
+- Borders: `border-border-subtle`, `divide-border-subtle`
+- Status colors: `text-success-400`, `text-danger-400`, `text-info-400`, `text-warning-400`
+- Buttons: `btn-primary`, `btn-secondary`, `btn-danger`
+- Form controls: `form-input`, `form-textarea`, `form-select`
+- Use consistent spacing (`mb-4`, `mb-6`, `p-6`)
+- Do not add `dark:` variants; the application is dark-theme first and the
+  theme CSS already overrides the semantic tokens
 
 **HTMX Integration** (for dynamic updates):
 ```jinja
 <!-- Button that triggers HTMX request -->
-<button hx-get="/utils/your-feature/refresh" 
+<button hx-get="/utils/your-feature/refresh"
         hx-target="#status-container"
         hx-swap="innerHTML"
-        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+        class="btn-secondary px-4 py-2">
     Refresh Status
 </button>
 
@@ -385,58 +405,81 @@ router.include_router(views.dashboard.router)
 
 ### Step 5: Add Navigation (Optional)
 
-**Location**: `config/templates.py`
+**Location**: `templates/utils/index.jinja`
 
-To add your feature to the **Utilities dropdown menu** in the navigation bar, modify the `ENABLED_TABS` configuration.
+The Utilities landing page lists every utility as a card. To make your
+feature reachable, add a card to the grid in `templates/utils/index.jinja`.
 
-**Important**: This adds a sub-item under the existing "Utilities" tab, NOT a new top-level tab in the navbar.
+**Note**: `config/templates.py` holds `NAV_TABS`, which defines the
+top-level navbar tabs (Dashboard, ZFS, Fleet, Utilities). It does not hold a
+per-utility list. Utilities are surfaced as cards, not as navbar dropdown
+entries.
 
-**Find the utilities section** in `ENABLED_TABS`:
-```python
-{
-    "name": "utilities",
-    "label": "Utilities",
-    "url": "/utils",
-    "subitems": [
-        {"label": "Shell", "url": "/utils/shell"},
-        {"label": "Text Editor", "url": "/utils/text"},
-        {"label": "Files", "url": "/utils/files"},
-        {"label": "Logs", "url": "/utils/logs"},
-        {"label": "SMART", "url": "/utils/smart"},
-        {"label": "NTP Config", "url": "/utils/ntp"},  # ← Add your feature here
-    ]
-}
+**Add a card** alongside the existing entries:
+```jinja
+<a href="/utils/your-feature"
+   class="card group hover:border-success-500/50 transition-colors">
+    <div class="card-body">
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-xl font-semibold text-text-primary group-hover:text-success-400 transition-colors">
+                Your Feature
+            </h2>
+            <span class="text-text-tertiary group-hover:text-success-400 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 5l7 7-7 7"></path>
+                </svg>
+            </span>
+        </div>
+        <p class="text-sm text-text-secondary">
+            Short description of what your feature does.
+        </p>
+    </div>
+</a>
 ```
 
 **Navigation Structure**:
-- **Top-level navbar tabs**: ZFS, Fleet, Utilities (these already exist)
-- **Utilities sub-items**: Appear in dropdown menu when you click "Utilities"
-- **Your feature**: Will appear as a menu item in the Utilities dropdown
+- **Top-level navbar tabs**: defined in `NAV_TABS` in `config/templates.py`
+- **Utilities cards**: defined in `templates/utils/index.jinja`
 - **URL**: Should match your router prefix (e.g., `/utils/your-feature`)
-
-**Result**: When users click the "Utilities" tab in the navbar, they will see your feature listed in the dropdown menu.
 
 ---
 
 ### Step 6: Add Sudo Permissions (If Needed)
 
-**Location**: `/etc/sudoers` or `/etc/sudoers.d/webzfs`
+**Location**: `sudoers.d/webzfs.linux` in the repository, installed as
+`/etc/sudoers.d/webzfs` on Linux.
 
-If your feature needs to execute privileged commands, add sudo permissions.
+WebZFS ships a single installer-managed sudoers policy. Do not add a
+separate policy file per feature. Add your commands to the existing policy
+and reinstall or update the file on the target host.
 
-**Example Entry** (using the recommended `webzfs` user):
+**The shipped policy already covers this demo.** It grants `systemctl`,
+`cat`, and `tee`, which is everything `run_privileged_command` and
+`save_file` need for NTP:
+
 ```
-# Allow webzfs user to manage NTP without password
-webzfs ALL=(ALL) NOPASSWD: /bin/systemctl restart ntpd
-webzfs ALL=(ALL) NOPASSWD: /bin/systemctl enable ntpd
-webzfs ALL=(ALL) NOPASSWD: /bin/systemctl status ntpd
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/service ntpd restart
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/service ntpd status
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sysrc ntpd_enable=YES
-webzfs ALL=(ALL) NOPASSWD: /bin/cp /tmp/ntp.conf.tmp /etc/ntp.conf
+# System services and scheduled tasks use systemctl link/disable.
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
+# Configuration editing and ZED script creation
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
 ```
 
-**Note**: Replace `webzfs` with a different username if your deployment uses a different user.
+**When your feature needs a new binary**, add one line with the full path
+and list every path the binary may live at on supported distributions:
+
+```
+# Example: allow webzfs to run a new helper without a password
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/your-tool, /bin/your-tool
+```
+
+**Note**: Replace `webzfs` with a different username if your deployment uses
+a different user. Always validate the policy with `visudo -c` after editing;
+a malformed sudoers file can lock you out of privilege escalation.
+
+**FreeBSD and NetBSD**: The installers run WebZFS as root, and
+`run_privileged_command` does not prepend `sudo` on those platforms, so no
+sudoers entry is required there.
 
 **Security Best Practices**:
 - Only allow specific commands (avoid wildcards)
@@ -450,7 +493,7 @@ webzfs ALL=(ALL) NOPASSWD: /bin/cp /tmp/ntp.conf.tmp /etc/ntp.conf
 
 ### 1. Unit Testing
 
-Create tests in `tests/services/test_your_feature.py`:
+Create tests in `tests/test_your_feature.py`:
 
 ```python
 import pytest
@@ -460,19 +503,19 @@ def test_get_status():
     """Test status retrieval"""
     service = YourFeatureService()
     status = service.get_status()
-    
+
     assert 'running' in status
     assert isinstance(status['running'], bool)
 
 def test_os_detection():
     """Test OS detection"""
     service = YourFeatureService()
-    assert service.os_type in ['linux', 'freebsd', 'unknown']
+    assert service.os_type in ['linux', 'freebsd', 'netbsd', 'unknown']
 ```
 
 Run tests:
 ```bash
-pytest tests/services/test_your_feature.py -v
+pytest tests/test_your_feature.py -v
 ```
 
 ### 2. Manual Testing
@@ -486,11 +529,12 @@ pytest tests/services/test_your_feature.py -v
    - Navigate to `http://localhost:26619/utils/your-feature`
    - Test all buttons and forms
    - Verify error handling
-   - Check dark mode compatibility
+   - Check that the page renders with the theme tokens
 
-3. **Test on both OS types** (if applicable):
+3. **Test on all OS types** (if applicable):
    - Linux system
    - FreeBSD system
+   - NetBSD system
 
 ### 3. Integration Testing
 
@@ -512,8 +556,8 @@ Verify your feature works with the rest of the application:
 try:
     result = your_service.do_something()
     return success_response()
-except Exception as e:
-    return error_response(str(e))
+except Exception as error:
+    return error_response(str(error))
 ```
 
 **Provide helpful error messages**:
@@ -527,28 +571,36 @@ if not config_path.exists():
 
 ### 2. OS Compatibility
 
-**Detect OS early (default to Linux, check for FreeBSD)**:
+**Detect OS with the shared platform helpers**:
 ```python
+from services.utils import is_freebsd, is_linux, is_netbsd
+
 def _detect_os(self) -> str:
-    """Detect operating system"""
-    system = platform.system().lower()
-    if 'freebsd' in system:
-        return 'freebsd'
-    else:
-        # Default to Linux - handles all Linux distributions
-        return 'linux'
+    """Detect the operating system using the shared platform helpers."""
+    if is_linux():
+        return "linux"
+    if is_freebsd():
+        return "freebsd"
+    if is_netbsd():
+        return "netbsd"
+    return "unknown"
 ```
 
 **Use OS-specific logic**:
 ```python
-if self.os_type == 'freebsd':
+if self.os_type == "freebsd":
     # FreeBSD-specific code
+elif self.os_type == "netbsd":
+    # NetBSD-specific code
 else:
-    # Linux code (default for all other systems)
+    # Linux code
     pass
 ```
 
-**Why default to Linux?** Different Linux distributions may report slightly different strings (e.g., "Linux", "GNU/Linux"), so it's more robust to check explicitly for FreeBSD and default to Linux for everything else.
+**Why use the shared helpers?** `platform.system()` returns different
+strings across distributions and platforms, and each feature used to
+reimplement the same checks. `services.utils` normalizes that detection in
+one place, so behavior stays consistent across the application.
 
 ### 3. Security
 
@@ -558,20 +610,28 @@ def update_config(self, config: str) -> bool:
     # Validate input
     if not config or len(config) > 100000:
         raise ValueError("Invalid configuration")
-    
-    # Write to temp file first
-    temp_path = Path('/tmp/config.tmp')
-    # ... rest of implementation
+
+    # Delegate the write to the shared helper, which writes through a
+    # secure temporary file and handles root-owned paths
+    save_file(
+        str(self.config_path),
+        config,
+        use_sudo=needs_sudo_for_privileged(),
+    )
+    return True
 ```
 
-**Use subprocess safely**:
+**Use the shared command helper**:
 ```python
-# Good - command as list
-subprocess.run(['sudo', 'systemctl', 'restart', service_name], ...)
+# Good - argument list, sudo handling, and timeout are centralized
+run_privileged_command(["systemctl", "restart", service_name], timeout=10)
 
-# Bad - shell=True is dangerous
-subprocess.run(f'sudo systemctl restart {service_name}', shell=True)
+# Bad - bypasses the helper and requires sudo on every platform
+subprocess.run(f"sudo systemctl restart {service_name}", shell=True)
 ```
+
+`run_privileged_command` accepts an argument list only. It never builds a
+shell string, so untrusted values cannot inject shell syntax.
 
 ### 4. Code Organization
 
@@ -610,10 +670,10 @@ def update_config(self, config: str) -> bool:
 def restart_service(self) -> bool:
     """
     Restart the service.
-    
+
     Returns:
         bool: True if service restarted successfully, False otherwise
-    
+
     Raises:
         TimeoutError: If service takes too long to restart
     """
@@ -642,8 +702,9 @@ return config_path
 - Back buttons to return to previous page
 - Clear action buttons with descriptive labels
 
-**Support dark mode natively**:
-- Use `dark:` prefix for dark mode classes
+**Support the theme with design tokens**:
+- Use semantic tokens (`bg-bg-elevated`, `text-text-primary`, `border-border-subtle`)
+- Do not add `dark:` variants; the theme CSS already handles light and dark
 
 
 ---
@@ -653,41 +714,45 @@ return config_path
 When adding a new feature, complete these steps:
 
 - [ ] Create service layer (`services/your_feature.py` - use underscores)
-  - [ ] Implement OS detection
+  - [ ] Use the shared helpers from `services.utils` and `services.file`
+  - [ ] Implement OS detection with `is_linux`, `is_freebsd`, `is_netbsd`
   - [ ] Add core functionality
   - [ ] Handle errors gracefully
-  - [ ] Test on both Linux and FreeBSD (if applicable)
+  - [ ] Test on Linux, FreeBSD, and NetBSD (if applicable)
 
 - [ ] Create view layer (`views/utils_your_feature.py` - use underscores)
   - [ ] Define router with prefix (`/utils/your-feature` - use hyphens in URLs)
   - [ ] Create GET routes for pages
   - [ ] Create POST routes for actions
   - [ ] Add authentication dependency
+  - [ ] Annotate handler return types
   - [ ] Handle errors and redirects
 
 - [ ] Create templates (`templates/utils/your-feature/` - use hyphens in paths)
+  - [ ] Extend `layout_main.jinja` and override `title`, `caption`, `inner`
   - [ ] Create main page (`index.jinja`)
   - [ ] Add additional pages as needed
-  - [ ] Support dark mode
+  - [ ] Use the theme design tokens
   - [ ] Add HTMX if needed
 
 - [ ] Register router (`views/__init__.py`)
   - [ ] Import view module
   - [ ] Add router to main router
 
-- [ ] Update navigation (`config/templates.py`)
-  - [ ] Add menu item
+- [ ] Update navigation (`templates/utils/index.jinja`)
+  - [ ] Add a Utilities card
   - [ ] Set correct URL
 
 - [ ] Add sudo permissions (if needed)
-  - [ ] Create sudoers entry
+  - [ ] Add commands to `sudoers.d/webzfs.linux`
+  - [ ] Validate with `visudo -c`
   - [ ] Test with application user
 
 - [ ] Test thoroughly
   - [ ] Unit tests
   - [ ] Manual testing
-  - [ ] Both OS types
-  - [ ] Dark mode
+  - [ ] Linux, FreeBSD, and NetBSD
+  - [ ] Theme consistency
   - [ ] Error cases
 
 ---
@@ -698,6 +763,7 @@ All example files for the NTP configuration feature are located in:
 
 ```
 add_feature_demo/
+├── README.md                           # Overview and quick start
 ├── services/
 │   └── ntp.py                          # Service layer
 ├── views/
