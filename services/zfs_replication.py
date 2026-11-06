@@ -921,7 +921,9 @@ class ZFSReplicationService:
         combination, so an unsupported flag raises instead of producing a
         command that cannot run.
         """
-        if not isinstance(receive_resume_token, str) or not _RESUME_TOKEN_PATTERN.match(
+        # fullmatch, not match: '$' also matches before a trailing newline,
+        # so match() would accept a token ending in '\n'.
+        if not isinstance(receive_resume_token, str) or not _RESUME_TOKEN_PATTERN.fullmatch(
             receive_resume_token
         ):
             raise ValueError("Invalid receive_resume_token")
