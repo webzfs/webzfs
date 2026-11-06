@@ -113,13 +113,13 @@ fi
 
 # Node.js/npm preflight (GitHub issue #209).
 # The update rebuilds CSS with npm install and npm run build:css as the
-# webzfs service account. Verify a usable non-Snap Node.js 20+ toolchain
+# webzfs service account. Verify a usable non-Snap Node.js 22+ toolchain
 # exists before stopping the service or touching any files.
 echo "Checking Node.js/npm prerequisites..."
 
 if ! command_exists node; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js v20+ and try again"
+    echo "Please install Node.js v22+ and try again"
     exit 1
 fi
 
@@ -145,7 +145,7 @@ case "$NODE_REAL_PATH:$NPM_REAL_PATH" in
         echo "build runs as the 'webzfs' service account with HOME=/opt/webzfs,"
         echo "and snapd rejects home directories outside of /home."
         echo
-        echo "Please install a system (non-Snap) Node.js 20+ and npm, then"
+        echo "Please install a system (non-Snap) Node.js 22+ and npm, then"
         echo "rerun this updater. For example, on Debian/Ubuntu:"
         echo
         echo "  sudo apt update"
@@ -158,21 +158,21 @@ case "$NODE_REAL_PATH:$NPM_REAL_PATH" in
         ;;
 esac
 
-# Enforce the Node.js 20+ requirement
+# Enforce the Node.js 22+ requirement
 NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//')
 NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1)
 
 case "$NODE_MAJOR" in
     ''|*[!0-9]*)
         echo -e "${RED}Error: Unable to determine the Node.js version${NC}"
-        echo "Please install Node.js v20 or newer and try again"
+        echo "Please install Node.js v22 or newer and try again"
         exit 1
         ;;
 esac
 
-if [ "$NODE_MAJOR" -lt 20 ]; then
-    echo -e "${RED}Error: Node.js 20+ is required (found ${NODE_VERSION})${NC}"
-    echo "Please install Node.js v20 or newer and try again"
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo -e "${RED}Error: Node.js 22+ is required (found ${NODE_VERSION})${NC}"
+    echo "Please install Node.js v22 or newer and try again"
     exit 1
 fi
 
@@ -234,11 +234,23 @@ echo
 
 # Copy application files to installation directory (preserving config)
 echo "Updating application files from $SOURCE_DIR to $INSTALL_DIR..."
+
+# config/gunicorn.conf.py is application code, not user configuration. All
+# bind settings (BIND_IP, PORT, BIND, SOCKET_UMASK, WORKERS) live in .env and
+# are loaded by the current gunicorn.conf.py. Older installs that skipped this
+# file kept a copy that never reads .env and always binds to 127.0.0.1.
+# Back up the installed copy when it differs, then let it be replaced.
+GUNICORN_CONF="${INSTALL_DIR}/config/gunicorn.conf.py"
+if [ -f "$GUNICORN_CONF" ] && ! cmp -s "$GUNICORN_CONF" "${SOURCE_DIR}/config/gunicorn.conf.py"; then
+    cp -p "$GUNICORN_CONF" "${GUNICORN_CONF}.bak"
+    echo -e "${YELLOW}!${NC} Replacing config/gunicorn.conf.py; previous copy saved as config/gunicorn.conf.py.bak"
+    echo -e "${YELLOW}!${NC} Set bind options (BIND_IP, PORT, BIND) in ${INSTALL_DIR}/.env"
+fi
+
 rsync -a --exclude='.venv' --exclude='node_modules' --exclude='.git' --exclude='*.log' \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='.config' \
     --exclude='/install*.sh' --exclude='/update*.sh' \
     --exclude='/integrations/cockpit/install.sh' \
-    --exclude='config/gunicorn.conf.py' \
     "${SOURCE_DIR}/" "$INSTALL_DIR/"
 
 # Remove root-level install/update entry points left by older installations.
