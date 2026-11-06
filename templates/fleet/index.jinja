@@ -71,13 +71,22 @@
     </div>
   </div>
 
-  {# Success/Error Messages #}
+  {# Success/Error Messages.
+     partials/success.jinja guards on `message` and partials/error.jinja
+     guards on `error`, so the query parameter must be bound to those
+     names explicitly. A bare `with context` include leaves both unset
+     and renders an empty block, which silently hid the outcome of
+     redirect-based actions such as Trust host key. #}
   {% if request.query_params.get('success') %}
-    {% include "partials/success.jinja" with context %}
+    {% with message=request.query_params.get('success') %}
+      {% include "partials/success.jinja" %}
+    {% endwith %}
   {% endif %}
-  
+
   {% if request.query_params.get('error') %}
-    {% include "partials/error.jinja" with context %}
+    {% with error=request.query_params.get('error') %}
+      {% include "partials/error.jinja" %}
+    {% endwith %}
   {% endif %}
 
   {# Action Buttons and Auto-Refresh #}
