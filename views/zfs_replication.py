@@ -151,6 +151,7 @@ async def send_receive_form(request: Request):
 @router.post("/send-receive/execute", response_class=HTMLResponse)
 async def send_receive_execute(
     request: Request,
+    user: Annotated[str, Depends(get_current_user)],
     source: Annotated[str, Form()],
     target: Annotated[str, Form()],
     replication_type: Annotated[str, Form()],
@@ -158,6 +159,7 @@ async def send_receive_execute(
     recursive: Annotated[bool, Form()] = False,
     raw: Annotated[bool, Form()] = False,
     large_blocks: Annotated[bool, Form()] = False,
+    resumable: Annotated[bool, Form()] = False,
     compression: Annotated[str, Form()] = "lz4",
     remote_host: Annotated[str, Form()] = "",
     remote_port: Annotated[int, Form()] = 22,
@@ -203,8 +205,10 @@ async def send_receive_execute(
                 'recursive': recursive,
                 'raw': raw,
                 'large_blocks': large_blocks,
+                'resumable': resumable,
                 'compression': comp_method,
                 'job_name': job_name,
+                'user': user,
                 **options
             },
             daemon=True
@@ -628,6 +632,185 @@ async def delete_all_executions(request: Request):
         return RedirectResponse(
             url=f"/zfs/replication/history?error={str(e)}",
             status_code=303,
+        )
+
+
+def _execution_transport_options(execution: Dict) -> Dict:
+    """Rebuild the SSH transport options persisted on an execution record.
+
+    A failed resumable receive can only be resumed or discarded through the
+    same transport it was started with, so the remote host, port and key are
+    stored on the record at creation time.
+    """
+    options = {}
+    if execution.get('remote_host'):
+        options['remote_host'] = execution['remote_host']
+        options['remote_port'] = execution.get('remote_port') or 22
+    if execution.get('ssh_key'):
+        options['ssh_key'] = execution['ssh_key']
+    return options
+
+
+@router.post("/history/{execution_id}/resume", response_class=HTMLResponse)
+async def resume_execution(
+    request: Request,
+    execution_id: int,
+    user: Annotated[str, Depends(get_current_user)],
+    parsable: Annotated[bool, Form()] = False,
+    verbose: Annotated[bool, Form()] = False
+):
+    """Resume a partially received stream from its saved resume token.
+
+    Launches `zfs send -t <token> | zfs receive <target>` in a background
+    thread, mirroring the one-time send/receive flow.
+    """
+    try:
+        execution = replication_service.get_execution_detail(execution_id)
+        if not execution:
+            return RedirectResponse(
+                url="/zfs/replication/history?error=Execution not found",
+                status_code=303
+            )
+
+        token = execution.get('receive_resume_token')
+        if not token:
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No saved resume token for this execution"
+                ),
+                status_code=303
+            )
+
+        # A token can only be consumed by one stream. Refuse a second
+        # resume while an earlier one is still running, otherwise two
+        # sends race for the same saved receive state.
+        if execution.get('status') == 'running':
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=This execution is still running"
+                ),
+                status_code=303
+            )
+
+        # The token belongs to the dataset that was actually received into,
+        # which differs from the selected target for full sends and for an
+        # interrupted recursive stream. It is always recorded alongside the
+        # token, so the selected target is never used as a fallback here.
+        target = execution.get('receive_resume_target')
+        if not target:
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No receive target recorded for this execution"
+                ),
+                status_code=303
+            )
+        rep_type = ReplicationType(execution.get('replication_type'))
+        options = _execution_transport_options(execution)
+
+        # `zfs send -t` only accepts -P, -e, -n and -v; the service rejects
+        # anything else, so only the two useful verbose flags are offered.
+        resume_flags = []
+        if parsable:
+            resume_flags.append('P')
+        if verbose:
+            resume_flags.append('v')
+        if resume_flags:
+            options['resume_flags'] = resume_flags
+
+        thread = threading.Thread(
+            target=replication_service.execute_resume,
+            kwargs={
+                'execution_id': execution_id,
+                'receive_resume_token': token,
+                'target': target,
+                'replication_type': rep_type,
+                'options': options,
+                'user': user,
+            },
+            daemon=True
+        )
+        thread.start()
+
+        return RedirectResponse(
+            url=(
+                f"/zfs/replication/history?message="
+                f"Resume started for execution #{execution_id}"
+            ),
+            status_code=303
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/replication/history/{execution_id}?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/history/{execution_id}/discard", response_class=HTMLResponse)
+async def discard_execution_resume_state(
+    request: Request,
+    execution_id: int,
+    user: Annotated[str, Depends(get_current_user)]
+):
+    """Discard saved receive state with `zfs receive -A <target>`.
+
+    The execution detail page routes this through a confirmation modal,
+    because aborting destroys the partially received dataset on the
+    receiving side.
+    """
+    try:
+        execution = replication_service.get_execution_detail(execution_id)
+        if not execution:
+            return RedirectResponse(
+                url="/zfs/replication/history?error=Execution not found",
+                status_code=303
+            )
+
+        # Only discard state this execution is known to own. Without a
+        # recorded token there is nothing of ours to abort, and falling
+        # back to target_dataset could run `zfs receive -A` against an
+        # unrelated transfer that is saving state on that dataset.
+        if not execution.get('receive_resume_token'):
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No saved receive state for this execution"
+                ),
+                status_code=303
+            )
+
+        target = execution.get('receive_resume_target')
+        if not target:
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No receive target recorded for this execution"
+                ),
+                status_code=303
+            )
+        rep_type = ReplicationType(execution.get('replication_type'))
+
+        replication_service.discard_resume_state(
+            execution_id=execution_id,
+            target=target,
+            replication_type=rep_type,
+            options=_execution_transport_options(execution),
+            user=user,
+        )
+
+        return RedirectResponse(
+            url=(
+                f"/zfs/replication/history/{execution_id}"
+                "?message=Saved receive state discarded"
+            ),
+            status_code=303
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/replication/history/{execution_id}?error={str(e)}",
+            status_code=303
         )
 
 
