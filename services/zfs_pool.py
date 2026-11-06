@@ -408,8 +408,8 @@ class ZFSPoolService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to export pool: {e.stderr}")
     
-    def import_pool(self, pool_name: str, force: bool = False, 
-                   altroot: Optional[str] = None) -> None:
+    def import_pool(self, pool_name: str, force: bool = False,
+                   altroot: Optional[str] = None, *, readonly: bool = False) -> None:
         """
         Import a ZFS pool
         
@@ -417,6 +417,7 @@ class ZFSPoolService:
             pool_name: Name of the pool to import
             force: Force import even if previously imported
             altroot: Alternative root directory
+            readonly: Import the pool read-only (`-o readonly=on`)
         """
         self.validate_pool_name(pool_name)
         timeout = self.timeouts.get('import', self.timeouts['default'])
@@ -426,6 +427,8 @@ class ZFSPoolService:
                 cmd.append('-f')
             if altroot:
                 cmd.extend(['-R', altroot])
+            if readonly:
+                cmd.extend(['-o', 'readonly=on'])
             cmd.append(pool_name)
             
             run_zfs_command(cmd, timeout=timeout)
