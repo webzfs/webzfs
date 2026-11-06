@@ -51,14 +51,13 @@
     <!-- Properties Table -->
     {% if properties %}
     {% if supports_ashift %}
-    {% set editable_props = ['comment', 'readonly', 'ashift', 'autoexpand', 'autoreplace', 'autotrim', 'bootfs', 'cachefile', 'delegation', 'failmode', 'listsnapshots', 'multihost'] %}
+    {% set editable_props = ['comment', 'ashift', 'autoexpand', 'autoreplace', 'autotrim', 'bootfs', 'cachefile', 'delegation', 'failmode', 'listsnapshots', 'multihost'] %}
     {% else %}
-    {% set editable_props = ['comment', 'readonly', 'autoexpand', 'autoreplace', 'autotrim', 'bootfs', 'cachefile', 'delegation', 'failmode', 'listsnapshots', 'multihost'] %}
+    {% set editable_props = ['comment', 'autoexpand', 'autoreplace', 'autotrim', 'bootfs', 'cachefile', 'delegation', 'failmode', 'listsnapshots', 'multihost'] %}
     {% endif %}
     
     <!-- Define property options -->
     {% set property_options = {
-        'readonly': ['on', 'off'],
         'autoexpand': ['on', 'off'],
         'autoreplace': ['on', 'off'],
         'autotrim': ['on', 'off'],
@@ -182,7 +181,6 @@
                 <p class="font-medium text-gray-300 mb-1">Common Editable Properties:</p>
                 <ul class="space-y-1">
                     <li>• <strong>comment:</strong> User-defined comment (free text)</li>
-                    <li>• <strong>readonly:</strong> on | off (pool read-only mode)</li>
                     <li>• <strong>autoexpand:</strong> on | off (automatic expansion)</li>
                     <li>• <strong>autoreplace:</strong> on | off (automatic device replacement)</li>
                     <li>• <strong>autotrim:</strong> on | off (automatic TRIM)</li>
@@ -200,6 +198,9 @@
                 </ul>
             </div>
         </div>
+        <p class="mt-4 text-xs text-gray-500">
+            <strong>readonly</strong> can only be set when importing a pool, so it is shown above as read-only.
+        </p>
     </div>
     {% else %}
     <div class="bg-gray-800 rounded-lg p-8 text-center">
