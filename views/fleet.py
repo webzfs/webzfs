@@ -10,6 +10,7 @@ from config.templates import templates
 from auth.dependencies import get_current_user
 from services.fleet_monitoring import FleetMonitoringService
 from services.ssh_connection import SSHConnectionService
+from services.fleet_command import get_command_context, save_order
 from typing import Optional, Annotated
 
 logger = logging.getLogger(__name__)
@@ -414,3 +415,70 @@ async def fleet_pools_data(request: Request):
             "sort_by": sort_by,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# FleetView C&C - read-only server stack view of the whole fleet
+# ---------------------------------------------------------------------------
+
+
+@router.get("/command", response_class=HTMLResponse)
+def fleet_command_page(request: Request):
+    """
+    FleetView C&C page shell. Renders immediately; the server stack and
+    the Needs Attention bar load from /fleet/command/data via HTMX.
+    """
+    return templates.TemplateResponse(
+        request,
+        name="fleet/command.jinja",
+        context={
+            "active_page": "fleet",
+        }
+    )
+
+
+@router.get("/command/data", response_class=HTMLResponse)
+def fleet_command_data(request: Request):
+    """
+    HTMX endpoint that polls the local host and every Fleet View server
+    with read-only commands and returns the C&C content partial.
+
+    Declared as a plain function so FastAPI runs the blocking SSH and
+    subprocess work in its threadpool instead of on the event loop.
+    """
+    return templates.TemplateResponse(
+        request,
+        name="fleet/partials/command_data.jinja",
+        context=get_command_context(fleet_service),
+    )
+
+
+@router.post("/command/order")
+async def fleet_command_order(request: Request):
+    """
+    Save the FleetView C&C server card order. Body: {"order": [server ids]}.
+    An empty list resets to the default order.
+
+    This only stores a display preference; it does not touch any server.
+    Only application/json bodies are accepted, which a cross-site HTML form
+    cannot send without a CORS preflight.
+    """
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type != "application/json":
+        raise HTTPException(status_code=415, detail="Content-Type must be application/json")
+
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    order = body.get("order") if isinstance(body, dict) else None
+    try:
+        saved = save_order(order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        logger.error(f"Failed to save FleetView C&C card order: {exc}")
+        raise HTTPException(status_code=500, detail="Could not save the card order")
+
+    return JSONResponse({"order": saved})
