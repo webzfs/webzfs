@@ -263,6 +263,33 @@ OPENZFS_MAN_PAGE_VERSIONS = [
 ]
 
 
+def _man_page_major_minor() -> Optional[str]:
+    """Return the installed userland version as a ``major.minor`` string.
+
+    Parsing is delegated to ``services.zfs_capabilities.parse_zfs_version`` so
+    the version regex lives in exactly one place. The import is deferred
+    because ``zfs_capabilities`` imports this module.
+
+    Returns:
+        A string such as ``"2.2"``, or None when the version is unavailable or
+        does not match a published man page version.
+    """
+    from services.zfs_capabilities import parse_zfs_version
+
+    version_string = get_zfs_version()
+    if not version_string:
+        return None
+
+    userland, _ = parse_zfs_version(version_string)
+    if userland is None:
+        return None
+
+    major_minor = f"{userland[0]}.{userland[1]}"
+    if major_minor not in OPENZFS_MAN_PAGE_VERSIONS:
+        return None
+    return major_minor
+
+
 def get_zfs_version() -> Optional[str]:
     """
     Get the installed ZFS version string by running 'zfs version'.
@@ -296,22 +323,11 @@ def get_openzfs_man_page_url() -> Optional[str]:
     Returns:
         The OpenZFS man page URL string, or None.
     """
-    version_string = get_zfs_version()
-    if not version_string:
+    major_minor = _man_page_major_minor()
+    if not major_minor:
         return None
 
-    # Extract version number from strings like "zfs-2.2.6-1" or "zfs-0.8.3"
-    import re
-    match = re.search(r'(\d+\.\d+)', version_string)
-    if not match:
-        return None
-
-    major_minor = match.group(1)
-
-    if major_minor in OPENZFS_MAN_PAGE_VERSIONS:
-        return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/index.html"
-
-    return None
+    return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/index.html"
 
 
 def get_openzfs_man_page_section_url(section: int, page: str) -> Optional[str]:
@@ -328,21 +344,11 @@ def get_openzfs_man_page_section_url(section: int, page: str) -> Optional[str]:
     Returns:
         The full URL string, or None if the ZFS version cannot be determined.
     """
-    version_string = get_zfs_version()
-    if not version_string:
+    major_minor = _man_page_major_minor()
+    if not major_minor:
         return None
 
-    import re
-    match = re.search(r'(\d+\.\d+)', version_string)
-    if not match:
-        return None
-
-    major_minor = match.group(1)
-
-    if major_minor in OPENZFS_MAN_PAGE_VERSIONS:
-        return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/{section}/{page}.html"
-
-    return None
+    return f"https://openzfs.github.io/openzfs-docs/man/v{major_minor}/{section}/{page}.html"
 
 
 def run_zfs_command_with_pipe(

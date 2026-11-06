@@ -33,6 +33,89 @@
         {% endif %}
     </div>
 
+    {% if request.query_params.get('message') %}
+    <div class="card mb-6 border border-success-900/30 bg-success-900/10">
+        <div class="px-6 py-3 text-success-400">{{ request.query_params.get('message') }}</div>
+    </div>
+    {% endif %}
+    {% if request.query_params.get('error') %}
+    <div class="card mb-6 border border-danger-900/30 bg-danger-900/10">
+        <div class="px-6 py-3 text-danger-400">{{ request.query_params.get('error') }}</div>
+    </div>
+    {% endif %}
+
+    {% if execution.receive_resume_token %}
+    <!-- Resumable receive state (issue #7) -->
+    <div class="card mb-6">
+        <div class="px-6 py-4 border-b border-border-subtle">
+            <h2 class="text-xl font-semibold text-text-primary flex items-center">
+                <svg class="w-5 h-5 mr-2 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Resumable Receive State
+            </h2>
+        </div>
+        <div class="p-6 space-y-4">
+            <p class="text-text-secondary text-sm">
+                This receive was started with <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-s</code>
+                and its partial stream is still saved on the receiving side. Resume continues the transfer with
+                <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">zfs send -t</code>; discard aborts it with
+                <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">zfs receive -A</code> and destroys the
+                partially received dataset.
+            </p>
+
+            <div>
+                <div class="text-sm text-text-tertiary mb-1">Receive Target</div>
+                <div class="font-mono text-sm text-success-400">{{ execution.receive_resume_target }}</div>
+                {% if execution.receive_resume_target != execution.target_dataset %}
+                <p class="text-text-tertiary text-xs mt-1">
+                    The saved state belongs to this dataset, not the selected target
+                    <span class="font-mono">{{ execution.target_dataset }}</span>.
+                </p>
+                {% endif %}
+            </div>
+
+            <div>
+                <div class="text-sm text-text-tertiary mb-1">receive_resume_token</div>
+                <pre class="bg-bg-elevated-2 rounded-lg p-3 text-xs font-mono text-info-400 whitespace-pre-wrap break-all border border-border-default">{{ execution.receive_resume_token }}</pre>
+            </div>
+
+            <div class="pt-4 border-t border-border-subtle flex flex-wrap items-end gap-4">
+                <form method="post" action="/zfs/replication/history/{{ execution.id }}/resume"
+                      hx-boost="false" class="flex flex-wrap items-end gap-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="parsable" value="true" class="form-checkbox">
+                        <span class="ml-2 text-sm text-text-secondary">Machine-parsable progress (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-P</code>)</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="verbose" value="true" class="form-checkbox">
+                        <span class="ml-2 text-sm text-text-secondary">Verbose (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-v</code>)</span>
+                    </label>
+                    <button type="submit" class="btn-primary btn-sm inline-flex items-center gap-2">
+                        Resume Transfer
+                    </button>
+                </form>
+
+                <form method="post" action="/zfs/replication/history/{{ execution.id }}/discard"
+                      id="form-discard-resume-{{ execution.id }}" hx-boost="false">
+                    <button type="button" class="btn-danger btn-sm inline-flex items-center gap-2"
+                            onclick="showConfirm('confirm-discard-resume-{{ execution.id }}')">
+                        Discard Saved State
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% set id = 'confirm-discard-resume-' ~ execution.id|string %}
+    {% set title = 'Discard Resumable Receive State' %}
+    {% set message = 'Run zfs receive -A on ' ~ execution.receive_resume_target ~ '? This destroys the partially received dataset on the receiving side and cannot be undone.' %}
+    {% set confirm_text = 'Discard State' %}
+    {% set confirm_class = 'danger' %}
+    {% set confirm_action = 'document.getElementById("form-discard-resume-' ~ execution.id|string ~ '").submit()' %}
+    {% include 'partials/confirm.jinja' %}
+    {% endif %}
+
     <!-- Execution Summary -->
     <div class="card mb-6">
         <div class="px-6 py-4 border-b border-border-subtle">
