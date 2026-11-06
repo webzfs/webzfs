@@ -15,6 +15,7 @@ from enum import Enum
 from services.storage import FileStorageService
 from services.email_notification import EmailNotificationService
 from services.utils import run_zfs_command, build_zfs_command
+from services.zfs_snapshot import ZFSSnapshotService
 from services.zfs_dataset import ZFSDatasetService
 from services.audit_logger import audit_logger
 
@@ -116,6 +117,7 @@ class ZFSReplicationService:
         recursive: bool = False,
         raw: bool = False,
         large_blocks: bool = False,
+        include_intermediate: bool = False,
         compression: CompressionMethod = CompressionMethod.LZ4,
         job_id: Optional[str] = None,
         job_name: Optional[str] = None,
@@ -140,6 +142,11 @@ class ZFSReplicationService:
                  when continuing an incremental chain that was created
                  with -L, and must remain consistent across incremental
                  sends for the same target.
+            include_intermediate: Use -I for incremental sends so every
+                 snapshot between the common base and the target snapshot
+                 is included in the stream. When False, -i sends only the
+                 target snapshot. Defaults to False so callers that do not
+                 opt in keep the previous -i behaviour.
             compression: Compression method
             job_id: Optional job ID for scheduled jobs
             job_name: Optional job name
@@ -225,11 +232,12 @@ class ZFSReplicationService:
             # Build the send and receive commands early so the
             # command string is stored even if validation fails
             # (e.g. no common snapshot for incremental).  The send
-            # command is built without -i for now; if a base snapshot
-            # is found below, we rebuild with -i included.
+            # command is built without -i/-I for now; if a base snapshot
+            # is found below, we rebuild with the incremental flag included.
             send_cmd = self._build_send_command(
                 source, latest_snapshot, incremental, recursive, raw,
-                large_blocks, compression, base_snapshot=None
+                large_blocks, compression, base_snapshot=None,
+                include_intermediate=include_intermediate
             )
             receive_cmd = self._build_receive_command(
                 actual_target, replication_type, options_with_force
@@ -271,10 +279,11 @@ class ZFSReplicationService:
                 # Rebuild the send command now that we have the base snapshot
                 send_cmd = self._build_send_command(
                     source, latest_snapshot, incremental, recursive, raw,
-                    large_blocks, compression, base_snapshot=base_snapshot
+                    large_blocks, compression, base_snapshot=base_snapshot,
+                    include_intermediate=include_intermediate
                 )
                 
-                # Update the stored command string with the actual -i flag
+                # Update the stored command string with the actual -i/-I flag
                 command_string = self._build_command_string(
                     send_cmd, receive_cmd, replication_type, options_with_force
                 )
@@ -550,7 +559,8 @@ class ZFSReplicationService:
         self,
         source: str,
         target: str,
-        incremental: bool = True
+        incremental: bool = True,
+        include_intermediate: bool = False
     ) -> Dict[str, Any]:
         """
         Estimate the size of data to be transferred
@@ -559,6 +569,8 @@ class ZFSReplicationService:
             source: Source dataset
             target: Target dataset
             incremental: Whether to do incremental send
+            include_intermediate: Use -I instead of -i for incremental
+                sends, matching the flag used by _build_send_command.
             
         Returns:
             Size estimation
@@ -571,10 +583,20 @@ class ZFSReplicationService:
             
             latest = snapshots[-1]
             
+            # Validate every reference that reaches argv, including the
+            # full-send case. Previously this only ran inside the
+            # incremental branch, so a non-incremental estimate appended
+            # an unvalidated name.
+            self._validate_snapshot_reference(latest)
+            
             # Use zfs send with dry-run to estimate size
             cmd = ['zfs', 'send', '-nv']
             if incremental and len(snapshots) > 1:
-                cmd.extend(['-i', snapshots[-2]])
+                base = snapshots[-2]
+                self._validate_snapshot_reference(base)
+                # Same flag as the real send: -I includes intermediate
+                # snapshots, -i sends only the target snapshot.
+                cmd.extend(['-I' if include_intermediate else '-i', base])
             cmd.append(latest)
             
             result = run_zfs_command(cmd)
@@ -593,6 +615,7 @@ class ZFSReplicationService:
                 'target': target,
                 'snapshot': latest,
                 'incremental': incremental,
+                'include_intermediate': include_intermediate,
                 'estimated_bytes': size_bytes,
                 'estimated_size': self._format_bytes(size_bytes)
             }
@@ -780,7 +803,8 @@ class ZFSReplicationService:
         self, dataset: str, snapshot: str, incremental: bool,
         recursive: bool, raw: bool, large_blocks: bool,
         compression: CompressionMethod,
-        base_snapshot: Optional[str] = None
+        base_snapshot: Optional[str] = None,
+        include_intermediate: bool = False
     ) -> List[str]:
         """Build the zfs send command
         
@@ -796,10 +820,22 @@ class ZFSReplicationService:
                  consistently across incremental sends to the same target.
             compression: Compression method
             base_snapshot: For incremental send, the base snapshot to send from
+            include_intermediate: For incremental send, use -I so every
+                 snapshot between the base and the target snapshot is sent.
+                 When False, -i sends only the target snapshot. -i and -I
+                 are mutually exclusive; only one of them is ever emitted.
             
         Returns:
             List of command arguments for zfs send
         """
+        # Both the target snapshot and the incremental base are passed
+        # straight to zfs as argv elements. Validate them against the
+        # ZFS naming rules so a malformed reference is rejected before
+        # it reaches the command line.
+        self._validate_snapshot_reference(snapshot)
+        if base_snapshot:
+            self._validate_snapshot_reference(base_snapshot)
+        
         cmd = ['zfs', 'send']
         
         if recursive:
@@ -825,12 +861,31 @@ class ZFSReplicationService:
         if compression != CompressionMethod.NONE:
             cmd.append('-c')
         
-        # For incremental send, use -i flag with base snapshot
+        # For incremental send, use the base snapshot with exactly one
+        # incremental flag: -I includes every intermediate snapshot
+        # between the base and the target snapshot, -i sends only the
+        # target snapshot. Never emit both (issue #8).
         if incremental and base_snapshot:
-            cmd.extend(['-i', base_snapshot])
+            cmd.extend(['-I' if include_intermediate else '-i', base_snapshot])
         
         cmd.append(snapshot)
         return cmd
+    
+    def _validate_snapshot_reference(self, reference: str) -> None:
+        """Validate a full snapshot reference of the form dataset@snapshot.
+        
+        Raises:
+            ValueError: If the reference is not a valid dataset@snapshot pair.
+        """
+        if not reference:
+            raise ValueError(
+                "Invalid snapshot reference ''. Expected the form "
+                "dataset@snapshot."
+            )
+        # Delegate to the single shared validator so the replication path
+        # uses exactly the same anchored patterns and the same @-splitting
+        # rule as every other snapshot operation.
+        ZFSSnapshotService.validate_full_snapshot_name(reference)
     
     def _build_receive_command(
         self, target: str, replication_type: ReplicationType, options: Dict

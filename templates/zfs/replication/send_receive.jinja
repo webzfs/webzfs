@@ -183,6 +183,12 @@
                         <input type="checkbox" name="large_blocks" value="true" class="form-checkbox">
                         <span class="ml-3 text-text-secondary">Large blocks (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-L</code> flag, required for datasets with recordsize larger than 128 KiB)</span>
                     </label>
+                    <label class="flex items-center" id="include-intermediate-label">
+                        <input type="checkbox" name="include_intermediate" value="true" class="form-checkbox" checked>
+                        <span class="ml-3 text-text-secondary">Include intermediate snapshots (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-I</code> flag, sends every snapshot between the common base and the newest snapshot)</span>
+                    </label>
+                    <p class="text-text-tertiary text-xs ml-8">
+                        Applies to incremental sends only. With <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-I</code> the target receives many snapshots at once, so it needs its own retention policy (for example sanoid pruning on the target).
 
                     <label class="flex items-center">
                         <input type="checkbox" name="resumable" value="true" class="form-checkbox" checked>
@@ -561,8 +567,25 @@ const incrementalCheckbox = document.querySelector('input[name="incremental"]');
 const recursiveCheckbox = document.querySelector('input[name="recursive"]');
 const rawCheckbox = document.querySelector('input[name="raw"]');
 const largeBlocksCheckbox = document.querySelector('input[name="large_blocks"]');
+const includeIntermediateCheckbox = document.querySelector('input[name="include_intermediate"]');
 const resumableCheckbox = document.querySelector('input[name="resumable"]');
 const compressionSelect = document.getElementById('compression');
+
+const includeIntermediateLabel = document.getElementById('include-intermediate-label');
+
+// -I only has an effect on an incremental send. Dim and disable the
+// option when Incremental is off so the form cannot show an active
+// choice the server will ignore.
+function updateIntermediateAvailability() {
+    if (!includeIntermediateCheckbox) {
+        return;
+    }
+    var enabled = incrementalCheckbox && incrementalCheckbox.checked;
+    includeIntermediateCheckbox.disabled = !enabled;
+    if (includeIntermediateLabel) {
+        includeIntermediateLabel.classList.toggle('opacity-50', !enabled);
+    }
+}
 
 // Build command preview string based on current form state
 function updateCommandPreview() {
@@ -591,7 +614,8 @@ function updateCommandPreview() {
         sendParts.push('-c');
     }
     if (incrementalCheckbox && incrementalCheckbox.checked) {
-        sendParts.push('-i <common_snapshot>');
+        var intermediate = includeIntermediateCheckbox && includeIntermediateCheckbox.checked;
+        sendParts.push((intermediate ? '-I' : '-i') + ' <common_snapshot>');
     }
 
     sendParts.push(source);
@@ -653,10 +677,14 @@ sourceSelect.addEventListener('change', updateCommandPreview);
 targetSelect.addEventListener('change', updateCommandPreview);
 replicationTypeSelect.addEventListener('change', updateCommandPreview);
 compressionSelect.addEventListener('change', updateCommandPreview);
-if (incrementalCheckbox) incrementalCheckbox.addEventListener('change', updateCommandPreview);
+if (incrementalCheckbox) incrementalCheckbox.addEventListener('change', function() {
+    updateIntermediateAvailability();
+    updateCommandPreview();
+});
 if (recursiveCheckbox) recursiveCheckbox.addEventListener('change', updateCommandPreview);
 if (rawCheckbox) rawCheckbox.addEventListener('change', updateCommandPreview);
 if (largeBlocksCheckbox) largeBlocksCheckbox.addEventListener('change', updateCommandPreview);
+if (includeIntermediateCheckbox) includeIntermediateCheckbox.addEventListener('change', updateCommandPreview);
 if (resumableCheckbox) resumableCheckbox.addEventListener('change', updateCommandPreview);
 if (sshConnectionSelect) sshConnectionSelect.addEventListener('change', updateCommandPreview);
 
@@ -664,6 +692,7 @@ if (sshConnectionSelect) sshConnectionSelect.addEventListener('change', updateCo
 if (replicationTypeSelect.value === 'local') {
     loadLocalDatasets();
 }
+updateIntermediateAvailability();
 updateCommandPreview();
 })();
 </script>

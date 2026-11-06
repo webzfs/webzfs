@@ -36,7 +36,10 @@ class ZFSSnapshotService:
         if not dataset_name:
             raise ValueError("Dataset name cannot be empty")
         
-        if not cls.ZFS_DATASET_NAME_PATTERN.match(dataset_name):
+        # fullmatch, not match: a trailing '$' still matches immediately
+        # before a final newline, so match() accepts "pool/data\n" and lets
+        # a trailing newline reach the zfs argv.
+        if not cls.ZFS_DATASET_NAME_PATTERN.fullmatch(dataset_name):
             raise ValueError(
                 f"Invalid dataset name '{dataset_name}'. Dataset names must start with an alphanumeric "
                 "character and contain only alphanumeric characters, underscores, hyphens, "
@@ -61,7 +64,8 @@ class ZFSSnapshotService:
         if not snapshot_name:
             raise ValueError("Snapshot name cannot be empty")
         
-        if not cls.ZFS_SNAPSHOT_NAME_PATTERN.match(snapshot_name):
+        # fullmatch, not match: see validate_dataset_name.
+        if not cls.ZFS_SNAPSHOT_NAME_PATTERN.fullmatch(snapshot_name):
             raise ValueError(
                 f"Invalid snapshot name '{snapshot_name}'. Snapshot names must start with an alphanumeric "
                 "character and contain only alphanumeric characters, underscores, hyphens, "

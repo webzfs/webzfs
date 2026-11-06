@@ -159,6 +159,7 @@ async def send_receive_execute(
     recursive: Annotated[bool, Form()] = False,
     raw: Annotated[bool, Form()] = False,
     large_blocks: Annotated[bool, Form()] = False,
+    include_intermediate: Annotated[bool, Form()] = False,
     resumable: Annotated[bool, Form()] = False,
     compression: Annotated[str, Form()] = "lz4",
     remote_host: Annotated[str, Form()] = "",
@@ -205,6 +206,7 @@ async def send_receive_execute(
                 'recursive': recursive,
                 'raw': raw,
                 'large_blocks': large_blocks,
+                'include_intermediate': include_intermediate,
                 'resumable': resumable,
                 'compression': comp_method,
                 'job_name': job_name,
@@ -241,14 +243,16 @@ async def estimate_size(
     request: Request,
     source: Annotated[str, Form()],
     target: Annotated[str, Form()],
-    incremental: Annotated[bool, Form()] = True
+    incremental: Annotated[bool, Form()] = True,
+    include_intermediate: Annotated[bool, Form()] = False
 ):
     """Estimate transfer size for replication"""
     try:
         estimate = replication_service.estimate_transfer_size(
             source=source,
             target=target,
-            incremental=incremental
+            incremental=incremental,
+            include_intermediate=include_intermediate
         )
         
         return templates.TemplateResponse(
