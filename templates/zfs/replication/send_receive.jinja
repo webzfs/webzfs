@@ -183,6 +183,18 @@
                         <input type="checkbox" name="large_blocks" value="true" class="form-checkbox">
                         <span class="ml-3 text-text-secondary">Large blocks (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-L</code> flag, required for datasets with recordsize larger than 128 KiB)</span>
                     </label>
+
+                    <label class="flex items-center">
+                        <input type="checkbox" name="resumable" value="true" class="form-checkbox" checked>
+                        <span class="ml-3 text-text-secondary">Resumable receive (<code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-s</code> flag, keeps partial state so an interrupted transfer can be resumed with <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">zfs send -t</code>)</span>
+                    </label>
+                    <p class="text-text-tertiary text-xs">
+                        Resumable receives require the <code>extensible_dataset</code> pool feature on the receiving side.
+                        <code>-R</code> and <code>-s</code> may be combined: OpenZFS accepts the pair, but a resume token
+                        covers only one dataset, so an interrupted recursive stream saves its state on whichever child was
+                        being received at the time and resumes that child only. The remaining children are sent by running
+                        the replication again after the resume completes.
+                    </p>
                     <p id="large-blocks-hint" class="hidden text-xs text-info-400">
                         Large blocks was enabled automatically because the source dataset uses a recordsize larger than 128 KiB.
                     </p>
@@ -549,6 +561,7 @@ const incrementalCheckbox = document.querySelector('input[name="incremental"]');
 const recursiveCheckbox = document.querySelector('input[name="recursive"]');
 const rawCheckbox = document.querySelector('input[name="raw"]');
 const largeBlocksCheckbox = document.querySelector('input[name="large_blocks"]');
+const resumableCheckbox = document.querySelector('input[name="resumable"]');
 const compressionSelect = document.getElementById('compression');
 
 // Build command preview string based on current form state
@@ -589,6 +602,10 @@ function updateCommandPreview() {
     // Incremental send: writes directly into the selected target.
     var receiveParts = ['zfs', 'receive'];
     var isIncremental = incrementalCheckbox && incrementalCheckbox.checked;
+
+    if (resumableCheckbox && resumableCheckbox.checked) {
+        receiveParts.push('-s');
+    }
 
     if (isIncremental) {
         receiveParts.push(target);
@@ -640,6 +657,7 @@ if (incrementalCheckbox) incrementalCheckbox.addEventListener('change', updateCo
 if (recursiveCheckbox) recursiveCheckbox.addEventListener('change', updateCommandPreview);
 if (rawCheckbox) rawCheckbox.addEventListener('change', updateCommandPreview);
 if (largeBlocksCheckbox) largeBlocksCheckbox.addEventListener('change', updateCommandPreview);
+if (resumableCheckbox) resumableCheckbox.addEventListener('change', updateCommandPreview);
 if (sshConnectionSelect) sshConnectionSelect.addEventListener('change', updateCommandPreview);
 
 // Initialize on page load
