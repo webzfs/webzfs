@@ -29,6 +29,37 @@ class ZFSDatasetService:
     ZFS_DATASET_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*(/[a-zA-Z0-9][a-zA-Z0-9_\-.:]*)*$')
     # Full snapshot name pattern (dataset@snapshot)
     ZFS_SNAPSHOT_FULL_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*(/[a-zA-Z0-9][a-zA-Z0-9_\-.:]*)*@[a-zA-Z0-9][a-zA-Z0-9_\-.:]*$')
+    # Property names: native properties (compression) and user properties
+    # (com.example:foo) start with an alphanumeric character and use
+    # alphanumerics, '_', '.', ':' or '-'. A leading '-' is never accepted, so
+    # the name cannot be read as a command option.
+    ZFS_PROPERTY_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.:\-]*$')
+
+    # Read-only and create-time-only properties. `zfs inherit` refuses them
+    # with or without -S.
+    READ_ONLY_PROPERTIES = frozenset({
+        'available', 'used', 'usedbysnapshots', 'usedbydataset',
+        'usedbychildren', 'usedbyrefreservation', 'referenced',
+        'compressratio', 'refcompressratio', 'creation', 'createtxg',
+        'guid', 'objsetid', 'name', 'mounted', 'origin', 'written',
+        'logicalused', 'logicalreferenced', 'receive_resume_token',
+        'encryption', 'encryptionroot', 'keyformat', 'keystatus',
+        'pbkdf2iters', 'filesystem_count', 'snapshot_count', 'type',
+        'clones', 'defer_destroy', 'userrefs', 'volblocksize',
+        'casesensitivity', 'normalization', 'utf8only',
+    })
+
+    # Settable properties that are not inheritable (PROP_DEFAULT in
+    # zfs_prop.c). Plain `zfs inherit` refuses them. `zfs inherit -S`
+    # accepts them and reverts to the received value, or to the default.
+    NON_INHERITABLE_PROPERTIES = frozenset({
+        'quota', 'refquota', 'reservation', 'refreservation',
+        'canmount', 'keylocation', 'filesystem_limit', 'snapshot_limit',
+        'volsize', 'version',
+    })
+
+    # Properties that `zfs inherit -S` refuses to revert to a received value.
+    NO_RECEIVED_REVERT_PROPERTIES = frozenset({'volsize', 'version'})
 
     @classmethod
     def validate_passphrase(cls, passphrase: str) -> None:
@@ -70,6 +101,39 @@ class ZFSDatasetService:
                 "periods, colons, or forward slashes."
             )
     
+    @classmethod
+    def validate_property_name(cls, property_name: str) -> None:
+        """Validate a ZFS property name before it reaches the command argv."""
+        if not property_name:
+            raise ValueError("Property name cannot be empty")
+        # fullmatch, not match: a trailing '$' still matches before a final
+        # newline, so match() would let "compression\n" reach the zfs argv.
+        if not cls.ZFS_PROPERTY_NAME_PATTERN.fullmatch(property_name):
+            raise ValueError(
+                f"Invalid property name '{property_name}'. Property names must start "
+                "with an alphanumeric character and contain only alphanumeric "
+                "characters, underscores, hyphens, periods, or colons."
+            )
+
+    @classmethod
+    def validate_inheritable_property(cls, property_name: str,
+                                      received: bool = False) -> None:
+        """Reject properties that `zfs inherit` (or `zfs inherit -S`) refuses."""
+        cls.validate_property_name(property_name)
+        if property_name in cls.READ_ONLY_PROPERTIES:
+            raise ValueError(f"Property '{property_name}' is read-only.")
+        if received:
+            if property_name in cls.NO_RECEIVED_REVERT_PROPERTIES:
+                raise ValueError(
+                    f"Property '{property_name}' cannot be reverted to a received value."
+                )
+        elif property_name in cls.NON_INHERITABLE_PROPERTIES:
+            raise ValueError(
+                f"Property '{property_name}' cannot be inherited. Set an explicit "
+                "value instead (quota, reservation and limit properties are "
+                "cleared with 'none')."
+            )
+
     @classmethod
     def validate_snapshot_name(cls, snapshot_name: str) -> None:
         """
@@ -435,27 +499,60 @@ class ZFSDatasetService:
             dataset_name: Name of the dataset
             
         Returns:
-            Dictionary of properties with values and sources
+            Dictionary of properties with value, received value and source.
+            'received' is '-' when there is no received value, and always '-'
+            on NetBSD.
         """
         self.validate_dataset_name(dataset_name)
         try:
-            result = run_zfs_command(['zfs', 'get', '-H', 'all', dataset_name])
-            
+            # NetBSD ships an older ZFS without the 'received' column, so it
+            # keeps the default name/property/value/source output.
+            if is_netbsd():
+                cmd = ['zfs', 'get', '-H', 'all', dataset_name]
+            else:
+                cmd = [
+                    'zfs', 'get', '-H', '-o', 'name,property,value,received,source',
+                    'all', dataset_name
+                ]
+            result = run_zfs_command(cmd)
+
             properties = {}
             for line in result.stdout.strip().split('\n'):
                 if not line:
                     continue
                 parts = line.split('\t')
-                if len(parts) >= 4:
+                if is_netbsd() and len(parts) >= 4:
                     properties[parts[1]] = {
                         'value': parts[2],
+                        'received': '-',
                         'source': parts[3]
                     }
-            
+                elif len(parts) >= 5:
+                    properties[parts[1]] = {
+                        'value': parts[2],
+                        'received': parts[3],
+                        'source': parts[4]
+                    }
+
             return properties
-            
+
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get properties: {e.stderr}")
+
+    def count_descendants(self, dataset_name: str) -> int:
+        """Count child datasets affected by a recursive operation."""
+        self.validate_dataset_name(dataset_name)
+        try:
+            # -t filesystem,volume: with the pool's listsnapshots=on, a plain
+            # `zfs list -r` also lists snapshots and inflates the count.
+            result = run_zfs_command(
+                ['zfs', 'list', '-H', '-o', 'name', '-t', 'filesystem,volume',
+                 '-r', dataset_name]
+            )
+            names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            return sum(1 for name in names if name != dataset_name)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to list child datasets: {e.stderr}")
     
     def set_property(self, dataset_name: str, property_name: str,
                     property_value: str) -> None:
@@ -468,6 +565,7 @@ class ZFSDatasetService:
             property_value: Value to set
         """
         self.validate_dataset_name(dataset_name)
+        self.validate_property_name(property_name)
         try:
             run_zfs_command(['zfs', 'set', f'{property_name}={property_value}', dataset_name])
             
@@ -475,24 +573,33 @@ class ZFSDatasetService:
             raise Exception(f"Failed to set property: {e.stderr}")
     
     def inherit_property(self, dataset_name: str, property_name: str,
-                        recursive: bool = False) -> None:
+                        recursive: bool = False, received: bool = False) -> None:
         """
-        Inherit a property from parent dataset
+        Inherit a property from parent dataset, or revert to default/received
         
         Args:
             dataset_name: Name of the dataset
             property_name: Name of the property to inherit
-            recursive: Apply to all descendants
+            recursive: Apply to all descendants (-r)
+            received: Revert to the received value (-S, for `zfs receive` targets).
+                Not available on NetBSD.
         """
         self.validate_dataset_name(dataset_name)
+        if received and is_netbsd():
+            raise ValueError(
+                "Reverting to a received value (zfs inherit -S) is not supported on NetBSD."
+            )
+        self.validate_inheritable_property(property_name, received=received)
         try:
             cmd = ['zfs', 'inherit']
-            
+
             if recursive:
                 cmd.append('-r')
-            
+            if received:
+                cmd.append('-S')
+
             cmd.extend([property_name, dataset_name])
-            
+
             run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:

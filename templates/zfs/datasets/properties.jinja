@@ -77,6 +77,12 @@
 
     <!-- Properties that OpenZFS only allows at dataset creation time -->
     {% set creation_only_props = ['casesensitivity', 'normalization', 'utf8only'] %}
+
+    <!-- Inherit rules come from ZFSDatasetService. Plain inherit refuses
+         non_inheritable_props; -S (revert to received) refuses no_received_revert_props. -->
+    {% set non_inheritable_props = non_inheritable_props|default([]) %}
+    {% set no_received_revert_props = no_received_revert_props|default([]) %}
+    {% set descendant_count = descendant_count|default(0) %}
     
     <!-- Define property options -->
     {% set property_options = {
@@ -210,6 +216,8 @@
                                 </svg>
                                 Creation-only property
                             </span>
+                            {% elif ':' in prop_name %}
+                            <span class="text-text-tertiary text-xs italic">User property</span>
                             {% else %}
                             <span class="text-text-tertiary text-xs italic inline-flex items-center gap-1">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -217,6 +225,43 @@
                                 </svg>
                                 Read-only
                             </span>
+                            {% endif %}
+                            {# Inherit and revert apply to editable native properties and to user properties (name contains ':') #}
+                            {% if prop_name in editable_props or ':' in prop_name %}
+                                {% set received_value = prop_data.get('received', '-') %}
+                                {% if prop_data.source == 'local' and prop_name not in non_inheritable_props %}
+                                <form method="post" action="/zfs/datasets/{{ dataset_name }}/properties/inherit" id="form-inherit-{{ prop_name }}" class="mt-2 flex flex-wrap items-center gap-2">
+                                    <input type="hidden" name="property_name" value="{{ prop_name }}">
+                                    {% if descendant_count %}
+                                    <label class="inline-flex items-center gap-1 text-xs text-text-secondary">
+                                        <input type="checkbox" name="recursive" value="true" class="form-checkbox">
+                                        Recursive ({{ descendant_count }} child dataset{{ 's' if descendant_count != 1 else '' }})
+                                    </label>
+                                    {% endif %}
+                                    <button type="button"
+                                            class="btn-secondary text-xs px-3 py-1 whitespace-nowrap"
+                                            onclick="showConfirm('confirm-inherit-{{ prop_name }}')">
+                                        {{ 'Inherit or remove' if ':' in prop_name else 'Inherit' }}
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if received_value not in ['-', '', none] and prop_data.source != 'received' and prop_name not in no_received_revert_props %}
+                                <form method="post" action="/zfs/datasets/{{ dataset_name }}/properties/inherit" id="form-received-{{ prop_name }}" class="mt-2 flex flex-wrap items-center gap-2">
+                                    <input type="hidden" name="property_name" value="{{ prop_name }}">
+                                    <input type="hidden" name="received" value="true">
+                                    {% if descendant_count %}
+                                    <label class="inline-flex items-center gap-1 text-xs text-text-secondary">
+                                        <input type="checkbox" name="recursive" value="true" class="form-checkbox">
+                                        Recursive ({{ descendant_count }} child dataset{{ 's' if descendant_count != 1 else '' }})
+                                    </label>
+                                    {% endif %}
+                                    <button type="button"
+                                            class="btn-secondary text-xs px-3 py-1 whitespace-nowrap"
+                                            onclick="showConfirm('confirm-received-{{ prop_name }}')">
+                                        Revert to received value
+                                    </button>
+                                </form>
+                                {% endif %}
                             {% endif %}
                         </td>
                     </tr>
@@ -351,6 +396,42 @@
         {% set action_url = '' %}
         {% set confirm_action = 'document.getElementById(\'form-' ~ prop_name ~ '\').submit()' %}
         {% include 'partials/confirm.jinja' %}
+        {% endif %}
+    {% endfor %}
+
+    <!-- Confirmation modals for inheriting / reverting properties -->
+    {% for prop_name, prop_data in properties.items() %}
+        {% if prop_name in editable_props or ':' in prop_name %}
+        {% set received_value = prop_data.get('received', '-') %}
+        {% if descendant_count %}
+        {% set recursive_note = ' If Recursive is checked, ' ~ descendant_count ~ ' descendant dataset(s) are affected as well.' %}
+        {% else %}
+        {% set recursive_note = '' %}
+        {% endif %}
+        {% if prop_data.source == 'local' and prop_name not in non_inheritable_props %}
+        {% set id = 'confirm-inherit-' ~ prop_name %}
+        {% set title = 'Inherit Property' %}
+        {% if ':' in prop_name %}
+        {% set message = 'Clear the local value of user property "' ~ prop_name ~ '" on ' ~ dataset_name ~ '. It inherits from a parent that sets it, or is removed if no parent does.' ~ recursive_note %}
+        {% else %}
+        {% set message = 'Clear the local value of "' ~ prop_name ~ '" on ' ~ dataset_name ~ ' so it inherits from the parent or reverts to default.' ~ recursive_note %}
+        {% endif %}
+        {% set confirm_text = 'Inherit' %}
+        {% set confirm_class = 'warning' %}
+        {% set action_url = '' %}
+        {% set confirm_action = 'document.getElementById(\'form-inherit-' ~ prop_name ~ '\').submit()' %}
+        {% include 'partials/confirm.jinja' %}
+        {% endif %}
+        {% if received_value not in ['-', '', none] and prop_data.source != 'received' and prop_name not in no_received_revert_props %}
+        {% set id = 'confirm-received-' ~ prop_name %}
+        {% set title = 'Revert to Received Value' %}
+        {% set message = 'Revert "' ~ prop_name ~ '" on ' ~ dataset_name ~ ' to the value it was received with (zfs inherit -S).' ~ recursive_note %}
+        {% set confirm_text = 'Revert' %}
+        {% set confirm_class = 'warning' %}
+        {% set action_url = '' %}
+        {% set confirm_action = 'document.getElementById(\'form-received-' ~ prop_name ~ '\').submit()' %}
+        {% include 'partials/confirm.jinja' %}
+        {% endif %}
         {% endif %}
     {% endfor %}
 {% endif %}
