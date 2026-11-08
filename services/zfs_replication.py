@@ -14,6 +14,7 @@ from enum import Enum
 from services.storage import FileStorageService
 from services.email_notification import EmailNotificationService
 from services.utils import run_zfs_command, build_zfs_command
+from services.zfs_snapshot import ZFSSnapshotService
 
 
 class ReplicationType(Enum):
@@ -65,6 +66,7 @@ class ZFSReplicationService:
         recursive: bool = False,
         raw: bool = False,
         large_blocks: bool = False,
+        include_intermediate: bool = False,
         compression: CompressionMethod = CompressionMethod.LZ4,
         job_id: Optional[str] = None,
         job_name: Optional[str] = None,
@@ -87,6 +89,11 @@ class ZFSReplicationService:
                  when continuing an incremental chain that was created
                  with -L, and must remain consistent across incremental
                  sends for the same target.
+            include_intermediate: Use -I for incremental sends so every
+                 snapshot between the common base and the target snapshot
+                 is included in the stream. When False, -i sends only the
+                 target snapshot. Defaults to False so callers that do not
+                 opt in keep the previous -i behaviour.
             compression: Compression method
             job_id: Optional job ID for scheduled jobs
             job_name: Optional job name
@@ -107,6 +114,13 @@ class ZFSReplicationService:
             target_dataset=target,
             replication_type=replication_type.value
         )
+
+        # Option fallbacks (a bookmark base cannot be combined with -I or
+        # -R) are recorded here so they reach the execution record and
+        # the returned result instead of being applied silently.
+        warnings: List[str] = []
+        send_recursive = recursive
+        send_include_intermediate = include_intermediate
         
         try:
             # Determine if source is already a snapshot or a dataset
@@ -156,11 +170,12 @@ class ZFSReplicationService:
             # Build the send and receive commands early so the
             # command string is stored even if validation fails
             # (e.g. no common snapshot for incremental).  The send
-            # command is built without -i for now; if a base snapshot
-            # is found below, we rebuild with -i included.
+            # command is built without -i/-I for now; if a base snapshot
+            # is found below, we rebuild with the incremental flag included.
             send_cmd = self._build_send_command(
                 source, latest_snapshot, incremental, recursive, raw,
-                large_blocks, compression, base_snapshot=None
+                large_blocks, compression, base_snapshot=None,
+                include_intermediate=include_intermediate
             )
             receive_cmd = self._build_receive_command(
                 actual_target, replication_type, options_with_force
@@ -177,35 +192,61 @@ class ZFSReplicationService:
                 command=command_string
             )
             
-            # For incremental send, find the common/base snapshot.
-            # Both the source and target must share at least one snapshot
-            # for incremental replication to work. If no common snapshot
+            # For incremental send, find the common/base snapshot or
+            # bookmark. Both the source and target must share at least one
+            # GUID for incremental replication to work. If no common point
             # is found, we raise an error rather than silently falling back
             # to a full send, because a full send would overwrite
             # the target dataset and destroy any existing data.
             base_snapshot = None
             if incremental:
                 base_snapshot = self._find_common_snapshot(
-                    source, target, replication_type, options_with_force
+                    source, target, replication_type, options_with_force,
+                    latest_snapshot=latest_snapshot
                 )
                 if not base_snapshot:
                     raise Exception(
                         "Incremental replication requested but no common "
-                        "snapshot was found between the source and target "
-                        "datasets. Both systems must share at least one "
-                        "snapshot for incremental send to work. Either "
-                        "perform a full (non-incremental) send first, or "
-                        "verify that the target dataset has a snapshot "
-                        "matching one on the source."
+                        "snapshot or bookmark was found between the source "
+                        "and target datasets. Both systems must share at "
+                        "least one snapshot GUID for incremental send to "
+                        "work. Either perform a full (non-incremental) send "
+                        "first, or verify that the target dataset has a "
+                        "snapshot matching one on the source."
                     )
-                
-                # Rebuild the send command now that we have the base snapshot
+
+                # A bookmark base only works with a non-recursive -i send.
+                # zfs send rejects -I and -R with a bookmark source
+                # ("multiple snapshots cannot be sent from a bookmark"),
+                # so degrade the requested options and say why.
+                if self._is_bookmark(base_snapshot):
+                    if recursive:
+                        send_recursive = False
+                        warnings.append(
+                            f"Bookmark {base_snapshot} cannot be used as the "
+                            "base of a recursive (-R) send: zfs send rejects "
+                            "-R when the incremental source is a bookmark. "
+                            f"Falling back to a non-recursive send of "
+                            f"{latest_snapshot}."
+                        )
+                    if include_intermediate:
+                        send_include_intermediate = False
+                        warnings.append(
+                            f"Bookmark {base_snapshot} cannot be used with "
+                            "an intermediate (-I) send: zfs send rejects -I "
+                            "when the incremental source is a bookmark. "
+                            f"Falling back to -i, which sends only "
+                            f"{latest_snapshot}."
+                        )
+
+                # Rebuild the send command now that we have the base point
                 send_cmd = self._build_send_command(
-                    source, latest_snapshot, incremental, recursive, raw,
-                    large_blocks, compression, base_snapshot=base_snapshot
+                    source, latest_snapshot, incremental, send_recursive, raw,
+                    large_blocks, compression, base_snapshot=base_snapshot,
+                    include_intermediate=send_include_intermediate
                 )
                 
-                # Update the stored command string with the actual -i flag
+                # Update the stored command string with the actual -i/-I flag
                 command_string = self._build_command_string(
                     send_cmd, receive_cmd, replication_type, options_with_force
                 )
@@ -233,7 +274,9 @@ class ZFSReplicationService:
                 duration_seconds=duration,
                 bytes_transferred=result.get('bytes', 0),
                 snapshot_name=latest_snapshot,
-                log_output=result.get('log_output', '')
+                log_output='\n'.join(
+                    warnings + [result.get('log_output', '')]
+                ).strip()
             )
             
             # Send success notification if enabled
@@ -267,7 +310,11 @@ class ZFSReplicationService:
                 'duration_seconds': duration,
                 'bytes_transferred': result.get('bytes', 0),
                 'average_speed': result.get('speed', 'N/A'),
-                'execution_id': execution_id
+                'execution_id': execution_id,
+                'base_snapshot': base_snapshot,
+                'recursive': send_recursive,
+                'include_intermediate': send_include_intermediate,
+                'warnings': warnings
             }
             
         except Exception as e:
@@ -283,7 +330,7 @@ class ZFSReplicationService:
                 completed_at=end_time.isoformat(),
                 duration_seconds=duration,
                 error_message=error_message,
-                log_output=error_message
+                log_output='\n'.join(warnings + [error_message]).strip()
             )
             
             # Send failure notification
@@ -325,7 +372,8 @@ class ZFSReplicationService:
                 'completed_at': end_time.isoformat(),
                 'duration_seconds': duration,
                 'error': error_message,
-                'execution_id': execution_id
+                'execution_id': execution_id,
+                'warnings': warnings
             }
     
     def get_replication_history(
@@ -420,7 +468,8 @@ class ZFSReplicationService:
         self,
         source: str,
         target: str,
-        incremental: bool = True
+        incremental: bool = True,
+        include_intermediate: bool = False
     ) -> Dict[str, Any]:
         """
         Estimate the size of data to be transferred
@@ -429,6 +478,8 @@ class ZFSReplicationService:
             source: Source dataset
             target: Target dataset
             incremental: Whether to do incremental send
+            include_intermediate: Use -I instead of -i for incremental
+                sends, matching the flag used by _build_send_command.
             
         Returns:
             Size estimation
@@ -440,11 +491,37 @@ class ZFSReplicationService:
                 raise Exception(f"No snapshots found for {source}")
             
             latest = snapshots[-1]
-            
+
+            # Validate every reference that reaches argv, including the
+            # full-send case where no base is used. latest is appended
+            # unconditionally below.
+            self._validate_snapshot_reference(latest)
+
+            # Pick the same GUID-matched base the real send will use so a
+            # bookmark base is reflected in the estimate. Fall back to the
+            # previous snapshot when no common point exists yet (for
+            # example when the target dataset has not been created).
+            base = None
+            use_intermediate = include_intermediate
+            if incremental:
+                base = self._find_common_snapshot(
+                    source, target, ReplicationType.LOCAL, {},
+                    latest_snapshot=latest
+                )
+                if base is None and len(snapshots) > 1:
+                    base = snapshots[-2]
+                if base and self._is_bookmark(base):
+                    # zfs send rejects -I when the incremental source is a
+                    # bookmark, so the estimate must use -i as well.
+                    use_intermediate = False
+
             # Use zfs send with dry-run to estimate size
             cmd = ['zfs', 'send', '-nv']
-            if incremental and len(snapshots) > 1:
-                cmd.extend(['-i', snapshots[-2]])
+            if base:
+                self._validate_incremental_base(base)
+                # Same flag as the real send: -I includes intermediate
+                # snapshots, -i sends only the target snapshot.
+                cmd.extend(['-I' if use_intermediate else '-i', base])
             cmd.append(latest)
             
             result = run_zfs_command(cmd)
@@ -462,11 +539,13 @@ class ZFSReplicationService:
                 'source': source,
                 'target': target,
                 'snapshot': latest,
+                'base_snapshot': base,
                 'incremental': incremental,
+                'include_intermediate': use_intermediate,
                 'estimated_bytes': size_bytes,
                 'estimated_size': self._format_bytes(size_bytes)
             }
-            
+
         except Exception as e:
             return {
                 'error': str(e)
@@ -503,106 +582,144 @@ class ZFSReplicationService:
         except subprocess.CalledProcessError:
             return []
     
-    def _find_common_snapshot(
-        self, source: str, target: str,
-        replication_type: ReplicationType, options: Dict
-    ) -> Optional[str]:
+    def _point_dataset(self, name: str) -> str:
+        """Return the dataset portion of a snapshot or bookmark name."""
+        for separator in ('@', '#'):
+            if separator in name:
+                return name.split(separator, 1)[0]
+        return name
+
+    def _is_bookmark(self, reference: str) -> bool:
+        """Return True when the reference names a bookmark (dataset#bookmark)."""
+        return '#' in reference
+
+    def _parse_incremental_points(
+        self, output: str, dataset: str, recursive: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Parse ``name,guid,createtxg`` rows for snapshots and bookmarks.
+
+        Points are returned oldest-first by ``createtxg``. A bookmark's
+        ``createtxg`` is the creation txg of the snapshot it was made from,
+        so this ordering follows the dataset's data timeline rather than
+        the bookmark's own creation time. When a snapshot and a bookmark
+        share the same txg (a bookmark of that snapshot) the bookmark is
+        listed first, so the snapshot is the last entry and callers that
+        take the newest point prefer the snapshot over its bookmark.
         """
-        Find the most recent common snapshot between source and target.
-        
-        For incremental send (zfs send -i base@snap new@snap), the base
-        snapshot must:
-          1. Exist on the source dataset (same filesystem, not a child)
-          2. Exist on the target dataset (same filesystem, not a child)
-        
-        This method uses NON-recursive snapshot listings so that only
-        direct snapshots of the source and target datasets are compared.
-        Child dataset snapshots are excluded to prevent false matches
-        that would produce "incremental source must be in same filesystem".
-        
-        Args:
-            source: Source dataset (may include @snapshot)
-            target: Target dataset
-            replication_type: Type of replication
-            options: Additional options including remote_host, etc.
-            
-        Returns:
-            The full source snapshot name (e.g. pool/data@snap) for the
-            most recent common snapshot, or None if none exists.
+        if isinstance(output, bytes):
+            output = output.decode(errors='replace')
+
+        points = []
+        for line in output.strip().split('\n'):
+            if not line.strip():
+                continue
+            parts = line.split('\t')
+            if len(parts) < 3:
+                continue
+            name = parts[0].strip()
+            try:
+                guid = int(parts[1])
+                createtxg = int(parts[2])
+            except ValueError:
+                continue
+
+            if '#' in name:
+                point_type = 'bookmark'
+            elif '@' in name:
+                point_type = 'snapshot'
+            else:
+                continue
+
+            point_dataset = self._point_dataset(name)
+            if not recursive and point_dataset != dataset:
+                continue
+
+            points.append({
+                'name': name,
+                'guid': guid,
+                'createtxg': createtxg,
+                'type': point_type,
+            })
+
+        points.sort(
+            key=lambda p: (p['createtxg'], 0 if p['type'] == 'bookmark' else 1)
+        )
+        return points
+
+    def _list_incremental_points(
+        self, dataset: str, recursive: bool = False
+    ) -> List[Dict[str, Any]]:
+        """List snapshots and bookmarks for a local dataset, with GUIDs.
+
+        Uses ``-t snapshot,bookmark`` so a bookmark created from a
+        snapshot that has since been destroyed is still a candidate
+        incremental base. Older ZFS builds without bookmark listing
+        support fall back to a snapshot-only listing.
         """
-        # Extract dataset name from source (remove @snapshot if present)
-        source_dataset = source.split('@')[0] if '@' in source else source
-        
-        # Get snapshots for the exact source dataset only (non-recursive).
-        # This ensures we only get Mpool/music@... not Mpool/music/child@...
-        source_snapshots = self._get_snapshots(source_dataset, recursive=False)
-        
-        if not source_snapshots:
-            return None
-        
-        # Build a set of snapshot short names from the source
-        source_snap_names = set()
-        for snap in source_snapshots:
-            if '@' in snap:
-                source_snap_names.add(snap.split('@')[1])
-        
-        if not source_snap_names:
-            return None
-        
-        # Get snapshots for the exact target dataset only (non-recursive).
-        # For local targets, query directly. For remote, query via SSH.
-        if replication_type == ReplicationType.LOCAL:
-            target_snapshots = self._get_snapshots(target, recursive=False)
-        else:
-            target_snapshots = self._get_remote_snapshots(
-                target, options, recursive=False
+        cmd = [
+            'zfs', 'list', '-H', '-t', 'snapshot,bookmark',
+            '-o', 'name,guid,createtxg', '-s', 'createtxg'
+        ]
+        if recursive:
+            cmd.append('-r')
+        cmd.append(dataset)
+
+        try:
+            result = run_zfs_command(cmd)
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or '').lower()
+            if 'bookmark' in stderr or 'invalid type' in stderr:
+                return self._list_snapshot_points(dataset, recursive)
+            return []
+
+        return self._parse_incremental_points(result.stdout, dataset, recursive)
+
+    def _list_snapshot_points(
+        self, dataset: str, recursive: bool = False
+    ) -> List[Dict[str, Any]]:
+        """List snapshots only, with GUIDs, for a local dataset.
+
+        Used for the local receive target (only snapshots can be a
+        receive base) and as the fallback for ZFS builds that reject
+        ``-t snapshot,bookmark``.
+        """
+        cmd = [
+            'zfs', 'list', '-H', '-t', 'snapshot',
+            '-o', 'name,guid,createtxg', '-s', 'createtxg'
+        ]
+        if recursive:
+            cmd.append('-r')
+        cmd.append(dataset)
+
+        try:
+            result = run_zfs_command(cmd)
+        except subprocess.CalledProcessError:
+            return []
+
+        return [
+            point
+            for point in self._parse_incremental_points(
+                result.stdout, dataset, recursive
             )
-        
-        # Build a set of snapshot short names from the target
-        target_snap_names = set()
-        for snap in target_snapshots:
-            if '@' in snap:
-                target_snap_names.add(snap.split('@')[1])
-        
-        # Find snapshot names that exist on both source and target
-        common_snap_names = source_snap_names & target_snap_names
-        
-        if not common_snap_names:
-            return None
-        
-        # Return the most recent common snapshot from source (preserves order).
-        # The source list is ordered oldest-first, so iterate in reverse.
-        for snap in reversed(source_snapshots):
-            if '@' in snap:
-                snap_name = snap.split('@')[1]
-                if snap_name in common_snap_names:
-                    return snap
-        
-        return None
-    
-    def _get_remote_snapshots(
+            if point['type'] == 'snapshot'
+        ]
+
+    def _list_remote_snapshot_points(
         self, dataset: str, options: Dict, recursive: bool = False
-    ) -> List[str]:
-        """
-        Get list of snapshots from a remote dataset via SSH.
-        
-        Args:
-            dataset: Remote dataset name
-            options: Options including remote_host, remote_port, ssh_key
-            recursive: If True, include child dataset snapshots.
-                       If False (default), return only snapshots belonging
-                       to the exact dataset specified.
-            
-        Returns:
-            List of snapshot names
+    ) -> List[Dict[str, Any]]:
+        """List snapshots with GUIDs on a remote (receive target) dataset.
+
+        Only snapshots are listed: ``zfs receive`` can only apply an
+        incremental stream on top of a target snapshot, so a bookmark on
+        the target is never a usable base (see _find_common_snapshot).
         """
         remote_host = options.get('remote_host')
         remote_port = options.get('remote_port', 22)
         ssh_key = options.get('ssh_key')
-        
+
         if not remote_host:
             return []
-        
+
         try:
             ssh_cmd = ['ssh', '-p', str(remote_port)]
             if ssh_key:
@@ -613,12 +730,13 @@ class ZFSReplicationService:
                 '-o', 'BatchMode=yes',
                 '-o', 'ConnectTimeout=10',
                 remote_host,
-                'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name'
+                'zfs', 'list', '-H', '-t', 'snapshot',
+                '-o', 'name,guid,createtxg', '-s', 'createtxg'
             ])
             if recursive:
                 ssh_cmd.append('-r')
             ssh_cmd.append(dataset)
-            
+
             result = subprocess.run(
                 ssh_cmd,
                 capture_output=True,
@@ -626,23 +744,120 @@ class ZFSReplicationService:
                 timeout=30,
                 check=False
             )
-            
-            if result.returncode == 0:
-                all_snaps = [line.strip() for line in result.stdout.split('\n') if line.strip()]
-                if recursive:
-                    return all_snaps
-                # Filter to only exact dataset matches
-                return [s for s in all_snaps if s.split('@')[0] == dataset]
-            return []
-            
+            if result.returncode != 0:
+                return []
+
+            return self._parse_incremental_points(
+                result.stdout, dataset, recursive
+            )
+
         except Exception:
             return []
-    
+
+    def _find_common_snapshot(
+        self, source: str, target: str,
+        replication_type: ReplicationType, options: Dict,
+        latest_snapshot: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Find the most recent common incremental base between source and target.
+
+        Matching is by snapshot/bookmark GUID, never by name. A received
+        snapshot keeps the source GUID even if it was renamed on the
+        target, and a bookmark created from a snapshot shares that
+        snapshot's GUID. Name matching would therefore miss renamed
+        snapshots and could select a same-named snapshot that is not
+        actually the same data (issue #13).
+
+        The returned base can be either a snapshot (``dataset@snap``) or
+        a bookmark (``dataset#bookmark``). A bookmark is what makes an
+        incremental send possible after the source snapshot was destroyed.
+
+        Non-recursive listings are used so child dataset points are not
+        considered: an incremental source must be in the same filesystem.
+
+        Args:
+            source: Source dataset (may include @snapshot)
+            target: Target dataset
+            replication_type: Type of replication
+            options: Additional options including remote_host, etc.
+            latest_snapshot: The snapshot being sent. Points at or newer
+                than it are never used as the base. Derived from the
+                source when omitted.
+
+        Returns:
+            Full source snapshot or bookmark name of the newest common
+            point, or None if none exists.
+        """
+        source_dataset = self._point_dataset(source)
+        source_points = self._list_incremental_points(
+            source_dataset, recursive=False
+        )
+        if not source_points:
+            return None
+
+        if latest_snapshot is None:
+            if '@' in source:
+                latest_snapshot = source
+            else:
+                snapshots = [
+                    p for p in source_points if p['type'] == 'snapshot'
+                ]
+                if snapshots:
+                    latest_snapshot = snapshots[-1]['name']
+
+        latest_guid = None
+        latest_txg = None
+        if latest_snapshot:
+            for point in source_points:
+                if point['name'] == latest_snapshot:
+                    latest_guid = point['guid']
+                    latest_txg = point['createtxg']
+                    break
+
+        candidates = [
+            point for point in source_points
+            if point['guid'] != latest_guid
+            and (latest_txg is None or point['createtxg'] < latest_txg)
+        ]
+        if not candidates:
+            return None
+
+        # Only target *snapshots* can serve as the receive base. ``zfs
+        # receive`` matches ``drr_fromguid`` against the target's snapshot
+        # chain (OpenZFS dmu_recv.c), so a bookmark on the target is never
+        # a valid incremental source even though it carries the GUID. The
+        # target is therefore listed with ``-t snapshot`` only.
+        # Source-side bookmarks stay valid bases: a bookmark shares the
+        # GUID of the snapshot it was created from, so it still matches a
+        # received snapshot on the target.
+        if replication_type == ReplicationType.LOCAL:
+            target_points = self._list_snapshot_points(
+                self._point_dataset(target), recursive=False
+            )
+        else:
+            target_points = self._list_remote_snapshot_points(
+                self._point_dataset(target), options, recursive=False
+            )
+
+        target_guids = {point['guid'] for point in target_points}
+        common = [
+            point for point in candidates if point['guid'] in target_guids
+        ]
+        if not common:
+            return None
+
+        # Points are sorted oldest-first, bookmark before snapshot at the
+        # same txg, so the last entry is the newest common point and a
+        # surviving snapshot is preferred over its bookmark.
+        return common[-1]['name']
+
     def _build_send_command(
         self, dataset: str, snapshot: str, incremental: bool,
         recursive: bool, raw: bool, large_blocks: bool,
         compression: CompressionMethod,
-        base_snapshot: Optional[str] = None
+        base_snapshot: Optional[str] = None,
+        include_intermediate: bool = False
     ) -> List[str]:
         """Build the zfs send command
         
@@ -657,11 +872,27 @@ class ZFSReplicationService:
                  blocks larger than 128 KiB in the stream. Must be used
                  consistently across incremental sends to the same target.
             compression: Compression method
-            base_snapshot: For incremental send, the base snapshot to send from
+            base_snapshot: For incremental send, the base snapshot or
+                 bookmark to send from (dataset@snapshot or
+                 dataset#bookmark).
+            include_intermediate: For incremental send, use -I so every
+                 snapshot between the base and the target snapshot is sent.
+                 When False, -i sends only the target snapshot. -i and -I
+                 are mutually exclusive; only one of them is ever emitted.
+                 ZFS rejects -I when the base is a bookmark, so callers
+                 must fall back to -i in that case.
             
         Returns:
             List of command arguments for zfs send
         """
+        # Both the target snapshot and the incremental base are passed
+        # straight to zfs as argv elements. Validate them against the
+        # ZFS naming rules so a malformed reference is rejected before
+        # it reaches the command line.
+        self._validate_snapshot_reference(snapshot)
+        if base_snapshot:
+            self._validate_incremental_base(base_snapshot)
+        
         cmd = ['zfs', 'send']
         
         if recursive:
@@ -687,12 +918,63 @@ class ZFSReplicationService:
         if compression != CompressionMethod.NONE:
             cmd.append('-c')
         
-        # For incremental send, use -i flag with base snapshot
+        # For incremental send, use the base snapshot with exactly one
+        # incremental flag: -I includes every intermediate snapshot
+        # between the base and the target snapshot, -i sends only the
+        # target snapshot. Never emit both (issue #8).
         if incremental and base_snapshot:
-            cmd.extend(['-i', base_snapshot])
+            cmd.extend(['-I' if include_intermediate else '-i', base_snapshot])
         
         cmd.append(snapshot)
         return cmd
+    
+    def _validate_snapshot_reference(self, reference: str) -> None:
+        """Validate a full snapshot reference of the form dataset@snapshot.
+        
+        Raises:
+            ValueError: If the reference is not a valid dataset@snapshot pair.
+        """
+        if not reference or '@' not in reference:
+            raise ValueError(
+                f"Invalid snapshot reference '{reference}'. Expected "
+                "the form dataset@snapshot."
+            )
+        dataset_name, snapshot_name = reference.split('@', 1)
+        ZFSSnapshotService.validate_dataset_name(dataset_name)
+        ZFSSnapshotService.validate_snapshot_name(snapshot_name)
+
+    def _validate_incremental_base(self, reference: str) -> None:
+        """Validate an incremental base: dataset@snapshot or dataset#bookmark.
+
+        ZFS accepts a bookmark as the incremental source, which is what
+        allows a send to continue after the source snapshot was destroyed.
+
+        Raises:
+            ValueError: If the reference is not a valid dataset@snapshot
+                or dataset#bookmark pair.
+        """
+        if not reference or ('@' not in reference and '#' not in reference):
+            raise ValueError(
+                f"Invalid incremental base '{reference}'. Expected the "
+                "form dataset@snapshot or dataset#bookmark."
+            )
+        if '@' in reference and '#' in reference:
+            raise ValueError(
+                f"Invalid incremental base '{reference}'. Expected the "
+                "form dataset@snapshot or dataset#bookmark, not both."
+            )
+
+        # A snapshot base goes through the same validator as the target
+        # snapshot, so both references follow one set of rules.
+        if '@' in reference:
+            self._validate_snapshot_reference(reference)
+            return
+
+        # Bookmark short names follow the same component rules as
+        # snapshot short names.
+        dataset_name, bookmark_name = reference.split('#', 1)
+        ZFSSnapshotService.validate_dataset_name(dataset_name)
+        ZFSSnapshotService.validate_snapshot_name(bookmark_name)
     
     def _build_receive_command(
         self, target: str, replication_type: ReplicationType, options: Dict
