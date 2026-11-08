@@ -456,6 +456,154 @@
     {% set is_key_loaded = 'keystatus' in dataset.properties and dataset.properties.keystatus.value == 'available' %}
     {% set uses_passphrase_prompt = ('keylocation' not in dataset.properties or dataset.properties.keylocation.value == 'prompt') and ('keyformat' not in dataset.properties or dataset.properties.keyformat.value == 'passphrase') %}
 
+    {% if zvol %}
+    <!-- Zvol Options (issue #21) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Volume Details -->
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-xl font-semibold text-text-primary mb-4 pb-3 border-b border-border-subtle">Volume</h2>
+                <dl class="space-y-3">
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">Device Path</dt>
+                        <dd class="font-mono text-text-primary text-right break-all">{{ zvol.device_path }}</dd>
+                    </div>
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">Logical Size (volsize)</dt>
+                        <dd class="font-mono text-text-primary">{{ zvol.volsize_human }}</dd>
+                    </div>
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">Block Size (volblocksize)</dt>
+                        <dd class="font-mono text-text-primary">{{ zvol.volblocksize_human }}</dd>
+                    </div>
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">Provisioning</dt>
+                        <dd>
+                            {% if zvol.sparse %}
+                            <span class="badge badge-info">Sparse (thin)</span>
+                            {% else %}
+                            <span class="badge badge-success">Thick</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">refreservation</dt>
+                        <dd class="font-mono text-text-primary">{{ zvol.refreservation_human }}</dd>
+                    </div>
+                    {% if zvol.volmode_supported %}
+                    <div class="flex justify-between items-center gap-4">
+                        <dt class="text-text-secondary">volmode</dt>
+                        <dd class="font-mono text-text-primary">{{ zvol.volmode }}</dd>
+                    </div>
+                    {% endif %}
+                </dl>
+                {% if zvol.volmode_supported and not zvol.volmode_exposed %}
+                <p class="text-warning-400 text-sm mt-4">
+                    volmode is <span class="font-mono">none</span>: the volume is not exposed
+                    as a block device. It can still be snapshotted, cloned and replicated.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Resize and volmode -->
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-xl font-semibold text-text-primary mb-4 pb-3 border-b border-border-subtle">Volume Management</h2>
+
+                <form method="post" action="/zfs/datasets/{{ dataset.name }}/volsize"
+                      class="space-y-3 mb-6" hx-boost="false">
+                    <div>
+                        <label for="resize-volsize" class="form-label">New Size</label>
+                        <input
+                            type="text"
+                            id="resize-volsize"
+                            name="volsize"
+                            class="form-input"
+                            value="{{ zvol.volsize_human }}"
+                            placeholder="e.g., 20G"
+                            required
+                        >
+                        <p class="text-text-tertiary text-sm mt-1">
+                            Must be a multiple of volblocksize ({{ zvol.volblocksize_human }}).
+                            Growing a thick volume reserves the new size in the pool; growing a
+                            sparse volume needs no reservation. Shrinking discards all data
+                            beyond the new size and requires confirmation. Shrink the guest
+                            filesystem first.
+                        </p>
+                    </div>
+                    <button type="submit" class="btn-primary w-full">Resize Volume</button>
+                </form>
+
+                {% if zvol.volmode_supported %}
+                <form method="post" action="/zfs/datasets/{{ dataset.name }}/volmode"
+                      class="space-y-3" hx-boost="false">
+                    <div>
+                        <label for="volmode" class="form-label">volmode</label>
+                        <select id="volmode" name="volmode" class="form-select">
+                            {% for value in ['default', 'full', 'geom', 'dev', 'none'] %}
+                            <option value="{{ value }}" {% if zvol.volmode == value %}selected{% endif %}>{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-text-tertiary text-sm mt-1">
+                            How the volume is exposed to the OS: <span class="font-mono">full</span>
+                            exposes the whole block device, <span class="font-mono">dev</span>
+                            hides partitions, <span class="font-mono">none</span> exposes nothing,
+                            <span class="font-mono">default</span> follows the system
+                            <span class="font-mono">zvol_volmode</span> tunable.
+                            <span class="font-mono">geom</span> is a FreeBSD legacy alias for
+                            <span class="font-mono">full</span>.
+                        </p>
+                    </div>
+                    <button type="submit" class="btn-secondary w-full">Apply volmode</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if shrink_confirmation %}
+    <!-- Shrink confirmation (server-rendered, shown when a shrink needs acknowledgement) -->
+    <div id="confirm-shrink" class="modal-overlay" style="display: block;"
+         role="dialog" aria-modal="true" aria-labelledby="confirm-shrink-title"
+         aria-describedby="confirm-shrink-message">
+        <div class="fixed inset-0 bg-black/80 backdrop-blur-sm"></div>
+        <div class="fixed inset-0 z-50 overflow-y-auto">
+            <div class="flex min-h-full items-center justify-center p-4">
+                <div class="modal modal-sm">
+                    <div class="flex items-center justify-center w-12 h-12 mx-auto mb-4 rounded-full bg-danger-900/50 border-2 border-danger-500">
+                        <svg class="w-6 h-6 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <h3 id="confirm-shrink-title" class="text-xl font-semibold text-text-primary text-center mb-2">
+                        Shrink Volume: Data Loss
+                    </h3>
+                    <p id="confirm-shrink-message" class="text-text-secondary text-center mb-2">
+                        {{ shrink_confirmation.warning }}
+                    </p>
+                    <p class="text-center font-mono text-text-primary mb-6">
+                        {{ shrink_confirmation.dataset }}: {{ shrink_confirmation.current_size }}
+                        &rarr; {{ shrink_confirmation.new_size }}
+                    </p>
+                    <form method="post" action="/zfs/datasets/{{ dataset.name }}/volsize"
+                          hx-boost="false" class="flex gap-3">
+                        <input type="hidden" name="volsize" value="{{ shrink_confirmation.new_size_bytes }}">
+                        <input type="hidden" name="confirm_shrink" value="on">
+                        <a href="/zfs/datasets/{{ dataset.name }}" class="btn-secondary flex-1 inline-flex items-center justify-center">
+                            Cancel
+                        </a>
+                        <button type="submit" class="btn-danger flex-1 inline-flex items-center justify-center">
+                            Shrink and Discard Data
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Action Buttons -->
     <div class="card">
         <div class="card-body">
