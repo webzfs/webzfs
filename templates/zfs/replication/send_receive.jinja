@@ -188,6 +188,69 @@
                     </p>
                 </div>
 
+                <!-- Receive Options (issue #23) -->
+                <div class="mb-6 pt-4 border-t border-border-subtle">
+                    <label class="form-label">
+                        Receive Options
+                    </label>
+                    <p class="text-text-tertiary text-xs mb-3">
+                        These flags apply to the receiving side. <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">-u</code>
+                        is on by default so a new receive does not mount the target automatically.
+                    </p>
+
+                    <div class="mb-4">
+                        <label class="form-label" for="unmounted">Mount behaviour</label>
+                        <select name="unmounted" id="unmounted" class="form-select">
+                            <option value="true" selected>Leave the received datasets unmounted (-u)</option>
+                            <option value="false">Mount the received datasets after receiving</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label" for="receive_overrides">
+                            Property overrides (<code class="text-xs">-o property=value</code>)
+                        </label>
+                        <textarea name="receive_overrides" id="receive_overrides" rows="3"
+                                  class="form-textarea font-mono text-sm"
+                                  placeholder="readonly=on&#10;canmount=noauto"></textarea>
+                        <p class="text-text-tertiary text-xs mt-1">
+                            One property per line. Common cases: readonly=on, canmount=noauto,
+                            mountpoint=/some/path, sharenfs=off, sharesmb=off.
+                            Encryption properties can only be set on a full, non-raw receive.
+                            Values may contain letters, digits and _ . : / @ + % = - only.
+                        </p>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label" for="receive_excludes">
+                            Inherited properties (<code class="text-xs">-x property</code>)
+                        </label>
+                        <input type="text" name="receive_excludes" id="receive_excludes"
+                               class="form-input font-mono text-sm"
+                               placeholder="mountpoint,sharenfs,sharesmb">
+                        <p class="text-text-tertiary text-xs mt-1">
+                            Comma-separated property names. <code class="text-xs">-x mountpoint</code>
+                            drops the stream's mountpoint so the received dataset uses its default
+                            (inherited) mountpoint instead.
+                        </p>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label" for="receive_target_mode">Target naming</label>
+                        <select name="receive_target_mode" id="receive_target_mode" class="form-select">
+                            <option value="" selected>Use the target dataset as entered</option>
+                            <option value="discard">Discard the first path component (-d)</option>
+                            <option value="only_last">Use only the last path component (-e)</option>
+                        </select>
+                        <p class="text-text-tertiary text-xs mt-1">
+                            With -d or -e the selected target is the parent dataset, for full and incremental
+                            sends alike. -d appends every component of the source name after the pool name
+                            (pool/a/b receives into target/a/b); -e appends only the last component
+                            (target/b).
+                        </p>
+                    </div>
+                </div>
+
                 <!-- Command Preview -->
                 <div class="mb-6 pt-4 border-t border-border-subtle">
                     <label class="form-label flex items-center">
@@ -590,7 +653,38 @@ function updateCommandPreview() {
     var receiveParts = ['zfs', 'receive'];
     var isIncremental = incrementalCheckbox && incrementalCheckbox.checked;
 
-    if (isIncremental) {
+    // Receive-side options (issue #23): -u is on unless the user chose
+    // to mount the received datasets, then -d/-e target naming and the
+    // -o/-x property lists.
+    var unmountedSelect = document.getElementById('unmounted');
+    if (!unmountedSelect || unmountedSelect.value === 'true') {
+        receiveParts.push('-u');
+    }
+    var targetModeSelect = document.getElementById('receive_target_mode');
+    if (targetModeSelect && targetModeSelect.value === 'discard') {
+        receiveParts.push('-d');
+    }
+    if (targetModeSelect && targetModeSelect.value === 'only_last') {
+        receiveParts.push('-e');
+    }
+    var overridesInput = document.getElementById('receive_overrides');
+    if (overridesInput) {
+        overridesInput.value.split('\n').forEach(function(entry) {
+            entry = entry.trim();
+            if (entry) { receiveParts.push('-o ' + entry); }
+        });
+    }
+    var excludesInput = document.getElementById('receive_excludes');
+    if (excludesInput) {
+        excludesInput.value.split(',').forEach(function(name) {
+            name = name.trim();
+            if (name) { receiveParts.push('-x ' + name); }
+        });
+    }
+
+    // With -d/-e the target is the parent; zfs appends the sent name.
+    var hasTargetMode = targetModeSelect && targetModeSelect.value !== '';
+    if (isIncremental || hasTargetMode) {
         receiveParts.push(target);
     } else {
         // Extract source dataset basename for the child target path
@@ -641,6 +735,10 @@ if (recursiveCheckbox) recursiveCheckbox.addEventListener('change', updateComman
 if (rawCheckbox) rawCheckbox.addEventListener('change', updateCommandPreview);
 if (largeBlocksCheckbox) largeBlocksCheckbox.addEventListener('change', updateCommandPreview);
 if (sshConnectionSelect) sshConnectionSelect.addEventListener('change', updateCommandPreview);
+if (document.getElementById('unmounted')) document.getElementById('unmounted').addEventListener('change', updateCommandPreview);
+if (document.getElementById('receive_target_mode')) document.getElementById('receive_target_mode').addEventListener('change', updateCommandPreview);
+if (document.getElementById('receive_overrides')) document.getElementById('receive_overrides').addEventListener('input', updateCommandPreview);
+if (document.getElementById('receive_excludes')) document.getElementById('receive_excludes').addEventListener('input', updateCommandPreview);
 
 // Initialize on page load
 if (replicationTypeSelect.value === 'local') {

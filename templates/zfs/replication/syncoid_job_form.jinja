@@ -225,6 +225,47 @@
                             </p>
                         </div>
                     </div>
+
+                    <!-- Receive options (issue #23) -->
+                    <div class="mt-5 pt-4 border-t border-border-subtle">
+                        <h4 class="font-semibold text-text-primary mb-1">Receive Options</h4>
+                        <p class="text-text-tertiary text-xs mb-3">
+                            Passed to Syncoid as <code class="text-xs bg-bg-elevated-3 px-1 py-0.5 rounded">--recvoptions</code>.
+                            The received datasets stay unmounted (-u) unless you choose to mount them.
+                        </p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="form-label" for="receive_unmounted">Mount behaviour</label>
+                                <select name="receive_unmounted" id="receive_unmounted" class="form-select">
+                                    <option value="true" {% if not job or not job.receive_options or job.receive_options.unmounted %}selected{% endif %}>Leave the received datasets unmounted (-u)</option>
+                                    <option value="false" {% if job and job.receive_options and not job.receive_options.unmounted %}selected{% endif %}>Mount the received datasets after receiving</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label" for="receive_overrides">Property overrides (-o property=value)</label>
+                            <textarea name="receive_overrides" id="receive_overrides" rows="3"
+                                      class="form-textarea font-mono text-sm"
+                                      placeholder="readonly=on&#10;canmount=noauto">{% if job and job.receive_options %}{% for name, value in job.receive_options.overrides.items() %}{{ name }}={{ value }}
+{% endfor %}{% endif %}</textarea>
+                            <p class="text-text-tertiary text-xs mt-1">
+                                One property per line. Common cases: readonly=on, canmount=noauto,
+                                mountpoint=/some/path, sharenfs=off, sharesmb=off.
+                                Encryption properties cannot be overridden here.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="form-label" for="receive_excludes">Inherited properties (-x property)</label>
+                            <input type="text" name="receive_excludes" id="receive_excludes"
+                                   class="form-input font-mono text-sm"
+                                   value="{% if job and job.receive_options %}{{ job.receive_options.excludes | join(',') }}{% endif %}"
+                                   placeholder="mountpoint,sharenfs,sharesmb">
+                            <p class="text-text-tertiary text-xs mt-1">
+                                Comma-separated property names. <code class="text-xs">-x mountpoint</code>
+                                keeps the received dataset on its default (inherited) mountpoint.
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Command Preview -->
@@ -594,6 +635,26 @@
         if (optionCheckbox('create_bookmark').checked) { parts.push('--create-bookmark'); }
         if (optionCheckbox('force_delete').checked) { parts.push('--force-delete'); }
         if (largeBlocksCheckbox.checked) { parts.push('--sendoptions=L'); }
+        // Receive options saved with the job are passed via --recvoptions
+        // (issue #23).
+        const recvUnmounted = document.getElementById('receive_unmounted');
+        const recvOverrides = document.getElementById('receive_overrides');
+        const recvExcludes = document.getElementById('receive_excludes');
+        const recvParts = [];
+        if (!recvUnmounted || recvUnmounted.value === 'true') { recvParts.push('-u'); }
+        if (recvOverrides) {
+            recvOverrides.value.split('\n').forEach(function(entry) {
+                entry = entry.trim();
+                if (entry) { recvParts.push('-o ' + entry); }
+            });
+        }
+        if (recvExcludes) {
+            recvExcludes.value.split(',').forEach(function(name) {
+                name = name.trim();
+                if (name) { recvParts.push('-x ' + name); }
+            });
+        }
+        if (recvParts.length) { parts.push('--recvoptions=' + recvParts.join(' ')); }
         if (additionalFlagsEnabled.checked && additionalFlagsInput.value.trim()) {
             parts.push(additionalFlagsInput.value.trim());
         }
@@ -676,6 +737,14 @@
         setAdditionalFlagsEnabled(false);
     });
     additionalFlagsInput.addEventListener('input', updateCommandPreview);
+    ['receive_unmounted'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) { el.addEventListener('change', updateCommandPreview); }
+    });
+    ['receive_overrides', 'receive_excludes'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) { el.addEventListener('input', updateCommandPreview); }
+    });
     ['recursive', 'no_sync_snap', 'skip_parent', 'create_bookmark',
      'force_delete', 'large_blocks'].forEach(function(name) {
         const box = optionCheckbox(name);

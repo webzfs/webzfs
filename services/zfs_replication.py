@@ -14,6 +14,11 @@ from enum import Enum
 from services.storage import FileStorageService
 from services.email_notification import EmailNotificationService
 from services.utils import run_zfs_command, build_zfs_command
+from core.receive_options import (
+    build_receive_flags,
+    normalize_receive_options,
+    validate_receive_options,
+)
 
 
 class ReplicationType(Enum):
@@ -69,6 +74,11 @@ class ZFSReplicationService:
         job_id: Optional[str] = None,
         job_name: Optional[str] = None,
         force: Optional[bool] = None,
+        unmounted: bool = True,
+        receive_overrides: Optional[Dict[str, str]] = None,
+        receive_excludes: Optional[List[str]] = None,
+        discard_first_component: bool = False,
+        only_last_component: bool = False,
         **options
     ) -> Dict[str, Any]:
         """
@@ -92,20 +102,53 @@ class ZFSReplicationService:
             job_name: Optional job name
             force: Use -F flag on receive to overwrite existing dataset.
                    If None, automatically use -F when target exists.
+            unmounted: Pass -u so the received datasets are not mounted.
+                   Defaults to True for new runs.
+            receive_overrides: Mapping of property=value pairs passed as
+                   ``-o property=value`` on receive.
+            receive_excludes: Property names passed as ``-x property`` on
+                   receive so the received dataset inherits them.
+            discard_first_component: Pass -d to discard the first path
+                   component of the sent dataset name.
+            only_last_component: Pass -e to use only the last path
+                   component of the sent dataset name.
             **options: Additional options
             
         Returns:
             Execution results including bytes transferred, time taken, etc.
         """
         start_time = datetime.now()
-        
+
+        # Validate the receive-side options before creating an execution
+        # record so an invalid combination fails fast with a readable
+        # error instead of leaving a junk history entry behind.
+        overrides, excludes = validate_receive_options(
+            receive_overrides,
+            receive_excludes,
+            raw=raw,
+            incremental=incremental,
+            discard_first_component=discard_first_component,
+            only_last_component=only_last_component,
+        )
+        # Values are allowlisted (no whitespace or shell syntax) in
+        # core.receive_options, so they survive the remote shell that ssh
+        # hands the receive argv to for push and pull replication.
+        receive_options = normalize_receive_options(
+            unmounted=unmounted,
+            overrides=overrides,
+            excludes=excludes,
+            discard_first_component=discard_first_component,
+            only_last_component=only_last_component,
+        )
+
         # Create execution record in storage
         execution_id = self.storage.create_execution_record(
             job_id=job_id,
             job_name=job_name or f"{source} → {target}",
             source_dataset=source,
             target_dataset=target,
-            replication_type=replication_type.value
+            replication_type=replication_type.value,
+            receive_options=receive_options,
         )
         
         try:
@@ -135,23 +178,54 @@ class ZFSReplicationService:
             #     which must already exist from a prior full send.
             #   - The -i flag with the common and new snapshots is
             #     sufficient; no -F flag is needed.
-            if not incremental:
-                # Extract the source dataset basename to build the
-                # child target path.  e.g. "olympus/test1" -> "test1"
-                source_dataset = source.split('@')[0] if '@' in source else source
-                source_basename = source_dataset.split('/')[-1]
-                actual_target = f"{target}/{source_basename}"
+            #
+            # With -d/-e (full or incremental) the argument is the PARENT
+            # dataset: zfs itself appends part of the sent dataset name
+            # (zfs-receive(8)).  -d appends every component after the pool
+            # name, -e appends only the last component.  The user's target
+            # is passed to zfs receive unchanged, while actual_target is
+            # the dataset that really receives the stream; it is used to
+            # find the incremental base snapshot.
+            source_dataset = source.split('@')[0]
+            source_parts = source_dataset.split('/')
+            target_mode = receive_options['target_mode']
+            if target_mode == 'discard':
+                receive_argument = target
+                actual_target = '/'.join([target] + source_parts[1:])
+            elif target_mode == 'only_last':
+                receive_argument = target
+                actual_target = f"{target}/{source_parts[-1]}"
+            elif not incremental:
+                # Full send: receive into a child named after the source
+                # basename.  e.g. "olympus/test1" -> "phobos/test1"
+                actual_target = f"{target}/{source_parts[-1]}"
+                receive_argument = actual_target
             else:
                 actual_target = target
+                receive_argument = target
             
             # Never use -F. Full sends create a new child dataset
             # (no overwrite needed). Incremental sends apply cleanly
             # when the common snapshot and new snapshot are specified.
             force = False
             
-            # Merge force into options
+            # Merge force and the receive-side options into the options
+            # mapping consumed by _build_receive_command().
             options_with_force = dict(options)
             options_with_force['force'] = force
+            options_with_force.update(
+                {
+                    'unmounted': receive_options['unmounted'],
+                    'receive_overrides': receive_options['overrides'],
+                    'receive_excludes': receive_options['excludes'],
+                    'discard_first_component': (
+                        receive_options['target_mode'] == 'discard'
+                    ),
+                    'only_last_component': (
+                        receive_options['target_mode'] == 'only_last'
+                    ),
+                }
+            )
             
             # Build the send and receive commands early so the
             # command string is stored even if validation fails
@@ -163,9 +237,9 @@ class ZFSReplicationService:
                 large_blocks, compression, base_snapshot=None
             )
             receive_cmd = self._build_receive_command(
-                actual_target, replication_type, options_with_force
+                receive_argument, replication_type, options_with_force
             )
-            
+
             # Build and store the planned command string immediately
             # so it appears in error logs even if validation fails.
             command_string = self._build_command_string(
@@ -185,8 +259,10 @@ class ZFSReplicationService:
             # the target dataset and destroy any existing data.
             base_snapshot = None
             if incremental:
+                # Look up the base on the dataset that actually receives
+                # the stream: with -d/-e that is a child of the target.
                 base_snapshot = self._find_common_snapshot(
-                    source, target, replication_type, options_with_force
+                    source, actual_target, replication_type, options_with_force
                 )
                 if not base_snapshot:
                     raise Exception(
@@ -697,14 +773,37 @@ class ZFSReplicationService:
     def _build_receive_command(
         self, target: str, replication_type: ReplicationType, options: Dict
     ) -> List[str]:
-        """Build the zfs receive command"""
+        """Build the zfs receive command
+
+        Receive-side flags come from core.receive_options:
+
+        * ``-u`` (default on) leaves the received datasets unmounted;
+        * ``-o property=value`` overrides a property on the received data;
+        * ``-x property`` strips a property so it is inherited;
+        * ``-d`` / ``-e`` select how the sent dataset name maps onto the
+          target (mutually exclusive, validated before we get here).
+        """
         cmd = ['zfs', 'receive']
-        
+
         # Use -F flag to overwrite existing dataset if force is True
         # This is needed when the target dataset already exists
         if options.get('force', False):
             cmd.append('-F')
-        
+
+        cmd.extend(
+            build_receive_flags(
+                unmounted=bool(options.get('unmounted', True)),
+                overrides=options.get('receive_overrides') or {},
+                excludes=options.get('receive_excludes') or [],
+                discard_first_component=bool(
+                    options.get('discard_first_component', False)
+                ),
+                only_last_component=bool(
+                    options.get('only_last_component', False)
+                ),
+            )
+        )
+
         cmd.append(target)
         return cmd
     
