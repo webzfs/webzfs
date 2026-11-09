@@ -513,6 +513,24 @@ class AuditLogger:
             error=error,
         )
 
+    def log_pool_clear(
+        self,
+        user: str,
+        pool_name: str,
+        device: Optional[str] = None,
+        success: bool = True,
+        error: Optional[str] = None,
+    ) -> None:
+        """Log clearing device errors for a pool or a single device"""
+        self.log_zfs_operation(
+            user=user,
+            operation="clear_errors",
+            pool=pool_name,
+            device=device,
+            success=success,
+            error=error,
+        )
+
     # Dataset Operations
     def log_dataset_create(
         self,

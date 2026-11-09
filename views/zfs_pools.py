@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import Annotated
 from config.templates import templates
-from services.zfs_pool import ZFSPoolService
+from services.zfs_pool import ZFSPoolService, parse_error_count
 from services.zfs_dataset import ZFSDatasetService
 from services.disk_utils import DiskUtilsService
 from services.diagnostics import collect_pool_diagnostics
@@ -306,9 +306,9 @@ def parse_pool_status(status_output: str) -> dict:
         if len(parts) >= 2:
             name = parts[0]
             state = parts[1]
-            read_err = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-            write_err = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-            cksum_err = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+            read_err = parse_error_count(parts[2]) if len(parts) > 2 else 0
+            write_err = parse_error_count(parts[3]) if len(parts) > 3 else 0
+            cksum_err = parse_error_count(parts[4]) if len(parts) > 4 else 0
 
             # Determine type: pool root, vdev, or leaf device
             # Pool root is typically indent ~8 (1 tab), vdevs ~10 (1 tab + 2), leaves ~12+ 
@@ -615,6 +615,41 @@ async def stop_scrub(request: Request, pool_name: str, current_user: str = Depen
         audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="stop", success=False, error=str(e))
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/clear", response_class=HTMLResponse)
+async def clear_pool_errors(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()] = "",
+    current_user: str = Depends(get_current_user)
+):
+    """Clear device error counters for a pool, or for one device"""
+    # An empty device clears all errors in the pool; a supplied one is
+    # validated by the service before zpool is invoked.
+    clear_device = device.strip() or None
+    try:
+        pool_service.clear_errors(pool_name, clear_device)
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device
+        )
+        if clear_device:
+            msg = f"Errors cleared for device {clear_device}"
+        else:
+            msg = "Pool errors cleared"
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?message={quote(msg)}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device,
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?error={quote(str(e))}",
             status_code=303
         )
 
@@ -1754,6 +1789,35 @@ async def offline_device(
         )
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/clear", response_class=HTMLResponse)
+async def clear_device_errors(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """Clear error counters for a single device"""
+    clear_device = device.strip()
+    try:
+        pool_service.clear_errors(pool_name, clear_device)
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message={quote('Errors cleared for device ' + clear_device)}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device,
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={quote(str(e))}",
             status_code=303
         )
 
