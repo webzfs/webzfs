@@ -13,6 +13,11 @@ from cryptography.fernet import Fernet
 import paramiko
 import logging
 
+from services.ssh_connection import (
+    HostKeyVerificationError,
+    host_key_error_message,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,7 +157,14 @@ class FleetMonitoringService:
         """
         self._reload_servers()
         server_id = str(uuid.uuid4())
-        
+
+        # Pin the remote host key before the server is stored. Adding a
+        # server is an explicit administrator action, so trusting an
+        # unknown host here is deliberate. An already pinned host is not
+        # re-trusted; a changed key is rejected when the client connects
+        # (paramiko RejectPolicy -> HostKeyVerificationError).
+        self._get_ssh_service().ensure_host_key_trusted(ip, port)
+
         server = {
             "id": server_id,
             "name": name,
@@ -194,7 +206,11 @@ class FleetMonitoringService:
         
         if not connection:
             raise ValueError(f"SSH connection {ssh_connection_id} not found")
-        
+
+        # The connection was pinned when it was created; re-verify so a
+        # host whose key changed since then fails here, not at connect time.
+        ssh_service.ensure_host_key_trusted(connection['host'], connection['port'])
+
         server_id = str(uuid.uuid4())
         
         # Use connection name if no custom name provided
@@ -817,7 +833,17 @@ class FleetMonitoringService:
             Connected SSH client
         """
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # Verify the host key against WebZFS's pinned known_hosts file.
+        # Unknown hosts are rejected; they must be added under SSH
+        # Connections (or re-added here) to be pinned deliberately.
+        ssh_service = self._get_ssh_service()
+        ssh_service.configure_paramiko_client(client)
+
+        host = server["ip"]
+        port = server["port"]
+        if not ssh_service.is_host_key_pinned(host, port):
+            raise HostKeyVerificationError(host_key_error_message(host, port))
         
         # Check auth type - default to password for backward compatibility
         auth_type = server.get("auth_type", "password")
@@ -848,7 +874,12 @@ class FleetMonitoringService:
                     pkey=private_key,
                     timeout=10
                 )
+            except HostKeyVerificationError:
+                raise
             except Exception as e:
+                # A changed/unpinned host key must surface as a host-key
+                # error, not a generic authentication failure.
+                ssh_service.raise_for_paramiko_host_key_error(e, host, port)
                 logger.error(f"Failed to connect with SSH key: {e}")
                 raise Exception(f"SSH key authentication failed: {str(e)}")
         else:
@@ -859,13 +890,18 @@ class FleetMonitoringService:
             password = self._decrypt_password(server["password"])
             
             # Connect with password
-            client.connect(
-                hostname=server["ip"],
-                port=server["port"],
-                username=server["username"],
-                password=password,
-                timeout=10
-            )
+            try:
+                client.connect(
+                    hostname=host,
+                    port=port,
+                    username=server["username"],
+                    password=password,
+                    timeout=10
+                )
+            except Exception as e:
+                ssh_service.raise_for_paramiko_host_key_error(e, host, port)
+                logger.error(f"Failed to connect with password: {e}")
+                raise Exception(f"SSH password authentication failed: {str(e)}")
         
         return client
     

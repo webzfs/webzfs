@@ -264,6 +264,7 @@ class AuditLogger:
         user: str,
         pool_name: str,
         force: bool = False,
+        readonly: bool = False,
         success: bool = True,
         error: Optional[str] = None,
     ) -> None:
@@ -273,6 +274,7 @@ class AuditLogger:
             operation="import_pool",
             pool=pool_name,
             force=force,
+            readonly=readonly,
             success=success,
             error=error,
         )

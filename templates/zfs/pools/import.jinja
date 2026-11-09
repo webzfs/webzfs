@@ -29,6 +29,7 @@
     {% set import_error = request.query_params.get('error') %}
     {% set failed_pool = request.query_params.get('failed_pool') %}
     {% set force_attempted = request.query_params.get('force_attempted') == 'true' %}
+    {% set readonly_attempted = request.query_params.get('readonly_attempted') == 'true' %}
     {% set import_error_lower = (import_error or '')|lower %}
     {% set is_in_use_error = 'previously in use' in import_error_lower
         or 'may be in use' in import_error_lower
@@ -102,6 +103,17 @@
                                 Force Import
                             </button>
                         </form>
+                        <form method="post" action="/zfs/pools/import/{{ pool.name }}" id="form-readonly-import-{{ loop.index }}" style="display: inline;">
+                            <input type="hidden" name="readonly" value="true">
+                            <button type="button"
+                                    class="btn-secondary w-full inline-flex items-center justify-center gap-2"
+                                    onclick="showConfirm('confirm-readonly-import-{{ loop.index }}')">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                </svg>
+                                Import Read-only
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -145,6 +157,14 @@
         {% set confirm_class = 'warning' %}
         {% set confirm_action = 'submitImportForm("form-force-import-' ~ loop.index ~ '", "' ~ pool.name ~ '")' %}
         {% include 'partials/confirm.jinja' %}
+
+        {% set id = 'confirm-readonly-import-' ~ loop.index %}
+        {% set title = 'Import Pool Read-only' %}
+        {% set message = 'Import pool ' ~ pool.name ~ ' in read-only mode? All of its datasets will be imported read-only and cannot be written to until the pool is exported and re-imported read-write.' %}
+        {% set confirm_text = 'Import Read-only' %}
+        {% set confirm_class = 'primary' %}
+        {% set confirm_action = 'submitImportForm("form-readonly-import-' ~ loop.index ~ '", "' ~ pool.name ~ '", true)' %}
+        {% include 'partials/confirm.jinja' %}
         {% endfor %}
     {% endif %}
 
@@ -153,7 +173,9 @@
 
     // Show the import in-progress overlay so the user knows the operation is
     // running and the UI is not frozen, then submit the matching import form.
-    window.submitImportForm = function(formId, poolName) {
+    // `readOnly` reflects the form that was submitted so the overlay never
+    // claims datasets are mounted read-write when read-only was chosen.
+    window.submitImportForm = function(formId, poolName, readOnly) {
         const form = document.getElementById(formId);
         if (!form) { return; }
         const overlay = document.getElementById('import-progress-overlay');
@@ -161,6 +183,12 @@
             const nameEl = document.getElementById('import-progress-pool-name');
             if (nameEl) {
                 nameEl.textContent = poolName;
+            }
+            const detailEl = document.getElementById('import-progress-detail');
+            if (detailEl) {
+                detailEl.textContent = readOnly
+                    ? 'The pool is being imported read-only. Its datasets will be mounted read-only and cannot be written to until the pool is exported and re-imported read-write.'
+                    : 'This may take a moment while all datasets are mounted. Please wait.';
             }
             overlay.style.display = 'block';
         }
@@ -226,6 +254,12 @@
             </li>
             <li class="flex items-start gap-2">
                 <svg class="w-4 h-4 text-info-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+                <span><strong class="text-text-primary">Import Read-only:</strong> Import the pool with <span class="font-mono">readonly=on</span> so it is brought online without allowing writes. Datasets are mounted read-only and cannot be written to until the pool is exported and re-imported read-write.</span>
+            </li>
+            <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-info-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
                 <span>Importing a pool will mount all its datasets automatically</span>
@@ -248,7 +282,7 @@
                     </svg>
                 </div>
                 <h3 class="text-xl font-semibold text-danger-400 text-center mb-3">
-                    {% if force_attempted %}Force Import Failed{% else %}Import Failed{% endif %}
+                    {% if force_attempted %}Force Import Failed{% elif readonly_attempted %}Read-Only Import Failed{% else %}Import Failed{% endif %}
                 </h3>
                 <p class="text-text-secondary text-center mb-2">
                     The pool <strong class="font-mono text-text-primary">{{ failed_pool }}</strong>
@@ -257,7 +291,7 @@
                 <div class="bg-danger-900/20 border border-danger-900 rounded-lg p-3 mb-5">
                     <p class="text-sm text-danger-300 font-mono break-words text-center whitespace-pre-wrap">{{ import_error }}</p>
                 </div>
-                {% if is_in_use_error and not force_attempted %}
+                {% if is_in_use_error and not force_attempted and not readonly_attempted %}
                 <p class="text-sm text-text-secondary text-center mb-3">
                     ZFS is refusing the import because the pool was last used by
                     another system and was not cleanly exported. If you are certain
@@ -318,7 +352,7 @@ window.closeImportErrorModal = function() {
                 <h3 class="text-xl font-semibold text-text-primary mb-2">Importing Pool</h3>
                 <p class="text-text-secondary">
                     Importing pool <strong id="import-progress-pool-name" class="font-mono text-text-primary"></strong>.
-                    This may take a moment while all datasets are mounted. Please wait.
+                    <span id="import-progress-detail">This may take a moment while all datasets are mounted. Please wait.</span>
                 </p>
             </div>
         </div>
