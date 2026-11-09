@@ -87,18 +87,39 @@
 
     <!-- Snapshots Table -->
     <div class="card">
-        <div class="p-4 bg-bg-elevated-2 border-b border-border-subtle">
+        <div class="p-4 bg-bg-elevated-2 border-b border-border-subtle flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-xl font-semibold text-text-primary inline-flex items-center gap-2">
                 <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                 </svg>
                 All Snapshots ({{ snapshots|length }})
             </h2>
+            <!-- Bulk destroy: form lives outside the table because rows contain
+                 their own per-snapshot forms; checkboxes join it via form="". -->
+            <form id="bulk-destroy-form" method="post" action="/zfs/snapshots/bulk/destroy/confirm">
+                <div class="flex items-center gap-3">
+                    <span class="text-xs text-text-secondary"><span id="bulk-selected-count">0</span> selected</span>
+                    <button type="submit" id="bulk-destroy-submit"
+                            class="btn-danger inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled
+                            title="Destroy all selected snapshots">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        Destroy Selected
+                    </button>
+                </div>
+            </form>
         </div>
         <div class="overflow-x-auto">
             <table class="min-w-full">
                 <thead class="bg-bg-elevated-2">
                     <tr>
+                        <th class="px-4 py-3 text-left">
+                            <input type="checkbox" id="select-all-snapshots"
+                                   class="form-checkbox h-4 w-4 text-danger-500 rounded border-border-strong"
+                                   title="Select all snapshots">
+                        </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                             Snapshot Name
                         </th>
@@ -122,6 +143,12 @@
                 <tbody class="divide-y divide-border-subtle">
                     {% for snapshot in snapshots %}
                     <tr class="hover:bg-bg-elevated-2 transition-colors">
+                        <td class="px-4 py-4">
+                            <input type="checkbox" name="snapshots" value="{{ snapshot.name }}"
+                                   form="bulk-destroy-form"
+                                   class="snapshot-select form-checkbox h-4 w-4 text-danger-500 rounded border-border-strong"
+                                   aria-label="Select {{ snapshot.name }}">
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <a href="/zfs/snapshots/{{ snapshot.name }}/detail" class="text-primary-400 hover:text-primary-300 font-semibold transition-colors">
                                 {{ snapshot.snapshot }}
@@ -204,6 +231,44 @@
             </table>
         </div>
     </div>
+
+    <script>
+        (function () {
+            const form = document.getElementById('bulk-destroy-form');
+            if (!form) { return; }
+            const selectAll = document.getElementById('select-all-snapshots');
+            const countLabel = document.getElementById('bulk-selected-count');
+            const submitButton = document.getElementById('bulk-destroy-submit');
+            const boxes = function () {
+                return Array.from(document.querySelectorAll('input.snapshot-select'));
+            };
+            const refresh = function () {
+                const checked = boxes().filter(function (box) { return box.checked; }).length;
+                if (countLabel) { countLabel.textContent = String(checked); }
+                if (submitButton) { submitButton.disabled = checked === 0; }
+                if (selectAll) {
+                    const all = boxes();
+                    selectAll.checked = all.length > 0 && checked === all.length;
+                    selectAll.indeterminate = checked > 0 && checked < all.length;
+                }
+            };
+            if (selectAll) {
+                selectAll.addEventListener('change', function () {
+                    boxes().forEach(function (box) { box.checked = selectAll.checked; });
+                    refresh();
+                });
+            }
+            // Listen on the snapshots card, not document: with hx-boost the
+            // document persists, so a document listener would pile up.
+            const card = form.closest('.card') || form;
+            card.addEventListener('change', function (event) {
+                if (event.target && event.target.classList.contains('snapshot-select')) {
+                    refresh();
+                }
+            });
+            refresh();
+        })();
+    </script>
 
     <!-- Action Legend -->
     <div class="card-nested">
