@@ -173,6 +173,16 @@
                             {% endif %}
                         </dd>
                     </div>
+                    {% if dataset.properties.encryption.value not in ['off', '-'] %}
+                    <div class="flex justify-between items-center">
+                        <dt class="text-text-secondary">Key Format:</dt>
+                        <dd class="text-text-primary font-mono text-sm">{{ dataset.properties.keyformat.value if 'keyformat' in dataset.properties else '-' }}</dd>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <dt class="text-text-secondary">Key Location:</dt>
+                        <dd class="text-text-primary font-mono text-sm break-all">{{ dataset.properties.keylocation.value if 'keylocation' in dataset.properties else '-' }}</dd>
+                    </div>
+                    {% endif %}
                     {% endif %}
                     {% if 'origin' in dataset.properties and dataset.properties.origin.value not in ['-', ''] %}
                     <div class="flex justify-between items-center">
@@ -725,16 +735,15 @@
                     {% endif %}
                 </form>
                 {% endif %}
-                <form method="post" action="/zfs/datasets/{{ dataset.name }}/change-key" id="form-change-key" class="w-full">
-                    <button type="button" class="btn-warning w-full inline-flex items-center justify-center gap-2"
-                            onclick="showConfirm('confirm-change-key')"
-                            title="Change encryption key">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
-                        </svg>
-                        Change Key
-                    </button>
-                </form>
+                {% if is_key_loaded %}
+                <button type="button" class="btn-warning w-full inline-flex items-center justify-center gap-2"
+                        onclick="showChangeKeyModal()"
+                        title="Change encryption key">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                    </svg>
+                    Change Key
+                </button>
                 <form method="post" action="/zfs/datasets/{{ dataset.name }}/change-key/inherit" id="form-inherit-key" class="w-full">
                     <button type="button" class="btn-info w-full inline-flex items-center justify-center gap-2"
                             onclick="showConfirm('confirm-inherit-key')"
@@ -745,6 +754,14 @@
                         Inherit Key
                     </button>
                 </form>
+                {% else %}
+                <div class="w-full" title="Load the encryption key before changing or inheriting it">
+                    <button type="button" disabled
+                            class="btn-secondary w-full inline-flex items-center justify-center gap-2 opacity-50 cursor-not-allowed">
+                        Change Key
+                    </button>
+                </div>
+                {% endif %}
                 {% endif %}
             </div>
             <div class="card-nested mt-4">
@@ -872,14 +889,6 @@
 {% include 'partials/confirm.jinja' %}
 {% endif %}
 
-{% set id = 'confirm-change-key' %}
-{% set title = 'Change Encryption Key' %}
-{% set message = 'Change encryption key for ' ~ dataset.name ~ '? You will be prompted for the new key. Make sure to backup the key securely.' %}
-{% set confirm_text = 'Change Key' %}
-{% set confirm_class = 'warning' %}
-{% set confirm_action = 'document.getElementById("form-change-key").submit()' %}
-{% include 'partials/confirm.jinja' %}
-
 {% set id = 'confirm-inherit-key' %}
 {% set title = 'Inherit Encryption Key' %}
 {% set message = 'Make ' ~ dataset.name ~ ' inherit encryption key from parent? This will change the encryption key source to the parent dataset.' %}
@@ -887,10 +896,245 @@
 {% set confirm_class = 'primary' %}
 {% set confirm_action = 'document.getElementById("form-inherit-key").submit()' %}
 {% include 'partials/confirm.jinja' %}
+
+<div id="change-key-modal" class="modal-overlay" style="display: none;"
+     role="dialog" aria-modal="true" aria-labelledby="change-key-title">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" onclick="hideChangeKeyModal()"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="modal">
+                <h3 id="change-key-title" class="text-xl font-semibold text-text-primary mb-2">
+                    Change Encryption Key
+                </h3>
+                <p class="text-text-secondary mb-4">
+                    Change the key for <strong class="font-mono text-text-primary">{{ dataset.name }}</strong>.
+                    The current key must be loaded first. File and https keys let ZFS load the key again without a passphrase prompt.
+                </p>
+                <form method="post" action="/zfs/datasets/{{ dataset.name }}/change-key"
+                      id="form-change-key" hx-boost="false" class="space-y-4"
+                      onsubmit="return prepareChangeKey(event)">
+                    <div>
+                        <label for="change-keyformat" class="form-label">New Key Format</label>
+                        <select id="change-keyformat" name="keyformat" class="form-select"
+                                onchange="updateChangeKeyFields()">
+                            <option value="">Keep current format</option>
+                            <option value="passphrase">Passphrase</option>
+                            <option value="hex">Hex key</option>
+                            <option value="raw">Raw key (32 bytes)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="change-keylocation" class="form-label">New Key Location</label>
+                        <select id="change-keylocation" name="keylocation" class="form-select"
+                                onchange="updateChangeKeyFields()" required>
+                            <option value="prompt">Prompt (enter a passphrase)</option>
+                            <option value="file">File (file:///absolute/path)</option>
+                            {% if https_keylocation_supported %}
+                            <option value="https">HTTPS URL</option>
+                            {% endif %}
+                        </select>
+                        {% if not https_keylocation_supported %}
+                        <p class="text-warning-400 text-sm mt-1">
+                            https:// key locations are unavailable: this OpenZFS build has no libfetch/libcurl back-end.
+                        </p>
+                        {% endif %}
+                    </div>
+
+                    <div id="change-key-passphrase-fields" class="space-y-4">
+                        <div>
+                            <label for="change-key-passphrase" class="form-label">New Passphrase</label>
+                            <input type="password" id="change-key-passphrase" name="new_passphrase"
+                                   class="form-input" minlength="8" autocomplete="new-password">
+                        </div>
+                        <div>
+                            <label for="change-key-passphrase-confirm" class="form-label">Confirm New Passphrase</label>
+                            <input type="password" id="change-key-passphrase-confirm" name="new_passphrase_confirm"
+                                   class="form-input" minlength="8" autocomplete="new-password">
+                        </div>
+                    </div>
+
+                    <div id="change-key-file-field" class="space-y-4" style="display: none;">
+                        <div>
+                            <label for="change-key-source" class="form-label">Key File Source</label>
+                            <select id="change-key-source" name="key_source" class="form-select"
+                                    onchange="updateChangeKeyFields()">
+                                <option value="existing">Use an existing key file</option>
+                                <option value="generate">Generate a new random key file</option>
+                                <option value="string">Create a key file from text I enter</option>
+                            </select>
+                            <p class="text-text-tertiary text-sm mt-1">
+                                To generate or create a key file, choose a key format above. An existing key file is never overwritten.
+                            </p>
+                        </div>
+                        <div id="change-key-string-field" style="display: none;">
+                            <label for="change-key-string" class="form-label">Key Text</label>
+                            <input type="password" id="change-key-string" name="key_string"
+                                   class="form-input font-mono" autocomplete="off">
+                            <p class="text-text-tertiary text-sm mt-1">
+                                Raw: exactly 32 bytes. Hex: exactly 64 hexadecimal characters. Passphrase: 8 to 512 bytes. Never shown or logged.
+                            </p>
+                        </div>
+                        <div>
+                            <label for="change-key-file-path" class="form-label">Key File Path</label>
+                            <input type="text" id="change-key-file-path" name="key_file_path"
+                                   class="form-input font-mono" placeholder="/etc/zfs/keys/my-dataset.key">
+                            <p class="text-text-tertiary text-sm mt-1">
+                                An existing key file must be a regular file owned by root with mode 0600; WebZFS verifies the permissions without reading the key. A new key file is created owned by root with mode 0600, in a root-owned directory with mode 0700 (created if missing).
+                            </p>
+                        </div>
+                        <div class="card-nested bg-warning-900/20 border-warning-700">
+                            <h4 class="text-sm font-semibold text-warning-400 mb-1">Back up the key file offsite</h4>
+                            <p class="text-sm text-text-secondary">
+                                After the change, the key file is the only way to unlock this dataset. If it is lost, the encrypted data cannot be recovered. Copy it to secure offsite storage and keep it off the pool it unlocks.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div id="change-key-url-field" style="display: none;">
+                        <label for="change-key-url" class="form-label">Key URL</label>
+                        <input type="url" id="change-key-url" name="key_url"
+                               class="form-input font-mono" placeholder="https://keys.example.com/my-dataset.key">
+                        <p class="text-text-tertiary text-sm mt-1">
+                            ZFS fetches the key itself using its libfetch/libcurl back-end.
+                        </p>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button type="button" class="btn-secondary flex-1" onclick="hideChangeKeyModal()">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn-warning flex-1 inline-flex items-center justify-center gap-2">
+                            Change Key
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
 
 <script>
 var keyLoadSubmitting = false;
+
+function showChangeKeyModal() {
+    var modal = document.getElementById('change-key-modal');
+    if (!modal) return;
+    modal.style.display = 'block';
+    updateChangeKeyFields();
+    var location = document.getElementById('change-keylocation');
+    if (location) location.focus();
+}
+
+function hideChangeKeyModal() {
+    var modal = document.getElementById('change-key-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function toggleChangeKeyField(id, visible) {
+    var field = document.getElementById(id);
+    if (!field) return;
+    field.style.display = visible ? 'block' : 'none';
+    field.querySelectorAll('input').forEach(function(input) {
+        input.disabled = !visible;
+        input.required = visible;
+    });
+}
+
+function updateChangeKeyFields() {
+    var location = document.getElementById('change-keylocation');
+    var value = location ? location.value : 'prompt';
+    var source = document.getElementById('change-key-source');
+    var sourceValue = source ? source.value : 'existing';
+    toggleChangeKeyField('change-key-passphrase-fields', value === 'prompt');
+    toggleChangeKeyField('change-key-file-field', value === 'file');
+    // Nested inside the file field; toggled after it so its state wins.
+    toggleChangeKeyField('change-key-string-field', value === 'file' && sourceValue === 'string');
+    toggleChangeKeyField('change-key-url-field', value === 'https');
+}
+
+function changeKeyStringError(formatValue, text) {
+    var bytes = new TextEncoder().encode(text).length;
+    if (formatValue === 'raw' && bytes !== 32) {
+        return 'A raw key must be exactly 32 bytes.';
+    }
+    if (formatValue === 'hex' && !/^[0-9a-fA-F]{64}$/.test(text.trim())) {
+        return 'A hex key must be exactly 64 hexadecimal characters.';
+    }
+    if (formatValue === 'passphrase' && (bytes < 8 || bytes > 512)) {
+        return 'A passphrase must be 8 to 512 bytes long.';
+    }
+    return '';
+}
+
+function prepareChangeKey(event) {
+    var location = document.getElementById('change-keylocation');
+    var format = document.getElementById('change-keyformat');
+    var locationValue = location ? location.value : '';
+    var source = document.getElementById('change-key-source');
+    var sourceValue = source ? source.value : 'existing';
+
+    if (locationValue === 'file' && sourceValue !== 'existing') {
+        if (!format || !format.value) {
+            format.setCustomValidity('Choose a key format when WebZFS creates the key file.');
+            format.reportValidity();
+            return false;
+        }
+        format.setCustomValidity('');
+        if (sourceValue === 'string') {
+            var keyString = document.getElementById('change-key-string');
+            var message = changeKeyStringError(format.value, keyString ? keyString.value : '');
+            if (message) {
+                keyString.setCustomValidity(message);
+                keyString.reportValidity();
+                return false;
+            }
+            keyString.setCustomValidity('');
+        }
+    }
+
+    if (locationValue === 'prompt') {
+        if (format && format.value && format.value !== 'passphrase') {
+            alert('Raw and hex keys cannot be entered interactively. Choose a file or https key location.');
+            return false;
+        }
+        var passphrase = document.getElementById('change-key-passphrase');
+        var confirm = document.getElementById('change-key-passphrase-confirm');
+        if (!passphrase || passphrase.value.length < 8) {
+            if (passphrase) {
+                passphrase.setCustomValidity('New passphrase must be at least 8 characters long.');
+                passphrase.reportValidity();
+            }
+            return false;
+        }
+        passphrase.setCustomValidity('');
+        if (!confirm || confirm.value !== passphrase.value) {
+            if (confirm) {
+                confirm.setCustomValidity('New passphrases do not match.');
+                confirm.reportValidity();
+            }
+            return false;
+        }
+        confirm.setCustomValidity('');
+    }
+
+    return true;
+}
+
+// A custom validity message blocks native submission until it is cleared,
+// so clear it whenever the user edits a change-key field.
+document.addEventListener('input', function(event) {
+    var ids = ['change-key-passphrase', 'change-key-passphrase-confirm',
+               'change-key-string', 'change-keyformat'];
+    if (event.target && ids.indexOf(event.target.id) !== -1) {
+        event.target.setCustomValidity('');
+    }
+});
+document.addEventListener('change', function(event) {
+    if (event.target && event.target.id === 'change-keyformat') {
+        event.target.setCustomValidity('');
+    }
+});
 
 function showLoadKeyModal() {
     var modal = document.getElementById('load-key-modal');
