@@ -8,6 +8,18 @@ import subprocess
 from typing import List, Dict, Any, Optional
 
 from services.utils import is_netbsd, run_zfs_command
+from services.zfs_key_options import (
+    KEYFORMAT_PASSPHRASE,
+    KEYLOCATION_PROMPT,
+    detect_https_keylocation_support,
+    key_file_path_from_location,
+    normalize_keyformat,
+    redact_key_material,
+    validate_key_combination,
+    validate_key_file,
+    validate_keylocation,
+)
+
 
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
@@ -293,34 +305,78 @@ class ZFSDatasetService:
                                       properties: Optional[Dict[str, str]] = None,
                                       create_parents: bool = False) -> None:
         """
-        Create a new encrypted dataset with passphrase
-        
+        Create a new encrypted dataset with a passphrase (prompt) key.
+
+        Retained as a thin wrapper for existing callers; see
+        :meth:`create_dataset_with_key` for file and https key locations.
+        """
+        self.create_dataset_with_key(
+            dataset_name,
+            keyformat=KEYFORMAT_PASSPHRASE,
+            keylocation=KEYLOCATION_PROMPT,
+            passphrase=passphrase,
+            dataset_type=dataset_type,
+            properties=properties,
+            create_parents=create_parents,
+        )
+
+    def create_dataset_with_key(self, dataset_name: str, keyformat: str,
+                               keylocation: str,
+                               passphrase: Optional[str] = None,
+                               dataset_type: str = "filesystem",
+                               properties: Optional[Dict[str, str]] = None,
+                               create_parents: bool = False) -> None:
+        """
+        Create a new encrypted dataset with explicit key options.
+
         Args:
             dataset_name: Full name for the new dataset (pool/path/name)
-            passphrase: Passphrase for encryption
+            keyformat: 'passphrase', 'hex' or 'raw'
+            keylocation: 'prompt', 'file:///absolute/path' or 'https://...'
+            passphrase: Passphrase for a prompt/passphrase key. Never logged.
             dataset_type: Type of dataset ('filesystem' or 'volume')
             properties: Optional dictionary of properties to set
             create_parents: Create parent datasets if they don't exist
+
+        Key material is never read by this service: file keys are validated
+        from filesystem metadata only, and zfs itself reads the key as root.
         """
         self.validate_dataset_name(dataset_name)
-        self.validate_passphrase(passphrase)
+        keyformat = normalize_keyformat(keyformat)
+        keylocation = validate_keylocation(keylocation)
+        validate_key_combination(keyformat, keylocation)
+
+        file_path = key_file_path_from_location(keylocation)
+        if file_path:
+            validate_key_file(file_path)
+        if keylocation.startswith('https://') and not detect_https_keylocation_support():
+            raise ValueError(
+                "This OpenZFS build has no libfetch/libcurl back-end, so "
+                "https:// key locations cannot be used. Use a file:// key "
+                "location instead."
+            )
+
+        input_data: Optional[str] = None
+        if keylocation == KEYLOCATION_PROMPT:
+            if not passphrase:
+                raise ValueError("An encryption passphrase is required.")
+            self.validate_passphrase(passphrase)
+            input_data = f"{passphrase}\n"
+
         try:
-            props = properties or {}
-            
+            props = dict(properties or {})
+
             # Ensure encryption properties are set
-            if 'encryption' not in props:
-                props['encryption'] = 'aes-256-gcm'
-            if 'keyformat' not in props:
-                props['keyformat'] = 'passphrase'
-            if 'keylocation' not in props:
-                props['keylocation'] = 'prompt'
-            
+            props.setdefault('encryption', 'aes-256-gcm')
+            props['keyformat'] = keyformat
+            props['keylocation'] = keylocation
+
             # Build zfs create command
             cmd = ['zfs', 'create']
-            
+
             if create_parents:
                 cmd.append('-p')
-            
+
             # Add volume-specific options
             if dataset_type == "volume":
                 if 'volsize' not in props:
@@ -328,22 +384,29 @@ class ZFSDatasetService:
                 cmd.extend(['-V', props['volsize']])
                 # Remove volsize from props as it's already handled
                 props = {k: v for k, v in props.items() if k != 'volsize'}
-            
+            elif dataset_type != "filesystem":
+                raise Exception(f"Invalid dataset type: {dataset_type}")
+
             # Add properties
             for key, value in props.items():
                 cmd.extend(['-o', f'{key}={value}'])
-            
+
             cmd.append(dataset_name)
-            
-            # Run command with passphrase input
-            run_zfs_command(cmd, input_data=f"{passphrase}\n")
-            
+
+            # Raw/hex/file/https keys are read by zfs from the key location;
+            # only a prompt passphrase is fed through stdin.
+            run_zfs_command(cmd, input_data=input_data)
+
         except subprocess.CalledProcessError as e:
-            if 'already exists' in e.stderr.lower():
+            error = redact_key_material(e.stderr, [passphrase])
+            if 'already exists' in error.lower():
                 raise Exception(f"Dataset {dataset_name} already exists")
-            raise Exception(f"Failed to create encrypted dataset: {e.stderr}")
+            raise Exception(f"Failed to create encrypted dataset: {error}")
         except Exception as e:
-            raise Exception(f"Failed to create encrypted dataset: {str(e)}")
+            raise Exception(
+                f"Failed to create encrypted dataset: "
+                f"{redact_key_material(str(e), [passphrase])}"
+            )
     
     def destroy_dataset(self, dataset_name: str, recursive: bool = False,
                        force: bool = False) -> None:
@@ -786,6 +849,12 @@ class ZFSDatasetService:
                 )
             if key_location == 'prompt' and passphrase:
                 self.validate_passphrase(passphrase)
+            if key_location.startswith('https://') and not detect_https_keylocation_support():
+                raise ValueError(
+                    "This OpenZFS build has no libfetch/libcurl back-end, so "
+                    "https:// key locations cannot be loaded. Use a file:// "
+                    "key location instead."
+                )
 
             cmd = ['zfs', 'load-key', encryption_root]
             input_data = (
@@ -807,7 +876,7 @@ class ZFSDatasetService:
                 "The configured key location may be unavailable or unreachable."
             )
         except subprocess.CalledProcessError as e:
-            error = (e.stderr or '').strip()
+            error = redact_key_material((e.stderr or '').strip(), [passphrase])
             if key_location.startswith('file://'):
                 error_lower = error.lower()
                 if any(message in error_lower for message in (
@@ -860,27 +929,121 @@ class ZFSDatasetService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to unload encryption key: {e.stderr}")
     
-    def change_key(self, dataset_name: str, inherit: bool = False) -> None:
+    def load_all_keys(self) -> Dict[str, Any]:
+        """
+        Load the encryption key for every encryption root in imported pools.
+
+        Runs ``zfs load-key -a``. Datasets configured with
+        ``keylocation=prompt`` cannot be loaded without interactive input, so
+        zfs reports them as failures while loading the rest; the result
+        therefore reports success plus any remaining error text.
+
+        Returns:
+            Dict with ``success`` and ``error`` keys.
+        """
+        try:
+            run_zfs_command(
+                ['zfs', 'load-key', '-a'],
+                timeout=self.KEY_LOAD_TIMEOUT_SECONDS,
+            )
+            return {"success": True, "error": ""}
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"Loading all encryption keys timed out after "
+                f"{self.KEY_LOAD_TIMEOUT_SECONDS} seconds. A configured key "
+                "location may be unavailable or unreachable."
+            )
+        except subprocess.CalledProcessError as e:
+            error = redact_key_material((e.stderr or '').strip())
+            return {
+                "success": False,
+                "error": error or "zfs load-key -a failed",
+            }
+
+    def change_key(self, dataset_name: str, inherit: bool = False,
+                   keyformat: Optional[str] = None,
+                   keylocation: Optional[str] = None,
+                   passphrase: Optional[str] = None) -> None:
         """
         Change encryption key for a dataset
-        
+
         Args:
             dataset_name: Name of the dataset
             inherit: Inherit key from parent dataset
+            keyformat: Optional new key format (passphrase/hex/raw)
+            keylocation: Optional new key location (prompt/file:///https://)
+            passphrase: New passphrase when changing to a prompt passphrase
+                key. Never logged.
+
+        ``zfs change-key`` requires the existing key to be loaded already.
         """
         self.validate_dataset_name(dataset_name)
+
+        if inherit:
+            if keyformat or keylocation:
+                raise ValueError(
+                    "Inheriting the parent key cannot be combined with a new "
+                    "key format or key location."
+                )
+            try:
+                run_zfs_command(['zfs', 'change-key', '-i', dataset_name])
+            except subprocess.CalledProcessError as e:
+                error = redact_key_material((e.stderr or '').strip())
+                raise Exception(f"Failed to inherit encryption key: {error}")
+            return
+
+        if not keyformat and not keylocation:
+            raise ValueError(
+                "Specify a new key format and/or key location to change the key."
+            )
+
+        fmt = normalize_keyformat(keyformat) if keyformat else None
+        loc = validate_keylocation(keylocation) if keylocation else None
+
+        if loc == KEYLOCATION_PROMPT:
+            if fmt is None:
+                fmt = KEYFORMAT_PASSPHRASE
+            validate_key_combination(fmt, loc)
+        elif fmt and loc:
+            validate_key_combination(fmt, loc)
+
+        file_path = key_file_path_from_location(loc) if loc else None
+        if file_path:
+            validate_key_file(file_path)
+        if loc and loc.startswith('https://') and not detect_https_keylocation_support():
+            raise ValueError(
+                "This OpenZFS build has no libfetch/libcurl back-end, so "
+                "https:// key locations cannot be used. Use a file:// key "
+                "location instead."
+            )
+
+        input_data: Optional[str] = None
+        if loc == KEYLOCATION_PROMPT:
+            if not passphrase:
+                raise ValueError("A new encryption passphrase is required.")
+            self.validate_passphrase(passphrase)
+            input_data = f"{passphrase}\n"
+
         try:
             cmd = ['zfs', 'change-key']
-            
-            if inherit:
-                cmd.append('-i')
-            
+
+            if fmt:
+                cmd.extend(['-o', f'keyformat={fmt}'])
+            if loc:
+                cmd.extend(['-o', f'keylocation={loc}'])
+
             cmd.append(dataset_name)
-            
-            run_zfs_command(cmd)
-            
+
+            run_zfs_command(cmd, input_data=input_data)
+
         except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to change encryption key: {e.stderr}")
+            error = redact_key_material((e.stderr or '').strip(), [passphrase])
+            if loc and loc.startswith('file://'):
+                raise Exception(
+                    "Failed to change the encryption key to the configured "
+                    f"key file. Verify the file path and permissions. {error}"
+                )
+            raise Exception(f"Failed to change encryption key: {error}")
     
     # Maximum number of directory entries returned by peek_directory
     PEEK_MAX_ENTRIES = 1000

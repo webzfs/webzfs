@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from config.settings import Settings
 from services.utils import run_zfs_command, is_netbsd
+from services.zfs_key_options import redact_key_material
+from services.zfs_pool_create_options import build_create_command, format_command
 
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
@@ -446,39 +448,111 @@ class ZFSPoolService:
     
     def create_pool(self, pool_name: str, vdevs: List[str], 
                    properties: Optional[Dict[str, str]] = None,
-                   force: bool = False) -> None:
+                   force: bool = False,
+                   root_properties: Optional[Dict[str, str]] = None,
+                   mountpoint: str = "",
+                   altroot: str = "",
+                   dry_run: bool = False,
+                   passphrase: Optional[str] = None) -> None:
         """
         Create a new ZFS pool
         
         Args:
             pool_name: Name for the new pool
             vdevs: List of vdev specifications (e.g., ['mirror', '/dev/sda', '/dev/sdb'])
-            properties: Optional dictionary of pool properties to set
+            properties: Optional dictionary of pool properties (-o)
             force: Force creation even if devices are in use
+            root_properties: Optional dictionary of root dataset properties (-O)
+            mountpoint: Optional root dataset mountpoint (-m)
+            altroot: Optional alternate root directory (-R)
+            dry_run: Validate with 'zpool create -n' instead of creating
+            passphrase: Passphrase for an encrypted root dataset with
+                keylocation=prompt. Fed through stdin; never logged.
         """
         self.validate_pool_name(pool_name)
         timeout = self.timeouts.get('create', self.timeouts['default'])
+
+        # NetBSD ZFS does not support the ashift pool property
+        pool_properties = dict(properties or {})
+        if is_netbsd():
+            pool_properties.pop('ashift', None)
+
+        cmd = build_create_command(
+            pool_name,
+            vdevs,
+            pool_properties=pool_properties,
+            root_properties=root_properties or {},
+            mountpoint=mountpoint,
+            altroot=altroot,
+            force=force,
+            dry_run=dry_run,
+        )
+
         try:
-            cmd = ['zpool', 'create']
-            
-            if force:
-                cmd.append('-f')
-            
-            # Add properties (strip ashift on NetBSD where it is not supported)
-            if properties:
-                for key, value in properties.items():
-                    if key == 'ashift' and is_netbsd():
-                        continue
-                    cmd.extend(['-o', f'{key}={value}'])
-            
-            cmd.append(pool_name)
-            cmd.extend(vdevs)
-            
-            run_zfs_command(cmd, timeout=timeout)
+            # Always give zpool its own stdin. With None it would inherit the
+            # service's stdin and could block reading a key from it.
+            input_data = f"{passphrase}\n" if passphrase else ""
+            run_zfs_command(cmd, timeout=timeout, input_data=input_data)
         except subprocess.TimeoutExpired:
             raise Exception(f"ZPool create command timed out after {timeout} seconds. Pool creation can take time with many devices.")
         except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to create pool: {e.stderr}")
+            error = redact_key_material((e.stderr or '').strip(), [passphrase])
+            raise Exception(f"Failed to create pool: {error}")
+
+    def preview_create_pool(self, pool_name: str, vdevs: List[str],
+                            properties: Optional[Dict[str, str]] = None,
+                            force: bool = False,
+                            root_properties: Optional[Dict[str, str]] = None,
+                            mountpoint: str = "",
+                            altroot: str = "",
+                            timeout: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Run 'zpool create -n' for the requested configuration without
+        creating anything.
+
+        Returns:
+            Dict with the rendered command, stdout, stderr and success flag.
+        """
+        self.validate_pool_name(pool_name)
+        pool_properties = dict(properties or {})
+        if is_netbsd():
+            pool_properties.pop('ashift', None)
+
+        cmd = build_create_command(
+            pool_name,
+            vdevs,
+            pool_properties=pool_properties,
+            root_properties=root_properties or {},
+            mountpoint=mountpoint,
+            altroot=altroot,
+            force=force,
+            dry_run=True,
+        )
+
+        if timeout is None:
+            timeout = self.timeouts.get('create', self.timeouts['default'])
+
+        result: Dict[str, Any] = {
+            'command': format_command(cmd),
+            'success': False,
+            'stdout': '',
+            'stderr': '',
+        }
+        try:
+            # A prompt keylocation would block on stdin; closing stdin makes
+            # the dry run fail fast instead of hanging the request.
+            completed = run_zfs_command(
+                cmd, timeout=timeout, check=False, input_data=''
+            )
+            result['stdout'] = (completed.stdout or '').strip()
+            result['stderr'] = (completed.stderr or '').strip()
+            result['success'] = completed.returncode == 0
+            result['returncode'] = completed.returncode
+        except subprocess.TimeoutExpired:
+            result['stderr'] = (
+                f"zpool create -n timed out after {timeout} seconds."
+            )
+        return result
     
     def destroy_pool(self, pool_name: str, force: bool = False) -> None:
         """

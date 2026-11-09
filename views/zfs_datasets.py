@@ -12,6 +12,17 @@ from services.zfs_dataset import ZFSDatasetService
 from services.zfs_snapshot import ZFSSnapshotService
 from services.audit_logger import audit_logger
 from services.utils import is_netbsd, get_openzfs_man_page_url
+from services.zfs_key_options import (
+    KEYFORMAT_PASSPHRASE,
+    KEYLOCATION_PROMPT,
+    KEYFORMATS,
+    KEYLOCATION_TYPES,
+    build_keylocation,
+    detect_https_keylocation_support,
+    normalize_keyformat,
+    validate_key_combination,
+)
+
 from auth.dependencies import get_current_user
 
 
@@ -156,6 +167,13 @@ async def create_dataset_form(
             "parent": parent,
             "pool_datasets": pool_datasets,
             "supports_encryption": supports_encryption,
+            "keyformats": KEYFORMATS,
+            "keylocation_types": KEYLOCATION_TYPES,
+            "https_keylocation_supported": detect_https_keylocation_support(),
+            "keyformat": KEYFORMAT_PASSPHRASE,
+            "keylocation": KEYLOCATION_PROMPT,
+            "key_file_path": "",
+            "key_url": "",
             "page_title": "Create Dataset"
         }
     )
@@ -177,6 +195,10 @@ async def create_dataset(
     encryption: Annotated[str, Form()] = "",
     passphrase: Annotated[str, Form()] = "",
     passphrase_confirm: Annotated[str, Form()] = "",
+    keyformat: Annotated[str, Form()] = KEYFORMAT_PASSPHRASE,
+    keylocation: Annotated[str, Form()] = KEYLOCATION_PROMPT,
+    key_file_path: Annotated[str, Form()] = "",
+    key_url: Annotated[str, Form()] = "",
     current_user: str = Depends(get_current_user)
 ):
     """Create a new dataset"""
@@ -184,17 +206,24 @@ async def create_dataset(
         properties = {}
         
         # Handle encryption
+        resolved_keyformat = KEYFORMAT_PASSPHRASE
+        resolved_keylocation = KEYLOCATION_PROMPT
         if encryption:
-            if not passphrase:
-                raise Exception("Passphrase is required when encryption is enabled")
-            dataset_service.validate_passphrase(passphrase)
-            if passphrase != passphrase_confirm:
-                raise Exception("Passphrases do not match")
-            
+            resolved_keyformat = normalize_keyformat(keyformat)
+            resolved_keylocation = build_keylocation(
+                keylocation, file_path=key_file_path, url=key_url
+            )
+            validate_key_combination(resolved_keyformat, resolved_keylocation)
+
+            if resolved_keylocation == KEYLOCATION_PROMPT:
+                if not passphrase:
+                    raise Exception("Passphrase is required when encryption is enabled")
+                dataset_service.validate_passphrase(passphrase)
+                if passphrase != passphrase_confirm:
+                    raise Exception("Passphrases do not match")
+
             # Set encryption properties
             properties['encryption'] = encryption
-            properties['keyformat'] = 'passphrase'
-            properties['keylocation'] = 'prompt'
         
         # Handle volume creation
         if dataset_type == "volume":
@@ -232,10 +261,16 @@ async def create_dataset(
             properties['recordsize'] = recordsize
         
         # Create dataset with encryption if specified
-        if encryption and passphrase:
-            dataset_service.create_dataset_with_encryption(
+        if encryption:
+            dataset_service.create_dataset_with_key(
                 dataset_name,
-                passphrase,
+                keyformat=resolved_keyformat,
+                keylocation=resolved_keylocation,
+                passphrase=(
+                    passphrase
+                    if resolved_keylocation == KEYLOCATION_PROMPT
+                    else None
+                ),
                 dataset_type=dataset_type,
                 properties=properties
             )
@@ -274,6 +309,13 @@ async def create_dataset(
                 "normalization": normalization,
                 "utf8only": utf8only,
                 "encryption": encryption,
+                "keyformat": keyformat,
+                "keylocation": keylocation,
+                "key_file_path": key_file_path,
+                "key_url": key_url,
+                "keyformats": KEYFORMATS,
+                "keylocation_types": KEYLOCATION_TYPES,
+                "https_keylocation_supported": detect_https_keylocation_support(),
                 "supports_encryption": supports_encryption,
                 "page_title": "Create Dataset"
             }
@@ -549,23 +591,94 @@ async def unload_encryption_key(
         )
 
 
+@router.post("/load-all-keys", response_class=HTMLResponse)
+async def load_all_encryption_keys(request: Request):
+    """Load the keys for every encryption root in all imported pools"""
+    try:
+        result = dataset_service.load_all_keys()
+        if result.get("success"):
+            return RedirectResponse(
+                url="/zfs/datasets?message=Encryption keys loaded for all available datasets",
+                status_code=303
+            )
+        return RedirectResponse(
+            url=(
+                "/zfs/datasets?error="
+                + quote(
+                    "Some encryption keys could not be loaded. Datasets using "
+                    "a prompt key location must be loaded individually. "
+                    + (result.get("error") or "")
+                )
+            ),
+            status_code=303
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/datasets?error={quote(str(e))}",
+            status_code=303
+        )
+
+
 @router.post("/{dataset_path:path}/change-key", response_class=HTMLResponse)
 async def change_encryption_key(
     request: Request,
     dataset_path: str,
-    inherit: Annotated[bool, Form()] = False
+    inherit: Annotated[bool, Form()] = False,
+    keyformat: Annotated[str, Form()] = "",
+    keylocation: Annotated[str, Form()] = "",
+    key_file_path: Annotated[str, Form()] = "",
+    key_url: Annotated[str, Form()] = "",
+    new_passphrase: Annotated[str, Form()] = "",
+    new_passphrase_confirm: Annotated[str, Form()] = ""
 ):
     """Change encryption key for a dataset"""
     try:
-        dataset_service.change_key(dataset_path, inherit=inherit)
-        message = "Encryption key inherited from parent" if inherit else "Encryption key changed successfully"
+        if inherit:
+            dataset_service.change_key(dataset_path, inherit=True)
+            message = "Encryption key inherited from parent"
+            return RedirectResponse(
+                url=f"/zfs/datasets/{dataset_path}?message={message}",
+                status_code=303
+            )
+
+        if not keyformat and not keylocation:
+            raise Exception(
+                "Select a new key format and/or key location to change the key"
+            )
+
+        resolved_location = (
+            build_keylocation(
+                keylocation, file_path=key_file_path, url=key_url
+            )
+            if keylocation
+            else None
+        )
+        resolved_format = normalize_keyformat(keyformat) if keyformat else None
+
+        if resolved_location == KEYLOCATION_PROMPT:
+            if not new_passphrase:
+                raise Exception("A new passphrase is required")
+            if new_passphrase != new_passphrase_confirm:
+                raise Exception("New passphrases do not match")
+
+        dataset_service.change_key(
+            dataset_path,
+            keyformat=resolved_format,
+            keylocation=resolved_location,
+            passphrase=(
+                new_passphrase
+                if resolved_location == KEYLOCATION_PROMPT
+                else None
+            ),
+        )
+        message = "Encryption key changed successfully"
         return RedirectResponse(
             url=f"/zfs/datasets/{dataset_path}?message={message}",
             status_code=303
         )
     except Exception as e:
         return RedirectResponse(
-            url=f"/zfs/datasets/{dataset_path}?error={str(e)}",
+            url=f"/zfs/datasets/{dataset_path}?error={quote(str(e))}",
             status_code=303
         )
 
@@ -696,6 +809,9 @@ async def dataset_detail(
             context={
                 "dataset": dataset,
                 "space_usage": space_usage,
+                "keyformats": KEYFORMATS,
+                "keylocation_types": KEYLOCATION_TYPES,
+                "https_keylocation_supported": detect_https_keylocation_support(),
                 "page_title": f"Dataset: {dataset_path}"
             }
         )

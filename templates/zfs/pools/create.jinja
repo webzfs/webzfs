@@ -82,7 +82,21 @@
                                     <option value="raidz">RAID-Z</option>
                                     <option value="raidz2">RAID-Z2</option>
                                     <option value="raidz3">RAID-Z3</option>
+                                    {% if supports_draid %}
+                                    <option value="draid1">dRAID1</option>
+                                    <option value="draid2">dRAID2</option>
+                                    <option value="draid3">dRAID3</option>
+                                    {% endif %}
                                 </select>
+                                {% if supports_draid %}
+                                <input type="text" id="draid_layout" data-create-option="draid_layout"
+                                       class="form-input text-sm py-1.5 w-56 font-mono"
+                                       placeholder="draid2:4d:8c:1s (optional)"
+                                       title="dRAID layout: draid[1-3][:<data>d][:<children>c][:<spares>s]. Leave empty to use the selected parity with all disks."
+                                       style="display: none;">
+                                {% else %}
+                                <span class="text-xs text-text-tertiary">dRAID requires OpenZFS 2.1+</span>
+                                {% endif %}
                                 <button type="button" onclick="addVdev()" class="btn-primary text-sm py-1.5 px-3">
                                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
@@ -208,7 +222,11 @@
                                 <div class="flex items-center gap-3">
                                     <div class="w-1 h-6 bg-info-400 rounded-full"></div>
                                     <h3 class="text-lg font-semibold text-text-primary">Log (SLOG)</h3>
-                                    <span class="text-xs text-text-tertiary">(Can be mirrored)</span>
+                                    <select id="log_layout" data-create-option="log_layout" class="form-select text-xs py-1 min-w-[110px]">
+                                        <option value="mirror" selected>Mirror</option>
+                                        <option value="stripe">Stripe</option>
+                                    </select>
+                                    <span class="text-xs text-text-tertiary">(stripe has no redundancy)</span>
                                 </div>
                                 <button type="button" onclick="closeSection('log')" class="text-text-tertiary hover:text-danger-400 transition-colors">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -358,6 +376,26 @@
                             {% endif %}
                         </div>
 
+                        <!-- Mountpoint (-m) -->
+                        <div>
+                            <label for="mountpoint" class="form-label text-sm">Root Dataset Mountpoint (-m)</label>
+                            <input type="text" id="mountpoint" name="mountpoint" data-create-option="mountpoint"
+                                   class="form-input font-mono" placeholder="/poolname (default)">
+                            <p class="text-text-tertiary text-xs mt-1">
+                                Leave empty to use <code>/&lt;pool&gt;</code>, or <code>none</code> for no mount.
+                            </p>
+                        </div>
+
+                        <!-- Alternate root (-R) -->
+                        <div>
+                            <label for="altroot" class="form-label text-sm">Alternate Root (-R)</label>
+                            <input type="text" id="altroot" name="altroot" data-create-option="altroot"
+                                   class="form-input font-mono" placeholder="e.g. /mnt/altroot">
+                            <p class="text-text-tertiary text-xs mt-1">
+                                Mounts the pool under this directory instead of the live root.
+                            </p>
+                        </div>
+
                         <!-- Force Creation -->
                         <div class="flex items-center gap-3">
                             <input type="checkbox" id="force" name="force" class="form-checkbox">
@@ -366,6 +404,205 @@
                             </label>
                         </div>
                     </div>
+
+                    {% if root_property_specs %}
+                    <!-- Root dataset properties (-O) -->
+                    <div class="pt-4 border-t border-border-subtle">
+                        <h3 class="text-base font-semibold text-text-primary">Root Dataset Properties (-O)</h3>
+                        <p class="text-text-tertiary text-xs mb-3">
+                            Applied to the new pool's root dataset, so they are reported with source
+                            <code class="bg-bg-base px-1 py-0.5 rounded">local</code> on it. Leave a field
+                            on "Inherit / default" to keep the ZFS default.
+                        </p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {% for spec in root_property_specs %}
+                            <div>
+                                <label for="root_property_{{ spec.name }}" class="form-label text-sm">{{ spec.label }}</label>
+                                {% if spec.free_text %}
+                                <input type="text" id="root_property_{{ spec.name }}"
+                                       name="root_property_{{ spec.name }}"
+                                       data-create-option="root_property_{{ spec.name }}"
+                                       class="form-input font-mono" value="{{ spec.default }}">
+                                {% else %}
+                                <select id="root_property_{{ spec.name }}"
+                                        name="root_property_{{ spec.name }}"
+                                        data-create-option="root_property_{{ spec.name }}"
+                                        class="form-select">
+                                    <option value="" {% if not spec.default %}selected{% endif %}>Inherit / default</option>
+                                    {% for choice in spec.choices %}
+                                    <option value="{{ choice }}" {% if choice == spec.default %}selected{% endif %}>{{ choice }}</option>
+                                    {% endfor %}
+                                </select>
+                                {% endif %}
+                                {% if spec.help %}
+                                <p class="text-text-tertiary text-xs mt-1">{{ spec.help }}</p>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if pool_property_specs %}
+                    <!-- Pool properties (-o) -->
+                    <div class="pt-4 border-t border-border-subtle">
+                        <h3 class="text-base font-semibold text-text-primary">Pool Properties (-o)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
+                            {% for spec in pool_property_specs %}
+                            <div>
+                                <label for="pool_property_{{ spec.name }}" class="form-label text-sm">{{ spec.label }}</label>
+                                {% if spec.name == 'compatibility' %}
+                                <select id="pool_property_{{ spec.name }}"
+                                        name="pool_property_{{ spec.name }}"
+                                        data-create-option="pool_property_{{ spec.name }}"
+                                        class="form-select">
+                                    <option value="" selected>Default (all features)</option>
+                                    {% for file in compatibility_files %}
+                                    <option value="{{ file.name }}" title="{{ file.description }}">
+                                        {{ file.name }}{% if file.boot %} (boot pools / GRUB){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <p id="compatibility-help" class="text-text-tertiary text-xs mt-1">
+                                    Restricts the pool to the features listed in the chosen file.
+                                    {% if compatibility_files|length > 1 %}
+                                    <code>grub2</code> is required for pools booted by GRUB.
+                                    {% endif %}
+                                </p>
+                                {% elif spec.free_text %}
+                                <input type="text" id="pool_property_{{ spec.name }}"
+                                       name="pool_property_{{ spec.name }}"
+                                       data-create-option="pool_property_{{ spec.name }}"
+                                       class="form-input font-mono" value="{{ spec.default }}">
+                                {% if spec.help %}
+                                <p class="text-text-tertiary text-xs mt-1">{{ spec.help }}</p>
+                                {% endif %}
+                                {% else %}
+                                <select id="pool_property_{{ spec.name }}"
+                                        name="pool_property_{{ spec.name }}"
+                                        data-create-option="pool_property_{{ spec.name }}"
+                                        class="form-select">
+                                    <option value="" selected>Default</option>
+                                    {% for choice in spec.choices %}
+                                    <option value="{{ choice }}">{{ choice }}</option>
+                                    {% endfor %}
+                                </select>
+                                {% if spec.help %}
+                                <p class="text-text-tertiary text-xs mt-1">{{ spec.help }}</p>
+                                {% endif %}
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% if not supports_compatibility %}
+                        <p class="text-text-tertiary text-xs mt-2">Compatibility requires OpenZFS 2.1+.</p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {% if supports_encryption %}
+                    <!-- Root dataset encryption (issue #15 / M8 key options) -->
+                    <div class="pt-4 border-t border-border-subtle">
+                        <h3 class="text-base font-semibold text-text-primary">Root Dataset Encryption</h3>
+                        <div class="flex items-start gap-2 text-xs text-warning-400 bg-warning-900/20 rounded-lg p-3 my-3">
+                            <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            <p>
+                                Encrypting the pool's root dataset <strong>cannot be undone</strong>.
+                                Every replica must be able to load the key, and a lost key means the data
+                                is unrecoverable. Replication needs the key at the receiving end.
+                            </p>
+                        </div>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="encryption_enabled" data-create-option="encryption" value="on">
+                            <span class="text-sm text-text-primary">Encrypt the root dataset</span>
+                        </label>
+                        <div id="encryption-options" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3" style="display: none;">
+                            <div>
+                                <label for="keyformat" class="form-label text-sm">Key format</label>
+                                <select id="keyformat" name="keyformat" data-create-option="keyformat" class="form-select">
+                                    {% for fmt in keyformats %}
+                                    <option value="{{ fmt }}" {% if fmt == keyformat %}selected{% endif %}>{{ fmt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="keylocation" class="form-label text-sm">Key location</label>
+                                <select id="keylocation" name="keylocation" data-create-option="keylocation" class="form-select">
+                                    {% for loc in keylocation_types %}
+                                    <option value="{{ loc }}" {% if loc == keylocation %}selected{% endif %}>{{ loc }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div id="key-source-field" style="display: none;">
+                                <label for="key_source" class="form-label text-sm">Key file source</label>
+                                <select id="key_source" name="key_source" data-create-option="key_source" class="form-select">
+                                    <option value="existing" selected>Use an existing key file</option>
+                                    <option value="generate">Generate a new random key file</option>
+                                    <option value="string">Create a key file from text I enter</option>
+                                </select>
+                                <p id="key-source-generate-help" class="text-text-tertiary text-xs mt-1" style="display: none;">
+                                    WebZFS writes a new random key in the selected format (32 random bytes for raw, 64 hex digits for hex, a random passphrase for passphrase). The key is never shown or logged.
+                                </p>
+                            </div>
+                            <div id="key-file-field" style="display: none;">
+                                <label for="key_file_path" class="form-label text-sm">Key file path</label>
+                                <input type="text" id="key_file_path" name="key_file_path"
+                                       data-create-option="key_file_path" class="form-input font-mono"
+                                       placeholder="/etc/zfs/keys/pool.key">
+                                <p id="key-file-existing-help" class="text-text-tertiary text-xs mt-1">
+                                    Absolute path to an existing key file. It must be a regular file owned by root with mode 0600. WebZFS verifies the permissions without reading the key.
+                                </p>
+                                <p id="key-file-new-help" class="text-text-tertiary text-xs mt-1" style="display: none;">
+                                    Absolute path for the new key file. The file must not exist; WebZFS never overwrites a key file. The directory must be owned by root with no group or other access (mode 0700) and is created with mode 0700 if missing. The file is written only when the pool is created, not by the dry run.
+                                </p>
+                            </div>
+                            <div id="key-string-field" style="display: none;">
+                                <label for="key_string" class="form-label text-sm">Key text</label>
+                                <input type="password" id="key_string" name="key_string"
+                                       data-create-option="key_string" class="form-input font-mono" autocomplete="off">
+                                <p class="text-text-tertiary text-xs mt-1">
+                                    Raw: exactly 32 bytes. Hex: exactly 64 hexadecimal characters. Passphrase: 8 to 512 bytes. The text is written to the key file and is never shown or logged.
+                                </p>
+                            </div>
+                            <div id="key-backup-warning" class="md:col-span-2 text-xs text-warning-400 bg-warning-900/20 rounded-lg p-3" style="display: none;">
+                                <strong>Back up the key file offsite.</strong>
+                                The key file is the only way to unlock this pool's root dataset. If it is lost or the disk holding it fails, the encrypted data cannot be recovered. Copy the key file to secure offsite storage as soon as it exists, and keep it off the pool it unlocks.
+                            </div>
+                            <div id="key-url-field" style="display: none;">
+                                <label for="key_url" class="form-label text-sm">Key URL</label>
+                                <input type="text" id="key_url" name="key_url"
+                                       data-create-option="key_url" class="form-input font-mono"
+                                       placeholder="https://host/path/key">
+                                {% if not https_keylocation_supported %}
+                                <p class="text-text-tertiary text-xs mt-1">
+                                    HTTPS key locations are not available on this system.
+                                </p>
+                                {% endif %}
+                            </div>
+                            <div id="passphrase-field">
+                                <label for="passphrase" class="form-label text-sm">Passphrase</label>
+                                <input type="password" id="passphrase" name="passphrase"
+                                       data-create-option="passphrase" class="form-input" autocomplete="new-password">
+                            </div>
+                            <div id="passphrase-confirm-field">
+                                <label for="passphrase_confirm" class="form-label text-sm">Confirm passphrase</label>
+                                <input type="password" id="passphrase_confirm" name="passphrase_confirm"
+                                       data-create-option="passphrase_confirm" class="form-input" autocomplete="new-password">
+                            </div>
+                            <div>
+                                <label for="pbkdf2iters" class="form-label text-sm">PBKDF2 iterations</label>
+                                <input type="text" id="pbkdf2iters" name="pbkdf2iters"
+                                       data-create-option="pbkdf2iters" class="form-input font-mono"
+                                       placeholder="350000 (default)">
+                                <p class="text-text-tertiary text-xs mt-1">
+                                    Passphrase keys only. Minimum 100000.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -691,7 +928,11 @@
 <!-- Confirmation Modal for Pool Creation -->
 {% set id = 'confirm-create-pool' %}
 {% set title = 'Create ZFS Pool' %}
-{% set message = 'Are you sure you want to create this pool? This will DESTROY ALL DATA on the specified devices! This operation cannot be undone.' %}
+{% set message %}<p>Are you sure you want to create this pool? This will DESTROY ALL DATA on the specified devices! This operation cannot be undone.</p>
+<div class="mt-4 text-left">
+  <div class="text-xs font-semibold text-text-primary mb-1">Dry run (<code>zpool create -n</code>)</div>
+  <pre id="create-dry-run-text" class="text-xs font-mono bg-bg-base border border-border-subtle rounded p-2 whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-text-secondary">Checking the configuration...</pre>
+</div>{% endset %}
 {% set confirm_text = 'Create Pool' %}
 {% set confirm_class = 'danger' %}
 {% set confirm_action = 'submitCreatePool()' %}
@@ -920,12 +1161,85 @@ function showPoolCreationProgress() {
     }
 }
 
+// Mirror every [data-create-option] control into the hidden create form.
+// The visible controls live outside the form, so the values are copied into
+// hidden inputs right before the dry run and the real submission.
+function syncCreateForm() {
+    const form = document.getElementById('create-pool-form');
+    if (!form) {
+        return;
+    }
+    document.querySelectorAll('[data-create-option]').forEach(el => {
+        const name = el.getAttribute('data-create-option');
+        if (!name) {
+            return;
+        }
+        let hidden = form.querySelector(`input[type="hidden"][name="${name}"]`);
+        if (!hidden) {
+            hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = name;
+            form.appendChild(hidden);
+        }
+        if (el.type === 'checkbox') {
+            hidden.value = el.checked ? (el.value || 'on') : '';
+        } else {
+            hidden.value = el.value || '';
+        }
+    });
+}
+
+// Run 'zpool create -n' and render the command plus its output in the
+// confirmation dialog before anything is created.
+async function runCreateDryRun() {
+    const output = document.getElementById('create-dry-run-text');
+    if (!output) {
+        return;
+    }
+    output.textContent = 'Running zpool create -n...';
+    try {
+        syncCreateForm();
+        const form = document.getElementById('create-pool-form');
+        // The dry run never needs secrets; keep them out of this request.
+        const formData = new FormData(form);
+        formData.delete('passphrase');
+        formData.delete('passphrase_confirm');
+        formData.delete('key_string');
+        const response = await fetch('/zfs/pools/create/preview', {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+        });
+        const data = await response.json();
+        const lines = [];
+        if (data.command) {
+            lines.push('$ ' + data.command);
+        }
+        if (data.success) {
+            lines.push('Dry run passed: zpool would create the pool without errors.');
+        } else if (data.error) {
+            lines.push('Dry run failed: ' + data.error);
+        } else if (data.success === false) {
+            lines.push('Dry run failed.');
+        }
+        if (data.output) {
+            lines.push(data.output);
+        }
+        output.textContent = lines.join('\n');
+        output.classList.toggle('text-danger-400', !data.success);
+        output.classList.toggle('text-text-secondary', !!data.success);
+    } catch (err) {
+        output.textContent = 'Dry run could not be completed: ' + err;
+        output.classList.add('text-danger-400');
+    }
+}
+
 window.submitCreatePool = function() {
     const form = document.getElementById('create-pool-form');
     if (!form || poolCreateSubmitting) {
         return;
     }
 
+    syncCreateForm();
     poolCreateSubmitting = true;
     showPoolCreationProgress();
 
@@ -1512,6 +1826,46 @@ function updateCommandPreview() {
     if (ashift) {
         cmd.push('-o', `ashift=${ashift}`);
     }
+
+    // Pool (-o) and root dataset (-O) properties, -m and -R
+    document.querySelectorAll('[data-create-option]').forEach(el => {
+        const name = el.getAttribute('data-create-option');
+        let value;
+        if (el.type === 'checkbox') {
+            value = el.checked ? (el.value || 'on') : '';
+        } else {
+            value = (el.value || '').trim();
+        }
+        if (!value) {
+            return;
+        }
+        if (name.startsWith('root_property_')) {
+            cmd.push('-O', `${name.slice('root_property_'.length)}=${value}`);
+        } else if (name.startsWith('pool_property_')) {
+            cmd.push('-o', `${name.slice('pool_property_'.length)}=${value}`);
+        } else if (name === 'encryption') {
+            cmd.push('-O', 'encryption=on');
+        } else if (name === 'keyformat') {
+            cmd.push('-O', `keyformat=${value}`);
+        } else if (name === 'keylocation') {
+            let location = value;
+            const keyPath = (document.getElementById('key_file_path')?.value || '').trim();
+            const keyUrl = (document.getElementById('key_url')?.value || '').trim();
+            if (value === 'file' && keyPath) {
+                location = `file://${keyPath}`;
+            } else if (value === 'https' && keyUrl) {
+                location = keyUrl;
+            }
+            cmd.push('-O', `keylocation=${location}`);
+        } else if (name === 'pbkdf2iters') {
+            cmd.push('-O', `pbkdf2iters=${value}`);
+        } else if (name === 'mountpoint') {
+            cmd.push('-m', value);
+        } else if (name === 'altroot') {
+            cmd.push('-R', value);
+        }
+        // draid_layout, log_layout and passphrase fields are rendered below/never
+    });
     
     // Add pool name
     cmd.push(poolName);
@@ -1520,7 +1874,14 @@ function updateCommandPreview() {
     dataVdevs.forEach(vdev => {
         // Add vdev type (except for single disk)
         if (vdev.type !== 'single') {
-            cmd.push(vdev.type);
+            let vdevToken = vdev.type;
+            if (vdevToken.startsWith('draid')) {
+                const draidLayout = (document.getElementById('draid_layout')?.value || '').trim();
+                if (draidLayout) {
+                    vdevToken = draidLayout;
+                }
+            }
+            cmd.push(vdevToken);
         }
         
         // Add disk devices
@@ -1548,8 +1909,9 @@ function updateCommandPreview() {
     // Add log devices
     if (poolDisks.log.length > 0) {
         cmd.push('log');
-        // Check if we have multiple log devices (mirrored SLOG)
-        if (poolDisks.log.length > 1) {
+        // Issue #15: honour the chosen log layout instead of always mirroring
+        const logLayout = (document.getElementById('log_layout')?.value || 'mirror');
+        if (logLayout === 'mirror' && poolDisks.log.length > 1) {
             cmd.push('mirror');
         }
         poolDisks.log.forEach(disk => {
@@ -1786,6 +2148,13 @@ function validateAndCreate() {
             alert(`VDEV ${vdev.id + 1}: RAID-Z3 requires at least 5 disks`);
             return;
         }
+        if (vdev.type.startsWith('draid')) {
+            const parity = parseInt(vdev.type.replace('draid', ''), 10) || 1;
+            if (diskCount < parity + 1) {
+                alert(`VDEV ${vdev.id + 1}: ${vdev.type} requires at least ${parity + 1} disks`);
+                return;
+            }
+        }
     }
     
     // Populate form - need to format for multiple vdevs
@@ -1814,8 +2183,46 @@ function validateAndCreate() {
     
     document.getElementById('form_force').value = document.getElementById('force').checked ? 'true' : 'false';
     document.getElementById('form_ashift').value = document.getElementById('ashift').value;
-    
-    showConfirm('confirm-create-pool');
+
+    // Issue #15: the encryption toggle gates the key fields and the passphrase
+    // is required for a prompt key location.
+    const encryptionEnabled = document.getElementById('encryption_enabled');
+    if (encryptionEnabled && encryptionEnabled.checked) {
+        const keylocation = document.getElementById('keylocation')?.value || 'prompt';
+        if (keylocation === 'prompt') {
+            const passphrase = document.getElementById('passphrase')?.value || '';
+            const confirmPassphrase = document.getElementById('passphrase_confirm')?.value || '';
+            if (!passphrase) {
+                alert('Please enter an encryption passphrase');
+                document.getElementById('passphrase')?.focus();
+                return;
+            }
+            if (passphrase !== confirmPassphrase) {
+                alert('Passphrases do not match');
+                document.getElementById('passphrase_confirm')?.focus();
+                return;
+            }
+        }
+        if (keylocation === 'file' && !(document.getElementById('key_file_path')?.value || '').trim()) {
+            alert('Please enter the key file path');
+            document.getElementById('key_file_path')?.focus();
+            return;
+        }
+        const keySource = document.getElementById('key_source')?.value || 'existing';
+        if (keylocation === 'file' && keySource === 'string' && !(document.getElementById('key_string')?.value || '')) {
+            alert('Please enter the key text');
+            document.getElementById('key_string')?.focus();
+            return;
+        }
+        if (keylocation === 'https' && !(document.getElementById('key_url')?.value || '').trim()) {
+            alert('Please enter the key URL');
+            document.getElementById('key_url')?.focus();
+            return;
+        }
+    }
+
+    syncCreateForm();
+    runCreateDryRun().then(() => showConfirm('confirm-create-pool'));
 }
 
 // Run disk check (called from modal button)
@@ -1965,17 +2372,80 @@ window.showConfirm = function(dialogId) {
     console.warn('Could not open modal using Alpine.js, tried dispatching event');
 };
 
+// Show/hide the dRAID layout field based on the selected data vdev type.
+function updateDraidLayoutVisibility() {
+    const vdevType = document.getElementById('vdev_type');
+    const draidLayout = document.getElementById('draid_layout');
+    if (!vdevType || !draidLayout) {
+        return;
+    }
+    draidLayout.style.display = vdevType.value.startsWith('draid') ? 'inline-block' : 'none';
+}
+
+// Show/hide the encryption key fields based on the toggle and location.
+function updateEncryptionFields() {
+    const enabled = document.getElementById('encryption_enabled');
+    const container = document.getElementById('encryption-options');
+    if (!enabled || !container) {
+        return;
+    }
+    container.style.display = enabled.checked ? 'grid' : 'none';
+
+    const keylocation = document.getElementById('keylocation')?.value || 'prompt';
+    const fileField = document.getElementById('key-file-field');
+    const urlField = document.getElementById('key-url-field');
+    const passphraseField = document.getElementById('passphrase-field');
+    const passphraseConfirmField = document.getElementById('passphrase-confirm-field');
+    if (fileField) fileField.style.display = keylocation === 'file' ? 'block' : 'none';
+    if (urlField) urlField.style.display = keylocation === 'https' ? 'block' : 'none';
+
+    // Key file source (existing / generate / string) and offsite warning
+    const isFile = keylocation === 'file';
+    const keySource = document.getElementById('key_source')?.value || 'existing';
+    const showWhen = (id, visible) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = visible ? 'block' : 'none';
+    };
+    showWhen('key-source-field', isFile);
+    showWhen('key-source-generate-help', isFile && keySource === 'generate');
+    showWhen('key-string-field', isFile && keySource === 'string');
+    showWhen('key-file-existing-help', keySource === 'existing');
+    showWhen('key-file-new-help', keySource !== 'existing');
+    showWhen('key-backup-warning', isFile);
+
+    const isPrompt = keylocation === 'prompt';
+    if (passphraseField) passphraseField.style.display = isPrompt ? 'block' : 'none';
+    if (passphraseConfirmField) passphraseConfirmField.style.display = isPrompt ? 'block' : 'none';
+}
+
 // Initialize - run immediately since script is at bottom of page
 (function() {
     renderVdevs();
     renderTopology();
     renderMetadataMirrors();
     updateCapacities();
-    
+    updateDraidLayoutVisibility();
+    updateEncryptionFields();
+
     // Add event listeners for command preview updates
     document.getElementById('pool_name_header').addEventListener('input', updateCommandPreview);
     document.getElementById('ashift').addEventListener('change', updateCommandPreview);
     document.getElementById('force').addEventListener('change', updateCommandPreview);
+
+    document.getElementById('vdev_type').addEventListener('change', function() {
+        updateDraidLayoutVisibility();
+        updateCommandPreview();
+    });
+
+    document.querySelectorAll('[data-create-option]').forEach(el => {
+        const event = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
+        el.addEventListener(event, function() {
+            if (el.id === 'encryption_enabled' || el.id === 'keylocation' || el.id === 'key_source') {
+                updateEncryptionFields();
+            }
+            updateCommandPreview();
+        });
+    });
 })();
 </script>
 

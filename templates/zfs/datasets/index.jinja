@@ -14,6 +14,18 @@
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 class="text-3xl font-bold text-text-primary">ZFS Datasets Management</h1>
+        {% if datasets %}
+        <form method="post" action="/zfs/datasets/load-all-keys" class="inline-flex">
+            <button type="submit"
+                    class="btn-info inline-flex items-center gap-2"
+                    title="Run zfs load-key -a for all imported pools">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                </svg>
+                Load All Keys
+            </button>
+        </form>
+        {% endif %}
     </div>
 
     <!-- Success/Error Messages -->

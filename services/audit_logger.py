@@ -230,8 +230,14 @@ class AuditLogger:
         vdevs: list,
         success: bool = True,
         error: Optional[str] = None,
+        **details,
     ) -> None:
-        """Log pool creation"""
+        """Log pool creation.
+
+        ``details`` holds the non-secret create options (pool and root
+        dataset properties with a log-safe key location, mountpoint,
+        altroot, force). Passphrases and key material must never be passed.
+        """
         self.log_zfs_operation(
             user=user,
             operation="create_pool",
@@ -239,6 +245,7 @@ class AuditLogger:
             vdevs=",".join(vdevs) if vdevs else None,
             success=success,
             error=error,
+            **details,
         )
 
     def log_pool_destroy(
