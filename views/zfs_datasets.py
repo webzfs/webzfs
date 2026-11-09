@@ -359,6 +359,12 @@ async def dataset_properties(
     """Display dataset properties"""
     try:
         properties = dataset_service.get_properties(dataset_path)
+        try:
+            descendant_count = dataset_service.count_descendants(dataset_path)
+        except Exception:
+            # The properties page must still render when the child listing
+            # fails; recursive inherit then falls back to a generic warning.
+            descendant_count = 0
         openzfs_man_url = get_openzfs_man_page_url()
         
         return templates.TemplateResponse(
@@ -367,6 +373,9 @@ async def dataset_properties(
             context={
                 "dataset_name": dataset_path,
                 "properties": properties,
+                "descendant_count": descendant_count,
+                "non_inheritable_props": dataset_service.NON_INHERITABLE_PROPERTIES,
+                "no_received_revert_props": dataset_service.NO_RECEIVED_REVERT_PROPERTIES,
                 "openzfs_man_url": openzfs_man_url,
                 "page_title": f"Dataset Properties: {dataset_path}"
             }
@@ -410,6 +419,45 @@ async def set_dataset_property(
             user=current_user, dataset_name=dataset_path,
             property_name=property_name, property_value=property_value,
             success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/datasets/{dataset_path}/properties?error={quote(str(e))}",
+            status_code=303
+        )
+
+
+@router.post("/{dataset_path:path}/properties/inherit", response_class=HTMLResponse)
+async def inherit_dataset_property(
+    request: Request,
+    dataset_path: str,
+    property_name: Annotated[str, Form()],
+    recursive: Annotated[bool, Form()] = False,
+    received: Annotated[bool, Form()] = False,
+    current_user: str = Depends(get_current_user)
+):
+    """Inherit a dataset property from its parent, default, or received value"""
+    try:
+        dataset_service.inherit_property(
+            dataset_path, property_name,
+            recursive=recursive, received=received
+        )
+        audit_logger.log_dataset_property_inherit(
+            user=current_user, dataset_name=dataset_path,
+            property_name=property_name, recursive=recursive,
+            received=received, success=True
+        )
+        message = "Property inherited successfully"
+        if received:
+            message = "Property reverted to its received value"
+        return RedirectResponse(
+            url=f"/zfs/datasets/{dataset_path}/properties?message={quote(message)}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_dataset_property_inherit(
+            user=current_user, dataset_name=dataset_path,
+            property_name=property_name, recursive=recursive,
+            received=received, success=False, error=str(e)
         )
         return RedirectResponse(
             url=f"/zfs/datasets/{dataset_path}/properties?error={quote(str(e))}",
