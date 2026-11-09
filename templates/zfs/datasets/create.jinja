@@ -47,6 +47,7 @@
                   class="space-y-6" hx-boost="false"
                   onsubmit="return prepareDatasetCreate(event)" x-data="{ 
                 datasetType: '{{ dataset_type if dataset_type else 'filesystem' }}', 
+                sparse: {{ 'true' if sparse else 'false' }},
                 encryption: '{{ encryption if encryption else '' }}',
                  passphrase: '',
                  passphraseConfirm: '',
@@ -230,6 +231,58 @@
                     </p>
                 </div>
 
+                <!-- Volume Options (only for volumes) -->
+                <div x-show="datasetType === 'volume'" x-transition
+                     class="border-t border-border-subtle pt-6 space-y-6">
+                    <h3 class="text-lg font-semibold text-text-primary">Volume Options</h3>
+
+                    <div class="flex items-start gap-3">
+                        <input
+                            type="checkbox"
+                            id="sparse"
+                            name="sparse"
+                            value="on"
+                            class="form-checkbox mt-1"
+                            x-model="sparse"
+                        >
+                        <div>
+                            <label for="sparse" class="form-label mb-0 cursor-pointer">
+                                Sparse volume (thin provisioned)
+                            </label>
+                            <p class="text-text-tertiary text-sm mt-1">
+                                Creates the volume with no reservation
+                                (<span class="font-mono">refreservation=none</span>).
+                                Only space actually written is consumed, but writes can fail
+                                with ENOSPC when the pool is full.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="volblocksize" class="form-label">
+                            Volume Block Size (volblocksize)
+                        </label>
+                        <select
+                            id="volblocksize"
+                            name="volblocksize"
+                            class="form-select"
+                        >
+                            <option value="" {% if not volblocksize %}selected{% endif %}>
+                                Default (16K on OpenZFS 2.2 and later, 8K before)
+                            </option>
+                            {% for size in ['512', '1K', '2K', '4K', '8K', '16K', '32K', '64K', '128K'] %}
+                            <option value="{{ size }}" {% if volblocksize == size %}selected{% endif %}>
+                                {{ size }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-text-tertiary text-sm mt-1">
+                            Power of two between 512B and 128KiB. Cannot be changed once data
+                            has been written to the volume.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- Mountpoint (only for filesystems) -->
                 <div x-show="datasetType === 'filesystem'" x-transition>
                     <label for="mountpoint" class="form-label">
@@ -271,8 +324,8 @@
                     </p>
                 </div>
 
-                <!-- Record Size -->
-                <div>
+                <!-- Record Size (filesystems only; zvols use volblocksize) -->
+                <div x-show="datasetType === 'filesystem'" x-transition>
                     <label for="recordsize" class="form-label">
                         Record Size
                     </label>

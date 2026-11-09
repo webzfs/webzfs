@@ -121,6 +121,7 @@ def _execute_locked_job(
         source_dataset=job.get("source_dataset", ""),
         target_dataset=job.get("target_dataset", ""),
         replication_type=replication_type,
+        receive_options=job.get("receive_options") or None,
     )
 
     def finish(status: str, error_message: Optional[str] = None,
@@ -203,6 +204,7 @@ def _execute_locked_job(
             create_bookmark=job.get("create_bookmark", False),
             force_delete=job.get("force_delete", False),
             send_options="L" if job.get("large_blocks", False) else None,
+            recv_options=job.get("receive_options") or None,
             additional_flags=job.get("additional_flags") or None,
             source_host=source_host,
             target_host=target_host,

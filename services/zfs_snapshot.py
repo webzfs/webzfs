@@ -36,7 +36,10 @@ class ZFSSnapshotService:
         if not dataset_name:
             raise ValueError("Dataset name cannot be empty")
         
-        if not cls.ZFS_DATASET_NAME_PATTERN.match(dataset_name):
+        # fullmatch, not match: a trailing '$' still matches immediately
+        # before a final newline, so match() accepts "pool/data\n" and lets
+        # a trailing newline reach the zfs argv.
+        if not cls.ZFS_DATASET_NAME_PATTERN.fullmatch(dataset_name):
             raise ValueError(
                 f"Invalid dataset name '{dataset_name}'. Dataset names must start with an alphanumeric "
                 "character and contain only alphanumeric characters, underscores, hyphens, "
@@ -61,7 +64,8 @@ class ZFSSnapshotService:
         if not snapshot_name:
             raise ValueError("Snapshot name cannot be empty")
         
-        if not cls.ZFS_SNAPSHOT_NAME_PATTERN.match(snapshot_name):
+        # fullmatch, not match: see validate_dataset_name.
+        if not cls.ZFS_SNAPSHOT_NAME_PATTERN.fullmatch(snapshot_name):
             raise ValueError(
                 f"Invalid snapshot name '{snapshot_name}'. Snapshot names must start with an alphanumeric "
                 "character and contain only alphanumeric characters, underscores, hyphens, "
@@ -314,34 +318,121 @@ class ZFSSnapshotService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to destroy snapshot: {e.stderr}")
     
-    def destroy_snapshots_bulk(self, snapshots: List[str], 
+    def destroy_snapshots_bulk(self, snapshots: List[str],
                               defer: bool = False) -> Dict[str, Any]:
         """
-        Destroy multiple snapshots in a single operation
-        
+        Destroy multiple snapshots, grouped per dataset.
+
+        Snapshots of the same dataset are destroyed with one command
+        ``zfs destroy [-d] <dataset>@<snap>[,<snap>...]`` instead of one
+        command per snapshot, so a large selection costs one transaction
+        group sync per dataset (zfs-destroy(8): comma-separated lists use
+        short snapshot names only). Long selections are chunked under the
+        argument limits; see build_destroy_specs().
+
         Args:
-            snapshots: List of snapshot names to destroy
+            snapshots: List of full snapshot names (dataset@snapshot)
             defer: Defer deletion if snapshots have clones
-            
+
         Returns:
-            Dictionary with results (success count, errors)
+            Dictionary with success/failed counts, per-command results and errors
         """
+        specs = build_destroy_specs(snapshots)
+        results = []
         success_count = 0
         failed_count = 0
         errors = []
-        
-        for snapshot in snapshots:
+
+        for spec in specs:
+            cmd = ['zfs', 'destroy']
+            if defer:
+                cmd.append('-d')
+            cmd.append(spec['spec'])
+
+            # Catch every error per command: earlier chunks may already be
+            # destroyed, so one failure must not abort the loop or the
+            # per-snapshot audit of what did succeed.
             try:
-                self.destroy_snapshot(snapshot, defer=defer)
-                success_count += 1
+                run_zfs_command(cmd)
+                success_count += len(spec['snapshots'])
+                results.append({**spec, 'success': True, 'error': None})
             except Exception as e:
-                failed_count += 1
-                errors.append(f"{snapshot}: {str(e)}")
-        
+                failed_count += len(spec['snapshots'])
+                error = (getattr(e, 'stderr', None) or str(e)).strip()
+                errors.append(f"{spec['spec']}: {error}")
+                results.append({**spec, 'success': False, 'error': error})
+
         return {
             'success': success_count,
             'failed': failed_count,
-            'errors': errors
+            'errors': errors,
+            'results': results,
+            'commands': [spec['spec'] for spec in specs],
+            'snapshot_count': sum(len(spec['snapshots']) for spec in specs),
+        }
+
+    def dry_run_destroy_bulk(self, snapshots: List[str],
+                             defer: bool = False) -> Dict[str, Any]:
+        """
+        Report what a bulk destroy would do without deleting anything.
+
+        Runs ``zfs destroy -nvp`` once per grouped spec and parses the
+        machine-parsable ``reclaim<TAB><bytes>`` line it prints. ``-n`` is a
+        no-op dry run, ``-p`` requests machine-parsable verbose output and
+        ``-v``/``-p`` make the reclaim total appear (zfs-destroy(8)).
+
+        Args:
+            snapshots: List of full snapshot names (dataset@snapshot)
+            defer: Report the dry run with the -d defer option applied
+
+        Returns:
+            Dictionary with the grouped specs, per-command reclaim values,
+            the total reclaimable bytes (raw and human-readable) and errors
+        """
+        specs = build_destroy_specs(snapshots)
+        commands = []
+        errors = []
+        total_reclaim = 0
+
+        for spec in specs:
+            cmd = ['zfs', 'destroy', '-nvp']
+            if defer:
+                cmd.append('-d')
+            cmd.append(spec['spec'])
+
+            try:
+                result = run_zfs_command(cmd)
+                reclaim = parse_reclaim(result.stdout)
+                total_reclaim += reclaim
+                commands.append({
+                    'dataset': spec['dataset'],
+                    'snapshots': spec['snapshots'],
+                    'spec': spec['spec'],
+                    'reclaim': reclaim,
+                    'reclaim_human': format_bytes(reclaim),
+                    'output': (result.stdout or '').strip(),
+                    'error': None,
+                })
+            except Exception as e:
+                error = (getattr(e, 'stderr', None) or str(e)).strip()
+                errors.append(f"{spec['spec']}: {error}")
+                commands.append({
+                    'dataset': spec['dataset'],
+                    'snapshots': spec['snapshots'],
+                    'spec': spec['spec'],
+                    'reclaim': 0,
+                    'reclaim_human': format_bytes(0),
+                    'output': '',
+                    'error': error,
+                })
+
+        return {
+            'specs': specs,
+            'commands': commands,
+            'errors': errors,
+            'total_reclaim': total_reclaim,
+            'total_reclaim_human': format_bytes(total_reclaim),
+            'snapshot_count': sum(len(spec['snapshots']) for spec in specs),
         }
     
     def rollback_snapshot(self, snapshot_name: str, force: bool = False) -> None:
@@ -745,3 +836,159 @@ class ZFSSnapshotService:
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get snapshot space: {e.stderr}")
+
+
+# ---------------------------------------------------------------------------
+# Bulk snapshot destroy helpers
+#
+# `zfs destroy` accepts several snapshots of the same dataset as a
+# comma-separated list of *short* names (the part after '@'), e.g.
+#   zfs destroy tank/data@snap1,snap2,snap3
+# (zfs-destroy(8), OpenZFS 2.4.4: "Only the snapshot's short name (the part
+# after the @) should be specified when using a range or comma-separated
+# list"). Grouping a selection per dataset therefore turns N selected
+# snapshots into one command per dataset instead of N commands, each with its
+# own transaction group sync.
+# ---------------------------------------------------------------------------
+
+#: Maximum number of short snapshot names placed in one comma-separated list.
+BULK_DESTROY_MAX_NAMES_PER_COMMAND = 64
+
+#: Conservative maximum length of a single `zfs destroy` argument.
+BULK_DESTROY_MAX_ARG_LENGTH = 4096
+
+_RECLAIM_MACHINE_RE = re.compile(r'^reclaim\s+(\d+)$')
+_RECLAIM_HUMAN_RE = re.compile(
+    r'^(?:would|will)\s+reclaim\s+([0-9]+(?:\.[0-9]+)?)\s*([KMGTPEZ]?)B?$',
+    re.IGNORECASE,
+)
+_NICEBYTES_UNITS = ' KMGTPEZ'
+
+
+def format_bytes(value: int) -> str:
+    """Format a byte count using binary units, similar to zfs_nicebytes(3)."""
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+    if value < 1024:
+        return f"{value}B"
+
+    size = float(value)
+    for unit in _NICEBYTES_UNITS[1:]:
+        size /= 1024.0
+        if size < 1024.0 or unit == _NICEBYTES_UNITS[-1]:
+            return f"{size:.2f}{unit}"
+    return f"{value}B"
+
+
+def parse_reclaim(output: Optional[str]) -> int:
+    """
+    Sum the reclaimable bytes reported by `zfs destroy -nvp` (or `-nv`).
+
+    With ``-p`` OpenZFS prints one machine-parsable ``reclaim<TAB><bytes>``
+    line per command, covering the whole comma-separated list. The
+    human-readable form (``would reclaim 1.5G``) is accepted as a fallback so
+    the parser keeps working without ``-p``. Unrelated verbose lines are
+    ignored.
+
+    Raises:
+        ValueError: If a reclaim line carries a value that cannot be parsed
+    """
+    total = 0
+    for raw_line in (output or '').splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        match = _RECLAIM_MACHINE_RE.match(line)
+        if match:
+            total += int(match.group(1))
+            continue
+
+        match = _RECLAIM_HUMAN_RE.match(line)
+        if match:
+            exponent = _NICEBYTES_UNITS.index((match.group(2) or ' ').upper())
+            total += int(float(match.group(1)) * (1024 ** exponent))
+
+    return total
+
+
+def _destroy_spec(dataset: str, short_names: List[str]) -> Dict[str, Any]:
+    """Build one grouped destroy spec for a dataset and its short names."""
+    return {
+        'dataset': dataset,
+        'snapshots': list(short_names),
+        'spec': f"{dataset}@{','.join(short_names)}",
+    }
+
+
+def build_destroy_specs(
+    snapshots: List[str],
+    *,
+    max_names: int = BULK_DESTROY_MAX_NAMES_PER_COMMAND,
+    max_arg_length: int = BULK_DESTROY_MAX_ARG_LENGTH,
+) -> List[Dict[str, Any]]:
+    """
+    Group full snapshot names by dataset into `zfs destroy` specs.
+
+    Args:
+        snapshots: Full snapshot names in ``dataset@snapshot`` form
+        max_names: Maximum number of short names per comma-separated list
+        max_arg_length: Maximum length of the ``dataset@a,b,c`` argument
+
+    Returns:
+        List of dicts with ``dataset``, ``snapshots`` (short names in input
+        order) and ``spec`` (``dataset@short[,short...]``). A dataset yields a
+        single spec unless its selection exceeds ``max_names`` or the argument
+        would exceed ``max_arg_length``, in which case it is split. Duplicate
+        selections are collapsed.
+
+    Raises:
+        ValueError: If an entry is not a string or is not a valid full
+            snapshot name (validated before any command is built)
+    """
+    if isinstance(snapshots, str):
+        raise ValueError(
+            "snapshots must be a list of 'dataset@snapshot' strings, "
+            "not a single string"
+        )
+    if max_names < 1:
+        raise ValueError("max_names must be at least 1")
+
+    grouped: Dict[str, List[str]] = {}
+    seen = set()
+    for full_name in snapshots:
+        if not isinstance(full_name, str):
+            raise ValueError(
+                f"Invalid snapshot entry {full_name!r}: expected a string"
+            )
+        full_name = full_name.strip()
+        if not full_name:
+            continue
+        ZFSSnapshotService.validate_full_snapshot_name(full_name)
+        dataset, short_name = full_name.rsplit('@', 1)
+        if (dataset, short_name) in seen:
+            continue
+        seen.add((dataset, short_name))
+        grouped.setdefault(dataset, []).append(short_name)
+
+    specs: List[Dict[str, Any]] = []
+    for dataset, short_names in grouped.items():
+        chunk: List[str] = []
+        for short_name in short_names:
+            candidate = chunk + [short_name]
+            candidate_arg = f"{dataset}@{','.join(candidate)}"
+            if chunk and (
+                len(candidate) > max_names
+                or len(candidate_arg) > max_arg_length
+            ):
+                specs.append(_destroy_spec(dataset, chunk))
+                chunk = [short_name]
+            else:
+                chunk = candidate
+        if chunk:
+            specs.append(_destroy_spec(dataset, chunk))
+
+    return specs

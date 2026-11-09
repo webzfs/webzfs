@@ -73,38 +73,25 @@
 
     <!-- Properties Table -->
     {% if properties %}
-    {% set editable_props = ['atime', 'relatime', 'compression', 'dedup', 'checksum', 'copies', 'quota', 'refquota', 'reservation', 'refreservation', 'recordsize', 'sync', 'readonly', 'exec', 'setuid', 'devices', 'snapdir', 'aclmode', 'aclinherit', 'canmount', 'xattr', 'nbmand', 'vscan', 'primarycache', 'secondarycache', 'logbias', 'redundant_metadata', 'snapdev', 'mountpoint', 'sharenfs', 'sharesmb'] %}
+    <!-- Editable properties and their options come from core/zfs_property_catalog.py.
+         The defaults keep the page renderable when a caller omits the catalog data. -->
+    {% set editable_props = editable_props|default([]) %}
+    {% set property_options = property_options|default({}) %}
+    {% set property_help = property_help|default({}) %}
+    {% set property_labels = property_labels|default({}) %}
+    {% set property_warnings = property_warnings|default({}) %}
+    {% set property_value_types = property_value_types|default({}) %}
+    {% set existing_data_notice_map = existing_data_notice_map|default({}) %}
+    {% set user_properties = user_properties|default([]) %}
 
     <!-- Properties that OpenZFS only allows at dataset creation time -->
     {% set creation_only_props = ['casesensitivity', 'normalization', 'utf8only'] %}
-    
-    <!-- Define property options -->
-    {% set property_options = {
-        'atime': ['on', 'off'],
-        'relatime': ['on', 'off'],
-        'compression': ['off', 'lz4', 'gzip', 'gzip-1', 'gzip-9', 'zstd', 'lzjb'],
-        'dedup': ['on', 'off', 'verify', 'sha256', 'sha256,verify'],
-        'checksum': ['on', 'off', 'fletcher2', 'fletcher4', 'sha256', 'sha512', 'skein', 'edonr'],
-        'copies': ['1', '2', '3'],
-        'sync': ['standard', 'always', 'disabled'],
-        'readonly': ['on', 'off'],
-        'exec': ['on', 'off'],
-        'setuid': ['on', 'off'],
-        'devices': ['on', 'off'],
-        'snapdir': ['hidden', 'visible'],
-        'aclmode': ['discard', 'groupmask', 'passthrough', 'restricted'],
-        'aclinherit': ['discard', 'noallow', 'restricted', 'passthrough', 'passthrough-x'],
-        'canmount': ['on', 'off', 'noauto'],
-        'xattr': ['on', 'off', 'sa'],
-        'nbmand': ['on', 'off'],
-        'vscan': ['on', 'off'],
-        'primarycache': ['all', 'none', 'metadata'],
-        'secondarycache': ['all', 'none', 'metadata'],
-        'logbias': ['latency', 'throughput'],
-        'redundant_metadata': ['all', 'most'],
-        'snapdev': ['hidden', 'visible'],
-        'recordsize': ['512', '1K', '2K', '4K', '8K', '16K', '32K', '64K', '128K', '256K', '512K', '1M']
-    } %}
+
+    <!-- Inherit rules come from ZFSDatasetService. Plain inherit refuses
+         non_inheritable_props; -S (revert to received) refuses no_received_revert_props. -->
+    {% set non_inheritable_props = non_inheritable_props|default([]) %}
+    {% set no_received_revert_props = no_received_revert_props|default([]) %}
+    {% set descendant_count = descendant_count|default(0) %}
     
     <div class="card">
         <div class="p-4 bg-bg-elevated-2 border-b border-border-subtle flex flex-wrap justify-between items-center gap-4">
@@ -140,13 +127,24 @@
                         <!-- Property Name -->
                         <td class="px-6 py-4 text-sm font-medium text-text-primary">
                             <span class="flex items-center gap-1.5">
-                                {{ prop_name }}
+                                <span class="flex flex-col">
+                                    <span class="font-mono">{{ prop_name }}</span>
+                                    {% if prop_name in property_labels %}
+                                    <span class="text-xs font-normal text-text-tertiary">{{ property_labels[prop_name] }}</span>
+                                    {% endif %}
+                                </span>
                                 {% if prop_name in editable_props %}
                                 <svg class="w-3 h-3 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                                 </svg>
                                 {% endif %}
                             </span>
+                            {% if prop_name in property_help %}
+                            <p class="mt-1 text-xs font-normal text-text-tertiary">{{ property_help[prop_name] }}</p>
+                            {% endif %}
+                            {% if prop_name in property_warnings %}
+                            <p class="mt-1 text-xs font-normal text-warning-400">Warning: {{ property_warnings[prop_name] }}</p>
+                            {% endif %}
                         </td>
                         
                         <!-- Value -->
@@ -166,34 +164,23 @@
                                 <input type="hidden" name="property_name" value="{{ prop_name }}">
                                 
                                 {% if prop_name in property_options %}
-                                    <!-- Dropdown for properties with limited options -->
+                                    <!-- Dropdown for properties with a finite option set -->
                                     <select name="property_value" id="value-{{ prop_name }}" class="form-select flex-1 text-sm py-1">
+                                    {% set current_value = (property_selected_values or {}).get(prop_name, prop_data.value) %}
+                                        {% if current_value not in property_options[prop_name] %}
+                                        <option value="{{ current_value }}" selected>{{ prop_data.value }} (current)</option>
+                                        {% endif %}
                                         {% for option in property_options[prop_name] %}
-                                        <option value="{{ option }}" {% if prop_data.value == option %}selected{% endif %}>{{ option }}</option>
+                                        <option value="{{ option }}" {% if current_value == option %}selected{% endif %}>{{ option }}</option>
                                         {% endfor %}
                                     </select>
-                                {% elif prop_name in ['quota', 'refquota', 'reservation', 'refreservation'] %}
-                                    <!-- Size inputs -->
-                                    <input type="text" 
-                                           id="value-{{ prop_name }}"
-                                           name="property_value" 
-                                           value="{{ prop_data.value }}"
-                                           placeholder="e.g., 10G, 500M, 1T, or none"
-                                           class="form-input flex-1 text-sm py-1 font-mono">
-                                {% elif prop_name in ['mountpoint', 'sharenfs', 'sharesmb'] %}
-                                    <!-- Path or share inputs -->
-                                    <input type="text" 
-                                           id="value-{{ prop_name }}"
-                                           name="property_value" 
-                                           value="{{ prop_data.value }}"
-                                           placeholder="path or none"
-                                           class="form-input flex-1 text-sm py-1 font-mono">
                                 {% else %}
-                                    <!-- Default text input for other editable properties -->
+                                    {% set vtype = property_value_types.get(prop_name, 'string') %}
                                     <input type="text" 
                                            id="value-{{ prop_name }}"
                                            name="property_value" 
                                            value="{{ prop_data.value }}"
+                                           placeholder="{% if vtype == 'size' %}e.g., 10G, 500M, 1T, or none{% elif vtype == 'refreservation' %}e.g., 10G, none, or auto (volumes){% elif vtype == 'count' %}e.g., 100 or none{% elif vtype == 'path' %}/absolute/path, none or legacy{% elif vtype == 'special_small_blocks' %}e.g., 128K or 0{% elif vtype == 'keylocation' %}none, prompt, file:///path or https://host/path (2.1.3+){% elif vtype == 'recordsize' %}e.g., 128K{% else %}value{% endif %}"
                                            class="form-input flex-1 text-sm py-1 font-mono">
                                 {% endif %}
                                 
@@ -203,6 +190,9 @@
                                     Update
                                 </button>
                             </form>
+                            {% if existing_data_notice_map.get(prop_name) %}
+                            <p class="mt-1 text-xs text-text-tertiary italic">{{ existing_data_notice_map[prop_name] }}</p>
+                            {% endif %}
                             {% elif prop_name in creation_only_props %}
                             <span class="text-text-tertiary text-xs italic inline-flex items-center gap-1">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,6 +200,8 @@
                                 </svg>
                                 Creation-only property
                             </span>
+                            {% elif ':' in prop_name %}
+                            <span class="text-text-tertiary text-xs italic">User property</span>
                             {% else %}
                             <span class="text-text-tertiary text-xs italic inline-flex items-center gap-1">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,11 +210,112 @@
                                 Read-only
                             </span>
                             {% endif %}
+                            {# Inherit and revert apply to editable native properties and to user properties (name contains ':') #}
+                            {% if prop_name in editable_props or ':' in prop_name %}
+                                {% set received_value = prop_data.get('received', '-') %}
+                                {% if prop_data.source == 'local' and prop_name not in non_inheritable_props %}
+                                <form method="post" action="/zfs/datasets/{{ dataset_name }}/properties/inherit" id="form-inherit-{{ prop_name }}" class="mt-2 flex flex-wrap items-center gap-2">
+                                    <input type="hidden" name="property_name" value="{{ prop_name }}">
+                                    {% if descendant_count %}
+                                    <label class="inline-flex items-center gap-1 text-xs text-text-secondary">
+                                        <input type="checkbox" name="recursive" value="true" class="form-checkbox">
+                                        Recursive ({{ descendant_count }} child dataset{{ 's' if descendant_count != 1 else '' }})
+                                    </label>
+                                    {% endif %}
+                                    <button type="button"
+                                            class="btn-secondary text-xs px-3 py-1 whitespace-nowrap"
+                                            onclick="showConfirm('confirm-inherit-{{ prop_name }}')">
+                                        {{ 'Inherit or remove' if ':' in prop_name else 'Inherit' }}
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if received_value not in ['-', '', none] and prop_data.source != 'received' and prop_name not in no_received_revert_props %}
+                                <form method="post" action="/zfs/datasets/{{ dataset_name }}/properties/inherit" id="form-received-{{ prop_name }}" class="mt-2 flex flex-wrap items-center gap-2">
+                                    <input type="hidden" name="property_name" value="{{ prop_name }}">
+                                    <input type="hidden" name="received" value="true">
+                                    {% if descendant_count %}
+                                    <label class="inline-flex items-center gap-1 text-xs text-text-secondary">
+                                        <input type="checkbox" name="recursive" value="true" class="form-checkbox">
+                                        Recursive ({{ descendant_count }} child dataset{{ 's' if descendant_count != 1 else '' }})
+                                    </label>
+                                    {% endif %}
+                                    <button type="button"
+                                            class="btn-secondary text-xs px-3 py-1 whitespace-nowrap"
+                                            onclick="showConfirm('confirm-received-{{ prop_name }}')">
+                                        Revert to received value
+                                    </button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- User Properties (module:property) -->
+    <div class="card mt-6">
+        <div class="p-4 bg-bg-elevated-2 border-b border-border-subtle flex flex-wrap justify-between items-center gap-4">
+            <h2 class="text-xl font-semibold text-text-primary">User Properties ({{ user_properties|length }})</h2>
+            <span class="text-xs text-text-tertiary">
+                Names must use the <span class="font-mono">module:property</span> form.
+            </span>
+        </div>
+        <div class="p-4 space-y-4">
+            {% if user_properties %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full">
+                    <thead class="bg-bg-elevated-2">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Name</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Value</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Source</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-border-subtle">
+                        {% for user_prop in user_properties %}
+                        <tr class="hover:bg-bg-elevated-2 transition-colors">
+                            <td class="px-4 py-3 text-sm font-mono text-text-primary">{{ user_prop.name }}</td>
+                            <td class="px-4 py-3 text-sm font-mono text-text-primary">{{ user_prop.value }}</td>
+                            <td class="px-4 py-3 text-sm text-text-secondary">{{ user_prop.source }}</td>
+                            <td class="px-4 py-3 text-sm">
+                                <form method="post" action="/zfs/datasets/{{ dataset_name }}/properties/set" class="flex items-center gap-2">
+                                    <input type="hidden" name="property_name" value="{{ user_prop.name }}">
+                                    <input type="text" name="property_value" value="{{ user_prop.value }}"
+                                           class="form-input flex-1 text-sm py-1 font-mono">
+                                    <button type="submit" class="btn-primary text-xs px-3 py-1 whitespace-nowrap">Update</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-sm text-text-secondary">This dataset has no user properties.</p>
+            {% endif %}
+
+            <form method="post" action="/zfs/datasets/{{ dataset_name }}/properties/set" class="flex flex-wrap items-end gap-3">
+                <div class="flex-1 min-w-[12rem]">
+                    <label for="new-user-property-name" class="block text-xs font-medium text-text-secondary mb-1">New user property</label>
+                    <input type="text" id="new-user-property-name" name="property_name"
+                           placeholder="module:property" class="form-input w-full text-sm py-1 font-mono" required>
+                </div>
+                <div class="flex-1 min-w-[12rem]">
+                    <label for="new-user-property-value" class="block text-xs font-medium text-text-secondary mb-1">Value</label>
+                    <input type="text" id="new-user-property-value" name="property_value"
+                           placeholder="value" class="form-input w-full text-sm py-1 font-mono">
+                </div>
+                <button type="submit" class="btn-primary text-xs px-3 py-1 whitespace-nowrap">Add / Update</button>
+            </form>
+
+            <p class="text-xs text-text-tertiary">
+                Submit an empty value to remove a user property from this dataset; it then
+                inherits the parent's value, if any.
+            </p>
         </div>
     </div>
 
@@ -351,6 +444,42 @@
         {% set action_url = '' %}
         {% set confirm_action = 'document.getElementById(\'form-' ~ prop_name ~ '\').submit()' %}
         {% include 'partials/confirm.jinja' %}
+        {% endif %}
+    {% endfor %}
+
+    <!-- Confirmation modals for inheriting / reverting properties -->
+    {% for prop_name, prop_data in properties.items() %}
+        {% if prop_name in editable_props or ':' in prop_name %}
+        {% set received_value = prop_data.get('received', '-') %}
+        {% if descendant_count %}
+        {% set recursive_note = ' If Recursive is checked, ' ~ descendant_count ~ ' descendant dataset(s) are affected as well.' %}
+        {% else %}
+        {% set recursive_note = '' %}
+        {% endif %}
+        {% if prop_data.source == 'local' and prop_name not in non_inheritable_props %}
+        {% set id = 'confirm-inherit-' ~ prop_name %}
+        {% set title = 'Inherit Property' %}
+        {% if ':' in prop_name %}
+        {% set message = 'Clear the local value of user property "' ~ prop_name ~ '" on ' ~ dataset_name ~ '. It inherits from a parent that sets it, or is removed if no parent does.' ~ recursive_note %}
+        {% else %}
+        {% set message = 'Clear the local value of "' ~ prop_name ~ '" on ' ~ dataset_name ~ ' so it inherits from the parent or reverts to default.' ~ recursive_note %}
+        {% endif %}
+        {% set confirm_text = 'Inherit' %}
+        {% set confirm_class = 'warning' %}
+        {% set action_url = '' %}
+        {% set confirm_action = 'document.getElementById(\'form-inherit-' ~ prop_name ~ '\').submit()' %}
+        {% include 'partials/confirm.jinja' %}
+        {% endif %}
+        {% if received_value not in ['-', '', none] and prop_data.source != 'received' and prop_name not in no_received_revert_props %}
+        {% set id = 'confirm-received-' ~ prop_name %}
+        {% set title = 'Revert to Received Value' %}
+        {% set message = 'Revert "' ~ prop_name ~ '" on ' ~ dataset_name ~ ' to the value it was received with (zfs inherit -S).' ~ recursive_note %}
+        {% set confirm_text = 'Revert' %}
+        {% set confirm_class = 'warning' %}
+        {% set action_url = '' %}
+        {% set confirm_action = 'document.getElementById(\'form-received-' ~ prop_name ~ '\').submit()' %}
+        {% include 'partials/confirm.jinja' %}
+        {% endif %}
         {% endif %}
     {% endfor %}
 {% endif %}

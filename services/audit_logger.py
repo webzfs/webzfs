@@ -264,6 +264,7 @@ class AuditLogger:
         user: str,
         pool_name: str,
         force: bool = False,
+        readonly: bool = False,
         success: bool = True,
         error: Optional[str] = None,
     ) -> None:
@@ -273,6 +274,7 @@ class AuditLogger:
             operation="import_pool",
             pool=pool_name,
             force=force,
+            readonly=readonly,
             success=success,
             error=error,
         )
@@ -610,6 +612,28 @@ class AuditLogger:
             dataset=dataset_name,
             property=property_name,
             value=property_value,
+            success=success,
+            error=error,
+        )
+
+    def log_dataset_property_inherit(
+        self,
+        user: str,
+        dataset_name: str,
+        property_name: str,
+        recursive: bool = False,
+        received: bool = False,
+        success: bool = True,
+        error: Optional[str] = None,
+    ) -> None:
+        """Log a `zfs inherit` operation on a dataset property"""
+        self.log_zfs_operation(
+            user=user,
+            operation="inherit_dataset_property",
+            dataset=dataset_name,
+            property=property_name,
+            recursive=recursive,
+            received=received,
             success=success,
             error=error,
         )
