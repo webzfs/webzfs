@@ -29,19 +29,23 @@ psutil.cpu_times_percent(interval=0)
 
 
 def _get_zfs_version() -> dict[str, str]:
-    """Get ZFS version information (userland and module/kmod)."""
+    """Get ZFS version information (userland and module/kmod).
+
+    The raw strings are returned for display (for example ``zfs-2.2.6-1``).
+    Lines are classified by their ``zfs-kmod-`` prefix rather than by position,
+    so unexpected or reordered output cannot label the module line as userland.
+    """
     try:
         output = run_command(['zfs', 'version'], check=False)
-        lines = [
-            line.strip()
-            for line in output.strip().split('\n')
-            if line.strip()
-        ]
         info = {}
-        if len(lines) >= 1:
-            info['userland'] = lines[0]
-        if len(lines) >= 2:
-            info['module'] = lines[1]
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if not line.startswith('zfs-'):
+                continue
+            if line.startswith('zfs-kmod-'):
+                info.setdefault('module', line)
+            else:
+                info.setdefault('userland', line)
         return info
     except Exception:
         return {}

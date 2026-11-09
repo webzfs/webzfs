@@ -3,19 +3,47 @@ ZFS Pool Management Views
 Provides web interface for ZFS pool operations
 """
 import re
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import Annotated
 from config.templates import templates
-from services.zfs_pool import ZFSPoolService
+from services.zfs_pool import ZFSPoolService, parse_error_count
 from services.zfs_dataset import ZFSDatasetService
 from services.disk_utils import DiskUtilsService
 from services.diagnostics import collect_pool_diagnostics
 from services.pool_usage import PoolUsageService
 from services.audit_logger import audit_logger
-from services.utils import is_netbsd
+from services.utils import is_netbsd, get_os_type
 from services.scan_status import errors_section_has_errors, parse_scan
+from services.zfs_capabilities import caps
+from services.zfs_key_options import (
+    KEYFORMAT_PASSPHRASE,
+    KEYFORMATS,
+    KEYLOCATION_PROMPT,
+    KEYLOCATION_TYPES,
+    KEY_SOURCE_EXISTING,
+    build_key_material,
+    build_keylocation,
+    create_key_file,
+    describe_keylocation_for_log,
+    detect_https_keylocation_support,
+    key_file_path_from_location,
+    normalize_key_source,
+    normalize_keyformat,
+    redact_key_material,
+    validate_key_combination,
+    validate_key_file,
+)
+from services.zfs_pool_create_options import (
+    build_create_command,
+    build_vdev_spec,
+    collect_pool_properties,
+    collect_root_properties,
+    get_pool_property_specs,
+    get_root_property_specs,
+    list_compatibility_files,
+)
 from auth.dependencies import get_current_user
 
 
@@ -24,6 +52,139 @@ pool_service = ZFSPoolService()
 dataset_service = ZFSDatasetService()
 disk_service = DiskUtilsService()
 pool_usage_service = PoolUsageService()
+
+
+def _create_form_context(**overrides) -> dict:
+    """Build the template context shared by GET /create/form and errors."""
+    platform = get_os_type()
+    context = {
+        "root_property_specs": get_root_property_specs(platform),
+        "pool_property_specs": get_pool_property_specs(platform),
+        "compatibility_files": list_compatibility_files(platform),
+        "supports_ashift": not is_netbsd(),
+        "supports_draid": bool(caps.draid),
+        "supports_compatibility": bool(caps.compatibility_property),
+        "supports_encryption": not is_netbsd(),
+        "platform": platform,
+        "keyformats": KEYFORMATS,
+        "keylocation_types": KEYLOCATION_TYPES,
+        "https_keylocation_supported": detect_https_keylocation_support(),
+        "keyformat": KEYFORMAT_PASSPHRASE,
+        "keylocation": KEYLOCATION_PROMPT,
+        "key_file_path": "",
+        "key_url": "",
+        "page_title": "Create ZFS Pool",
+    }
+    context.update(overrides)
+    return context
+
+
+KEY_FILE_BACKUP_NOTICE = (
+    "Back up this key file to secure offsite storage now. Without it the "
+    "encrypted data cannot be recovered."
+)
+
+
+def _resolve_create_options(
+    form,
+    encryption: str,
+    keyformat: str,
+    keylocation: str,
+    key_file_path: str,
+    key_url: str,
+    key_source: str,
+) -> tuple[dict, dict, dict]:
+    """Collect and validate the -o/-O properties for a create request.
+
+    Returns the pool properties, the root dataset properties and a key
+    options dict (keyformat, keylocation, key_source, key_file). An existing
+    key file is checked for root ownership and mode 0600 here. A key file
+    WebZFS is asked to create is only written by the create route, never by
+    the dry run.
+    """
+    pool_properties = collect_pool_properties(form)
+    root_properties = collect_root_properties(form)
+
+    ashift = str(form.get("ashift") or "").strip()
+    if ashift and not is_netbsd():
+        pool_properties["ashift"] = ashift
+
+    key_options = {
+        "keyformat": KEYFORMAT_PASSPHRASE,
+        "keylocation": KEYLOCATION_PROMPT,
+        "key_source": KEY_SOURCE_EXISTING,
+        "key_file": None,
+    }
+    if not encryption:
+        return pool_properties, root_properties, key_options
+
+    if is_netbsd():
+        raise ValueError("Encryption is not supported by NetBSD ZFS.")
+
+    resolved_keyformat = normalize_keyformat(keyformat)
+    resolved_keylocation = build_keylocation(
+        keylocation, file_path=key_file_path, url=key_url
+    )
+    validate_key_combination(resolved_keyformat, resolved_keylocation)
+    if (
+        resolved_keylocation.startswith("https://")
+        and not detect_https_keylocation_support()
+    ):
+        raise ValueError(
+            "This system's ZFS cannot fetch keys over https. Use a prompt or "
+            "file key location."
+        )
+
+    key_file = key_file_path_from_location(resolved_keylocation)
+    source = normalize_key_source(key_source)
+    if key_file and source == KEY_SOURCE_EXISTING:
+        validate_key_file(key_file)
+
+    root_properties["encryption"] = "on"
+    root_properties["keyformat"] = resolved_keyformat
+    root_properties["keylocation"] = resolved_keylocation
+    pbkdf2iters = str(form.get("pbkdf2iters") or "").strip()
+    if pbkdf2iters and resolved_keyformat == KEYFORMAT_PASSPHRASE:
+        root_properties["pbkdf2iters"] = pbkdf2iters
+
+    key_options["keyformat"] = resolved_keyformat
+    key_options["keylocation"] = resolved_keylocation
+    key_options["key_source"] = source
+    key_options["key_file"] = key_file
+    return pool_properties, root_properties, key_options
+
+
+def _create_options_for_log(
+    pool_properties: dict,
+    root_properties: dict,
+    mountpoint: str,
+    altroot: str,
+    force: bool,
+) -> dict:
+    """Return the non-secret create options for the audit log.
+
+    The key location is reduced to its log-safe form. Passphrases and key
+    material are never part of the property dicts.
+    """
+    root_for_log = dict(root_properties)
+    if "keylocation" in root_for_log:
+        root_for_log["keylocation"] = describe_keylocation_for_log(
+            root_for_log["keylocation"]
+        )
+    pool_parts = []
+    for key, value in pool_properties.items():
+        pool_parts.append(f"{key}={value}")
+    root_parts = []
+    for key, value in root_for_log.items():
+        root_parts.append(f"{key}={value}")
+    return {
+        "pool_properties": ",".join(pool_parts) or None,
+        "root_properties": ",".join(root_parts) or None,
+        "mountpoint": mountpoint or None,
+        "altroot": altroot or None,
+        "force": force,
+    }
+
 
 
 def _get_min_data_device_size(topology: dict, disk_size_lookup: dict) -> int:
@@ -178,9 +339,9 @@ def parse_pool_status(status_output: str) -> dict:
         if len(parts) >= 2:
             name = parts[0]
             state = parts[1]
-            read_err = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-            write_err = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-            cksum_err = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+            read_err = parse_error_count(parts[2]) if len(parts) > 2 else 0
+            write_err = parse_error_count(parts[3]) if len(parts) > 3 else 0
+            cksum_err = parse_error_count(parts[4]) if len(parts) > 4 else 0
 
             # Determine type: pool root, vdev, or leaf device
             # Pool root is typically indent ~8 (1 tab), vdevs ~10 (1 tab + 2), leaves ~12+ 
@@ -577,11 +738,44 @@ async def time_range_scrub(
         )
 
 
+@router.post("/{pool_name}/clear", response_class=HTMLResponse)
+async def clear_pool_errors(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()] = "",
+    current_user: str = Depends(get_current_user)
+):
+    """Clear device error counters for a pool, or for one device"""
+    # An empty device clears all errors in the pool; a supplied one is
+    # validated by the service before zpool is invoked.
+    clear_device = device.strip() or None
+    try:
+        pool_service.clear_errors(pool_name, clear_device)
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device
+        )
+        if clear_device:
+            msg = f"Errors cleared for device {clear_device}"
+        else:
+            msg = "Pool errors cleared"
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?message={quote(msg)}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device,
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?error={quote(str(e))}",
+            status_code=303
+        )
+
+
 @router.get("/create/form", response_class=HTMLResponse)
 async def create_pool_form(request: Request):
     """Display pool creation form"""
-    # NetBSD ZFS does not support the ashift pool property
-    supports_ashift = not is_netbsd()
     try:
         # Get available disks
         available_disks = disk_service.get_available_disks()
@@ -593,26 +787,22 @@ async def create_pool_form(request: Request):
         return templates.TemplateResponse(
             request,
             name="zfs/pools/create.jinja",
-            context={
-                "available_disks": available_disks,
-                "hdds": hdds,
-                "ssds": ssds,
-                "supports_ashift": supports_ashift,
-                "page_title": "Create ZFS Pool"
-            }
+            context=_create_form_context(
+                available_disks=available_disks,
+                hdds=hdds,
+                ssds=ssds,
+            )
         )
     except Exception as e:
         return templates.TemplateResponse(
             request,
             name="zfs/pools/create.jinja",
-            context={
-                "available_disks": [],
-                "hdds": [],
-                "ssds": [],
-                "supports_ashift": supports_ashift,
-                "error": f"Error loading disks: {str(e)}",
-                "page_title": "Create ZFS Pool"
-            }
+            context=_create_form_context(
+                available_disks=[],
+                hdds=[],
+                ssds=[],
+                error=f"Error loading disks: {str(e)}",
+            )
         )
 
 
@@ -635,6 +825,77 @@ async def check_disk_usage(request: Request):
         )
 
 
+@router.post("/create/preview", response_class=JSONResponse)
+async def preview_pool_create(
+    request: Request,
+    pool_name: Annotated[str, Form()] = "",
+    vdev_type: Annotated[str, Form()] = "single",
+    devices: Annotated[str, Form()] = "",
+    spare_devices: Annotated[str, Form()] = "",
+    cache_devices: Annotated[str, Form()] = "",
+    log_devices: Annotated[str, Form()] = "",
+    log_layout: Annotated[str, Form()] = "mirror",
+    metadata_devices: Annotated[str, Form()] = "",
+    dedup_devices: Annotated[str, Form()] = "",
+    draid_layout: Annotated[str, Form()] = "",
+    force: Annotated[bool, Form()] = False,
+    mountpoint: Annotated[str, Form()] = "",
+    altroot: Annotated[str, Form()] = "",
+    encryption: Annotated[str, Form()] = "",
+    keyformat: Annotated[str, Form()] = KEYFORMAT_PASSPHRASE,
+    keylocation: Annotated[str, Form()] = KEYLOCATION_PROMPT,
+    key_file_path: Annotated[str, Form()] = "",
+    key_url: Annotated[str, Form()] = "",
+    key_source: Annotated[str, Form()] = KEY_SOURCE_EXISTING,
+    current_user: str = Depends(get_current_user),
+):
+    """Run 'zpool create -n' and return the command plus its output.
+
+    Nothing is created: the dry run only validates the topology, properties
+    and device state so the user can review them before confirming.
+    """
+    try:
+        form = await request.form()
+        vdevs = build_vdev_spec(
+            vdev_type,
+            devices,
+            spare_devices=spare_devices,
+            cache_devices=cache_devices,
+            log_devices=log_devices,
+            log_layout=log_layout,
+            metadata_devices=metadata_devices,
+            dedup_devices=dedup_devices,
+            draid_layout=draid_layout,
+        )
+        pool_properties, root_properties, _key_options = _resolve_create_options(
+            form, encryption, keyformat, keylocation, key_file_path, key_url,
+            key_source,
+        )
+        preview = pool_service.preview_create_pool(
+            pool_name,
+            vdevs,
+            properties=pool_properties,
+            force=force,
+            root_properties=root_properties,
+            mountpoint=mountpoint,
+            altroot=altroot,
+        )
+        return JSONResponse(
+            content={
+                "success": preview["success"],
+                "command": preview["command"],
+                "output": preview["stdout"],
+                "error": preview["stderr"],
+                "vdevs": vdevs,
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": str(e)},
+        )
+
+
 @router.post("/create", response_class=HTMLResponse)
 async def create_pool(
     request: Request,
@@ -644,102 +905,166 @@ async def create_pool(
     spare_devices: Annotated[str, Form()] = "",
     cache_devices: Annotated[str, Form()] = "",
     log_devices: Annotated[str, Form()] = "",
+    log_layout: Annotated[str, Form()] = "mirror",
     metadata_devices: Annotated[str, Form()] = "",
     dedup_devices: Annotated[str, Form()] = "",
+    draid_layout: Annotated[str, Form()] = "",
     force: Annotated[bool, Form()] = False,
     ashift: Annotated[str, Form()] = "",
+    mountpoint: Annotated[str, Form()] = "",
+    altroot: Annotated[str, Form()] = "",
+    encryption: Annotated[str, Form()] = "",
+    passphrase: Annotated[str, Form()] = "",
+    passphrase_confirm: Annotated[str, Form()] = "",
+    keyformat: Annotated[str, Form()] = KEYFORMAT_PASSPHRASE,
+    keylocation: Annotated[str, Form()] = KEYLOCATION_PROMPT,
+    key_file_path: Annotated[str, Form()] = "",
+    key_url: Annotated[str, Form()] = "",
+    key_source: Annotated[str, Form()] = KEY_SOURCE_EXISTING,
+    key_string: Annotated[str, Form()] = "",
     current_user: str = Depends(get_current_user)
 ):
     """Create a new pool"""
+    vdevs: list[str] = []
+    log_details: dict = {}
+    created_key_file = None
     try:
-        # Build vdev specification
-        vdevs = []
-        
-        # Parse data vdevs - can have multiple vdevs separated by spaces
-        # Format: "vdev1disk1,vdev1disk2 vdev2disk1,vdev2disk2"
-        for vdev_devices in devices.split():
-            device_list = [d.strip() for d in vdev_devices.split(',') if d.strip()]
-            if device_list:
-                if vdev_type != "single":
-                    vdevs.append(vdev_type)
-                vdevs.extend(device_list)
-        
-        # Add spare devices
-        if spare_devices:
-            spare_list = [d.strip() for d in spare_devices.split(',') if d.strip()]
-            if spare_list:
-                vdevs.append('spare')
-                vdevs.extend(spare_list)
-        
-        # Add cache devices
-        if cache_devices:
-            cache_list = [d.strip() for d in cache_devices.split(',') if d.strip()]
-            if cache_list:
-                vdevs.append('cache')
-                vdevs.extend(cache_list)
-        
-        # Add log devices (SLOG)
-        if log_devices:
-            log_list = [d.strip() for d in log_devices.split(',') if d.strip()]
-            if log_list:
-                vdevs.append('log')
-                # Mirror log devices if there are multiple
-                if len(log_list) > 1:
-                    vdevs.append('mirror')
-                vdevs.extend(log_list)
-        
-        # Add metadata special vdevs
-        # Format: "mirror1disk1,mirror1disk2 mirror2disk1,mirror2disk2"
-        if metadata_devices:
-            for mirror_devices in metadata_devices.split():
-                device_list = [d.strip() for d in mirror_devices.split(',') if d.strip()]
-                if device_list:
-                    vdevs.append('special')
-                    if len(device_list) > 1:
-                        vdevs.append('mirror')
-                    vdevs.extend(device_list)
-        
-        # Add dedup devices
-        if dedup_devices:
-            dedup_list = [d.strip() for d in dedup_devices.split(',') if d.strip()]
-            if dedup_list:
-                vdevs.append('dedup')
-                # Mirror dedup devices if there are multiple
-                if len(dedup_list) > 1:
-                    vdevs.append('mirror')
-                vdevs.extend(dedup_list)
-        
-        # Build properties dictionary
-        # NetBSD ZFS does not support the ashift pool property
-        properties = {}
-        if ashift and not is_netbsd():
-            properties['ashift'] = ashift
-        
-        pool_service.create_pool(pool_name, vdevs, properties=properties if properties else None, force=force)
+        form = await request.form()
+
+        vdevs = build_vdev_spec(
+            vdev_type,
+            devices,
+            spare_devices=spare_devices,
+            cache_devices=cache_devices,
+            log_devices=log_devices,
+            log_layout=log_layout,
+            metadata_devices=metadata_devices,
+            dedup_devices=dedup_devices,
+            draid_layout=draid_layout,
+        )
+
+        pool_properties, root_properties, key_options = _resolve_create_options(
+            form, encryption, keyformat, keylocation, key_file_path, key_url,
+            key_source,
+        )
+        log_details = _create_options_for_log(
+            pool_properties, root_properties, mountpoint, altroot, force
+        )
+        resolved_keylocation = key_options["keylocation"]
+
+        if encryption and resolved_keylocation == KEYLOCATION_PROMPT:
+            if not passphrase:
+                raise ValueError(
+                    "A passphrase is required when encrypting the root dataset "
+                    "with keylocation=prompt."
+                )
+            dataset_service.validate_passphrase(passphrase)
+            if passphrase != passphrase_confirm:
+                raise ValueError("Passphrases do not match")
+
+        # Validate the complete command (pool name, every -o/-O value, -m,
+        # -R and each device) before anything is written. The builder has no
+        # side effects; the service builds the same argv again to run it.
+        build_create_command(
+            pool_name,
+            vdevs,
+            pool_properties=pool_properties,
+            root_properties=root_properties,
+            mountpoint=mountpoint,
+            altroot=altroot,
+            force=force,
+        )
+
+        # A key file WebZFS was asked to create is written only after every
+        # other input has been validated, and never overwrites a file.
+        new_key_file = key_options["key_file"]
+        if encryption and new_key_file and key_options["key_source"] != KEY_SOURCE_EXISTING:
+            material = build_key_material(
+                key_options["keyformat"], key_options["key_source"], key_string
+            )
+            pool_service.validate_pool_name(pool_name)
+            try:
+                create_key_file(new_key_file, material)
+            except Exception as key_error:
+                audit_logger.log_dataset_key_operation(
+                    user=current_user, operation="create_key_file",
+                    dataset_name=pool_name, success=False,
+                    error=redact_key_material(str(key_error), [key_string]),
+                    key_file=new_key_file, keyformat=key_options["keyformat"],
+                    key_source=key_options["key_source"],
+                )
+                raise
+            created_key_file = new_key_file
+            audit_logger.log_dataset_key_operation(
+                user=current_user, operation="create_key_file",
+                dataset_name=pool_name, key_file=new_key_file,
+                keyformat=key_options["keyformat"],
+                key_source=key_options["key_source"],
+            )
+
+        pool_service.create_pool(
+            pool_name,
+            vdevs,
+            properties=pool_properties if pool_properties else None,
+            force=force,
+            root_properties=root_properties if root_properties else None,
+            mountpoint=mountpoint,
+            altroot=altroot,
+            passphrase=(
+                passphrase
+                if encryption and resolved_keylocation == KEYLOCATION_PROMPT
+                else None
+            ),
+        )
         
         # Log successful pool creation
-        audit_logger.log_pool_create(user=current_user, pool_name=pool_name, vdevs=vdevs)
-        
+        audit_logger.log_pool_create(
+            user=current_user, pool_name=pool_name, vdevs=vdevs, **log_details
+        )
+
+        message = f"Pool {pool_name} created successfully."
+        if created_key_file:
+            message += (
+                f" The key file {created_key_file} was created. "
+                + KEY_FILE_BACKUP_NOTICE
+            )
         return RedirectResponse(
-            url=f"/zfs/pools?message=Pool {pool_name} created successfully",
+            url=f"/zfs/pools?message={quote(message)}",
             status_code=303
         )
     except Exception as e:
+        error = redact_key_material(str(e), [passphrase, key_string])
+        if created_key_file:
+            error += (
+                f" The key file {created_key_file} was created before this "
+                "error and has not been removed."
+            )
         # Log failed pool creation
-        audit_logger.log_pool_create(user=current_user, pool_name=pool_name, vdevs=vdevs, success=False, error=str(e))
-        
+        audit_logger.log_pool_create(
+            user=current_user, pool_name=pool_name, vdevs=vdevs,
+            success=False, error=error, **log_details
+        )
+
+        try:
+            available_disks = disk_service.get_available_disks()
+            hdds = [d for d in available_disks if d['type'] == 'HDD']
+            ssds = [d for d in available_disks if d['type'] == 'SSD']
+        except Exception:
+            available_disks, hdds, ssds = [], [], []
+
         return templates.TemplateResponse(
             request,
             name="zfs/pools/create.jinja",
-            context={
-                "error": str(e),
-                "pool_name": pool_name,
-                "vdev_type": vdev_type,
-                "devices": devices,
-                "ashift": ashift,
-                "supports_ashift": not is_netbsd(),
-                "page_title": "Create ZFS Pool"
-            }
+            context=_create_form_context(
+                error=error,
+                pool_name=pool_name,
+                vdev_type=vdev_type,
+                devices=devices,
+                ashift=ashift,
+                available_disks=available_disks,
+                hdds=hdds,
+                ssds=ssds,
+            )
         )
 
 
@@ -841,25 +1166,37 @@ async def import_pool(
     request: Request,
     pool_name: str,
     force: Annotated[bool, Form()] = False,
+    readonly: Annotated[bool, Form()] = False,
     current_user: str = Depends(get_current_user)
 ):
     """Import a pool"""
     try:
-        pool_service.import_pool(pool_name, force=force)
-        audit_logger.log_pool_import(user=current_user, pool_name=pool_name, force=force)
+        pool_service.import_pool(pool_name, force=force, readonly=readonly)
+        audit_logger.log_pool_import(
+            user=current_user, pool_name=pool_name, force=force, readonly=readonly
+        )
+        if readonly:
+            message = f"Pool {pool_name} imported read-only successfully"
+        else:
+            message = f"Pool {pool_name} imported successfully"
         return RedirectResponse(
-            url=f"/zfs/pools?message=Pool {pool_name} imported successfully",
+            url=f"/zfs/pools?message={message}",
             status_code=303
         )
     except Exception as e:
-        audit_logger.log_pool_import(user=current_user, pool_name=pool_name, force=force, success=False, error=str(e))
+        audit_logger.log_pool_import(
+            user=current_user, pool_name=pool_name, force=force,
+            readonly=readonly, success=False, error=str(e)
+        )
         # Carry the full failure reason back to the import page, along with
-        # which pool failed and whether force was already attempted, so the
-        # page can show the reason and offer a force import when appropriate.
+        # which pool failed and whether force / read-only was already
+        # attempted, so the page can show the reason and offer a force import
+        # only when it will not silently drop the read-only option.
         error_params = urlencode({
             "error": str(e),
             "failed_pool": pool_name,
             "force_attempted": "true" if force else "false",
+            "readonly_attempted": "true" if readonly else "false",
         })
         return RedirectResponse(
             url=f"/zfs/pools/import/list?{error_params}",
@@ -1571,6 +1908,35 @@ async def offline_device(
         )
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}/vdevs?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/vdevs/clear", response_class=HTMLResponse)
+async def clear_device_errors(
+    request: Request,
+    pool_name: str,
+    device: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user)
+):
+    """Clear error counters for a single device"""
+    clear_device = device.strip()
+    try:
+        pool_service.clear_errors(pool_name, clear_device)
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?message={quote('Errors cleared for device ' + clear_device)}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_clear(
+            user=current_user, pool_name=pool_name, device=clear_device,
+            success=False, error=str(e)
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}/vdevs?error={quote(str(e))}",
             status_code=303
         )
 

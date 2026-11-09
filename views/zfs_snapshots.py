@@ -4,7 +4,8 @@ Provides web interface for ZFS snapshot operations
 """
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
-from typing import Annotated, Optional
+from typing import Annotated, Dict, List, Optional
+from urllib.parse import quote
 from config.templates import templates
 from services.zfs_snapshot import ZFSSnapshotService
 from services.zfs_dataset import ZFSDatasetService
@@ -228,6 +229,133 @@ async def destroy_bookmark(
             url=f"/zfs/snapshots?error={str(e)}",
             status_code=303
         )
+
+
+# Bulk destroy routes (must be before catch-all {snapshot_path:path} routes)
+
+BULK_DESTROY_CONFIRM_PHRASE = "DESTROY"
+
+
+def _selected_snapshots(snapshots: Optional[List[str]]) -> List[str]:
+    """Normalise the submitted snapshot selection, dropping blanks."""
+    return [name.strip() for name in (snapshots or []) if name and name.strip()]
+
+
+def _bulk_destroy_page(request: Request, snapshots: List[str], dry_run: Dict,
+                       defer: bool = False, error: Optional[str] = None):
+    """Render the bulk destroy confirmation page with the dry-run summary."""
+    return templates.TemplateResponse(
+        request,
+        name="zfs/snapshots/bulk_destroy_confirm.jinja",
+        context={
+            "snapshots": snapshots,
+            "dry_run": dry_run,
+            "defer": defer,
+            "confirm_phrase": BULK_DESTROY_CONFIRM_PHRASE,
+            "error": error,
+            "page_title": f"Destroy {len(snapshots)} Snapshots",
+        },
+    )
+
+
+@router.post("/bulk/destroy/confirm", response_class=HTMLResponse)
+async def bulk_destroy_confirm(
+    request: Request,
+    snapshots: Annotated[Optional[List[str]], Form()] = None,
+    defer: Annotated[bool, Form()] = False,
+):
+    """Show the grouped destroy plan and dry-run reclaim before confirming"""
+    selected = _selected_snapshots(snapshots)
+    if not selected:
+        return RedirectResponse(
+            url="/zfs/snapshots?error=No snapshots selected for destruction",
+            status_code=303,
+        )
+
+    try:
+        dry_run = snapshot_service.dry_run_destroy_bulk(selected, defer=defer)
+    except Exception as e:
+        dry_run = {"commands": [], "specs": [], "errors": [str(e)],
+                   "total_reclaim": 0, "total_reclaim_human": "0B",
+                   "snapshot_count": len(selected)}
+        return _bulk_destroy_page(request, selected, dry_run,
+                                  defer=defer, error=str(e))
+
+    return _bulk_destroy_page(request, selected, dry_run, defer=defer)
+
+
+@router.post("/bulk/destroy", response_class=HTMLResponse)
+async def bulk_destroy(
+    request: Request,
+    snapshots: Annotated[Optional[List[str]], Form()] = None,
+    defer: Annotated[bool, Form()] = False,
+    confirm: Annotated[str, Form()] = "",
+    current_user: str = Depends(get_current_user)
+):
+    """Destroy selected snapshots in grouped per-dataset commands (DESTRUCTIVE!)"""
+    selected = _selected_snapshots(snapshots)
+    if not selected:
+        return RedirectResponse(
+            url="/zfs/snapshots?error=No snapshots selected for destruction",
+            status_code=303,
+        )
+
+    # Require the operator to type the confirmation phrase exactly
+    if confirm.strip() != BULK_DESTROY_CONFIRM_PHRASE:
+        try:
+            dry_run = snapshot_service.dry_run_destroy_bulk(selected, defer=defer)
+        except Exception as e:
+            dry_run = {"commands": [], "specs": [], "errors": [str(e)],
+                       "total_reclaim": 0, "total_reclaim_human": "0B",
+                       "snapshot_count": len(selected)}
+        return _bulk_destroy_page(
+            request, selected, dry_run, defer=defer,
+            error=f"Confirmation phrase does not match. Please type "
+                  f"{BULK_DESTROY_CONFIRM_PHRASE} exactly.",
+        )
+
+    try:
+        result = snapshot_service.destroy_snapshots_bulk(selected, defer=defer)
+    except Exception as e:
+        for snapshot_name in selected:
+            audit_logger.log_snapshot_destroy(
+                user=current_user, snapshot_name=snapshot_name,
+                success=False, error=str(e),
+            )
+        return RedirectResponse(
+            url=f"/zfs/snapshots?error={quote(str(e))}",
+            status_code=303,
+        )
+
+    # Audit every selected snapshot individually, success and failure
+    for command_result in result.get("results", []):
+        for short_name in command_result["snapshots"]:
+            audit_logger.log_snapshot_destroy(
+                user=current_user,
+                snapshot_name=f"{command_result['dataset']}@{short_name}",
+                success=command_result["success"],
+                error=command_result.get("error"),
+            )
+
+    if result["failed"]:
+        message = (
+            f"Destroyed {result['success']} of {result['snapshot_count']} snapshots "
+            f"in {len(result['commands'])} command(s); {result['failed']} failed"
+        )
+        errors = "; ".join(result["errors"])
+        return RedirectResponse(
+            url=f"/zfs/snapshots?message={quote(message)}&error={quote(errors)}",
+            status_code=303,
+        )
+
+    message = (
+        f"Destroyed {result['success']} snapshots "
+        f"in {len(result['commands'])} command(s)"
+    )
+    return RedirectResponse(
+        url=f"/zfs/snapshots?message={quote(message)}",
+        status_code=303,
+    )
 
 
 @router.post("/{snapshot_path:path}/bookmark", response_class=HTMLResponse)

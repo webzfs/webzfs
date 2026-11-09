@@ -399,6 +399,23 @@
                             <p class="text-xs text-text-tertiary mt-1">Temporary: device will auto-online on reboot.</p>
                         </form>
                     </div>
+
+                    <!-- Clear Errors -->
+                    <div class="card-nested" id="clear-section">
+                        <h3 class="text-sm font-semibold text-text-primary mb-2">Clear Device Errors</h3>
+                        <form method="post" action="/zfs/pools/{{ pool_name }}/vdevs/clear" id="form-clear">
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <input type="text" id="clear-device" name="device" required
+                                       placeholder="Device to clear errors for"
+                                       class="form-input flex-1">
+                                <button type="button" class="btn-warning inline-flex items-center gap-2"
+                                        onclick="showConfirm('confirm-clear')">
+                                    Clear Errors
+                                </button>
+                            </div>
+                            <p class="text-xs text-text-tertiary mt-1">Resets error counters only; it does not repair damage. Errors return if the cause remains. Run a scrub afterwards.</p>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
@@ -666,6 +683,14 @@
 {% set confirm_action = 'document.getElementById("form-offline").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
+{% set id = 'confirm-clear' %}
+{% set title = 'Clear Device Errors' %}
+{% set message = 'Clear the error counters for this device in pool <strong>' ~ pool_name ~ '</strong>?<br><br>Clearing only resets the counters; it does not repair any damage. Errors will return if the underlying cause remains. Run a scrub afterwards to verify the pool.' %}
+{% set confirm_text = 'Clear Errors' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-clear").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
 <style>
 .disk-btn { transition: all 0.15s ease; }
 .disk-btn:hover { transform: translateY(-1px); }
@@ -846,6 +871,10 @@ function renderTopology(topology) {
                     html += '<button type="button" class="text-text-tertiary hover:text-success-400 transition-colors p-0.5" title="Bring Online" onclick="prepareDeviceAction(\'online\', \'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>';
                 }
                 html += '<button type="button" class="text-text-tertiary hover:text-info-400 transition-colors p-0.5" title="Replace Device" onclick="prepareReplace(\'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>';
+                var clearClass = (dev.read_errors > 0 || dev.write_errors > 0 || dev.cksum_errors > 0)
+                    ? 'text-warning-400 hover:text-warning-300'
+                    : 'text-text-tertiary hover:text-warning-400';
+                html += '<button type="button" class="' + clearClass + ' transition-colors p-0.5" title="Clear Errors" onclick="prepareDeviceAction(\'clear\', \'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>';
                 if (vdev.type === 'mirror') {
                     html += '<button type="button" class="text-text-tertiary hover:text-danger-400 transition-colors p-0.5" title="Detach from Mirror" onclick="prepareDetach(\'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg></button>';
                 }
@@ -1119,6 +1148,9 @@ function prepareDeviceAction(action, deviceName) {
     } else if (action === 'online') {
         document.getElementById('online-device').value = deviceName;
         showConfirm('confirm-online');
+    } else if (action === 'clear') {
+        document.getElementById('clear-device').value = deviceName;
+        showConfirm('confirm-clear');
     }
 }
 

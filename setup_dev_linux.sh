@@ -84,7 +84,7 @@ echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)"
 
 if ! command_exists node; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js v20+ and try again"
+    echo "Please install Node.js v22+ and try again"
     exit 1
 fi
 

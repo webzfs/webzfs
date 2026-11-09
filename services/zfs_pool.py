@@ -10,6 +10,8 @@ from config.settings import Settings
 from services.utils import run_zfs_command, is_netbsd
 from services.scan_status import ScanStatus, errors_section_has_errors, parse_scan, SCAN_NONE
 from services.zfs_capabilities import get_capabilities, get_pool_features
+from services.zfs_key_options import redact_key_material
+from services.zfs_pool_create_options import build_create_command, format_command
 
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
@@ -57,11 +59,44 @@ def _validate_scrub_date(value: str, label: str) -> str:
     return cleaned
 
 
+ERROR_COUNT_MULTIPLIERS = {'K': 1000, 'M': 1000 ** 2, 'G': 1000 ** 3, 'T': 1000 ** 4}
+
+
+def parse_error_count(value: str) -> int:
+    """
+    Convert a READ, WRITE or CKSUM column value from zpool status to an int.
+
+    zpool prints large counts in short form (for example '1.2K' or '15M'),
+    so a plain isdigit() check would report them as zero. Anything that is
+    not a count (a missing column, '-') returns 0.
+    """
+    if value.isdigit():
+        return int(value)
+    suffix = value[-1:].upper()
+    if suffix in ERROR_COUNT_MULTIPLIERS:
+        try:
+            return int(float(value[:-1]) * ERROR_COUNT_MULTIPLIERS[suffix])
+        except ValueError:
+            return 0
+    return 0
+
+
 class ZFSPoolService:
     """Service for managing ZFS pools using libzfs_core and shell commands"""
     
     # ZFS naming pattern: alphanumeric, underscore, hyphen, period, colon
     ZFS_POOL_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*$')
+
+    # Pool properties that can only be applied when a pool is imported.
+    # `zpool set` refuses them, so they must never reach the command line.
+    # `rdonly` is the documented alias of `readonly` (zpoolprops(7)).
+    IMPORT_TIME_ONLY_PROPERTIES = frozenset({'readonly', 'rdonly', 'altroot'})
+
+    # Device identifiers accepted by zpool clear: absolute paths, by-id
+    # aliases, GUIDs. An optional leading '/' is allowed, but the name must
+    # otherwise start alphanumeric so an option such as -F or --power can
+    # never be smuggled in as a device name.
+    ZFS_DEVICE_PATTERN = re.compile(r'^/?[a-zA-Z0-9][a-zA-Z0-9_\-.:/@+]*$')
     
     def __init__(self):
         """Initialize the ZFS Pool Service with settings"""
@@ -92,7 +127,56 @@ class ZFSPoolService:
                 "character and contain only alphanumeric characters, underscores, hyphens, "
                 "periods, or colons."
             )
+
+    @classmethod
+    def validate_device(cls, device: str) -> None:
+        """
+        Validate a device identifier before passing it to zpool.
+
+        Device names are forwarded to zpool as argv entries, so an empty value
+        or one starting with '-' (for example '-F' or '--power') must be
+        rejected here rather than reaching the command line.
+
+        Args:
+            device: The device identifier to validate
+
+        Raises:
+            ValueError: If the device identifier is invalid
+        """
+        if not device:
+            raise ValueError("Device cannot be empty")
+
+        if not cls.ZFS_DEVICE_PATTERN.fullmatch(device):
+            raise ValueError(
+                f"Invalid device '{device}'. Device names must be an absolute path or "
+                "start with an alphanumeric character and contain only alphanumeric "
+                "characters, underscores, hyphens, periods, colons, slashes, '@', or '+'."
+            )
     
+    @classmethod
+    def validate_pool_property_name(cls, property_name: str) -> None:
+        """
+        Validate a pool property name for a `zpool set` operation.
+
+        Properties listed in IMPORT_TIME_ONLY_PROPERTIES are applied only when
+        a pool is imported; `zpool set` rejects them, so they must be refused
+        before the command is built.
+
+        Args:
+            property_name: The property name to validate
+
+        Raises:
+            ValueError: If the property is empty or import-time-only
+        """
+        if not property_name:
+            raise ValueError("Property name cannot be empty")
+
+        if property_name in cls.IMPORT_TIME_ONLY_PROPERTIES:
+            raise ValueError(
+                f"Property '{property_name}' can only be set when importing a "
+                "pool and cannot be changed afterwards."
+            )
+
     @staticmethod
     def _format_bytes_zfs(size_bytes: int) -> str:
         """
@@ -591,8 +675,8 @@ class ZFSPoolService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to export pool: {e.stderr}")
     
-    def import_pool(self, pool_name: str, force: bool = False, 
-                   altroot: Optional[str] = None) -> None:
+    def import_pool(self, pool_name: str, force: bool = False,
+                   altroot: Optional[str] = None, *, readonly: bool = False) -> None:
         """
         Import a ZFS pool
         
@@ -600,6 +684,7 @@ class ZFSPoolService:
             pool_name: Name of the pool to import
             force: Force import even if previously imported
             altroot: Alternative root directory
+            readonly: Import the pool read-only (`-o readonly=on`)
         """
         self.validate_pool_name(pool_name)
         timeout = self.timeouts.get('import', self.timeouts['default'])
@@ -609,6 +694,8 @@ class ZFSPoolService:
                 cmd.append('-f')
             if altroot:
                 cmd.extend(['-R', altroot])
+            if readonly:
+                cmd.extend(['-o', 'readonly=on'])
             cmd.append(pool_name)
             
             run_zfs_command(cmd, timeout=timeout)
@@ -658,39 +745,111 @@ class ZFSPoolService:
     
     def create_pool(self, pool_name: str, vdevs: List[str], 
                    properties: Optional[Dict[str, str]] = None,
-                   force: bool = False) -> None:
+                   force: bool = False,
+                   root_properties: Optional[Dict[str, str]] = None,
+                   mountpoint: str = "",
+                   altroot: str = "",
+                   dry_run: bool = False,
+                   passphrase: Optional[str] = None) -> None:
         """
         Create a new ZFS pool
         
         Args:
             pool_name: Name for the new pool
             vdevs: List of vdev specifications (e.g., ['mirror', '/dev/sda', '/dev/sdb'])
-            properties: Optional dictionary of pool properties to set
+            properties: Optional dictionary of pool properties (-o)
             force: Force creation even if devices are in use
+            root_properties: Optional dictionary of root dataset properties (-O)
+            mountpoint: Optional root dataset mountpoint (-m)
+            altroot: Optional alternate root directory (-R)
+            dry_run: Validate with 'zpool create -n' instead of creating
+            passphrase: Passphrase for an encrypted root dataset with
+                keylocation=prompt. Fed through stdin; never logged.
         """
         self.validate_pool_name(pool_name)
         timeout = self.timeouts.get('create', self.timeouts['default'])
+
+        # NetBSD ZFS does not support the ashift pool property
+        pool_properties = dict(properties or {})
+        if is_netbsd():
+            pool_properties.pop('ashift', None)
+
+        cmd = build_create_command(
+            pool_name,
+            vdevs,
+            pool_properties=pool_properties,
+            root_properties=root_properties or {},
+            mountpoint=mountpoint,
+            altroot=altroot,
+            force=force,
+            dry_run=dry_run,
+        )
+
         try:
-            cmd = ['zpool', 'create']
-            
-            if force:
-                cmd.append('-f')
-            
-            # Add properties (strip ashift on NetBSD where it is not supported)
-            if properties:
-                for key, value in properties.items():
-                    if key == 'ashift' and is_netbsd():
-                        continue
-                    cmd.extend(['-o', f'{key}={value}'])
-            
-            cmd.append(pool_name)
-            cmd.extend(vdevs)
-            
-            run_zfs_command(cmd, timeout=timeout)
+            # Always give zpool its own stdin. With None it would inherit the
+            # service's stdin and could block reading a key from it.
+            input_data = f"{passphrase}\n" if passphrase else ""
+            run_zfs_command(cmd, timeout=timeout, input_data=input_data)
         except subprocess.TimeoutExpired:
             raise Exception(f"ZPool create command timed out after {timeout} seconds. Pool creation can take time with many devices.")
         except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to create pool: {e.stderr}")
+            error = redact_key_material((e.stderr or '').strip(), [passphrase])
+            raise Exception(f"Failed to create pool: {error}")
+
+    def preview_create_pool(self, pool_name: str, vdevs: List[str],
+                            properties: Optional[Dict[str, str]] = None,
+                            force: bool = False,
+                            root_properties: Optional[Dict[str, str]] = None,
+                            mountpoint: str = "",
+                            altroot: str = "",
+                            timeout: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Run 'zpool create -n' for the requested configuration without
+        creating anything.
+
+        Returns:
+            Dict with the rendered command, stdout, stderr and success flag.
+        """
+        self.validate_pool_name(pool_name)
+        pool_properties = dict(properties or {})
+        if is_netbsd():
+            pool_properties.pop('ashift', None)
+
+        cmd = build_create_command(
+            pool_name,
+            vdevs,
+            pool_properties=pool_properties,
+            root_properties=root_properties or {},
+            mountpoint=mountpoint,
+            altroot=altroot,
+            force=force,
+            dry_run=True,
+        )
+
+        if timeout is None:
+            timeout = self.timeouts.get('create', self.timeouts['default'])
+
+        result: Dict[str, Any] = {
+            'command': format_command(cmd),
+            'success': False,
+            'stdout': '',
+            'stderr': '',
+        }
+        try:
+            # A prompt keylocation would block on stdin; closing stdin makes
+            # the dry run fail fast instead of hanging the request.
+            completed = run_zfs_command(
+                cmd, timeout=timeout, check=False, input_data=''
+            )
+            result['stdout'] = (completed.stdout or '').strip()
+            result['stderr'] = (completed.stderr or '').strip()
+            result['success'] = completed.returncode == 0
+            result['returncode'] = completed.returncode
+        except subprocess.TimeoutExpired:
+            result['stderr'] = (
+                f"zpool create -n timed out after {timeout} seconds."
+            )
+        return result
     
     def destroy_pool(self, pool_name: str, force: bool = False) -> None:
         """
@@ -725,8 +884,13 @@ class ZFSPoolService:
             pool_name: Name of the pool
             property_name: Name of the property to set
             property_value: Value to set
+
+        Raises:
+            ValueError: If the pool name or property name is invalid, or the
+                property is import-time-only (e.g. readonly, altroot)
         """
         self.validate_pool_name(pool_name)
+        self.validate_pool_property_name(property_name)
         timeout = self.timeouts.get('properties', self.timeouts['default'])
         try:
             run_zfs_command(
@@ -1104,7 +1268,43 @@ class ZFSPoolService:
             )
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to offline device: {e.stderr}")
-    
+
+    def clear_errors(self, pool_name: str, device: Optional[str] = None) -> None:
+        """
+        Clear device error counters in a pool.
+
+        Runs `zpool clear <pool> [device]` with a list-form argv. Clearing only
+        resets the counters; it does not repair damage and does not recover a
+        pool. --power and -F are deliberately never passed.
+
+        Args:
+            pool_name: Name of the pool
+            device: Optional device whose errors are cleared; when omitted all
+                    device errors in the pool are cleared
+
+        Raises:
+            ValueError: If the pool name or device is invalid (before zpool runs)
+            Exception: If the clear operation fails
+        """
+        self.validate_pool_name(pool_name)
+        if device is not None:
+            device = device.strip()
+            self.validate_device(device)
+        timeout = self.timeouts.get('default', 60)
+
+        cmd = ['zpool', 'clear', pool_name]
+        if device is not None:
+            cmd.append(device)
+
+        try:
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool clear command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to clear pool errors: {e.stderr}")
+
     def get_pool_topology(self, pool_name: str) -> Dict[str, Any]:
         """
         Parse pool status into a structured topology tree.
@@ -1225,9 +1425,9 @@ class ZFSPoolService:
             
             name = parts[0]
             state = parts[1] if len(parts) > 1 else 'UNKNOWN'
-            read_err = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-            write_err = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-            cksum_err = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+            read_err = parse_error_count(parts[2]) if len(parts) > 2 else 0
+            write_err = parse_error_count(parts[3]) if len(parts) > 3 else 0
+            cksum_err = parse_error_count(parts[4]) if len(parts) > 4 else 0
             notes = ' '.join(parts[5:]) if len(parts) > 5 else ''
             
             # Determine pool root indent (first line is pool name)

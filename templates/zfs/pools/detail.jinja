@@ -529,6 +529,19 @@
                     </button>
                 </form>
 
+                <!-- Clear Errors -->
+                {% set clear_prominent = state in ['SUSPENDED', 'DEGRADED'] or parsed.total_read_errors > 0 or parsed.total_write_errors > 0 or parsed.total_cksum_errors > 0 %}
+                <form method="post" action="/zfs/pools/{{ pool.name }}/clear" id="form-clear-errors">
+                    <button type="button"
+                            class="{% if clear_prominent %}btn-warning{% else %}btn-secondary{% endif %} w-full inline-flex items-center justify-center gap-2"
+                            onclick="showConfirm('confirm-clear-errors')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        Clear Errors
+                    </button>
+                </form>
+
                 <!-- Error Scrub (zpool scrub -e, OpenZFS 2.2+) -->
                 {% if parsed.scan_errors %}
                 {% if caps.scrub_error and not parsed.scan_in_progress and not parsed.scan_paused %}
@@ -827,6 +840,14 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 {% set confirm_text = 'Stop Scrub' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-stop").submit()' %}
+{% include 'partials/confirm.jinja' %}
+
+{% set id = 'confirm-clear-errors' %}
+{% set title = 'Clear Pool Errors' %}
+{% set message = 'Clear the device error counters for pool <strong>' ~ pool.name ~ '</strong>?<br><br>Clearing only resets the counters; it does not repair any damage. Errors will return if the underlying cause remains. Run a scrub afterwards to verify the pool.' %}
+{% set confirm_text = 'Clear Errors' %}
+{% set confirm_class = 'warning' %}
+{% set confirm_action = 'document.getElementById("form-clear-errors").submit()' %}
 {% include 'partials/confirm.jinja' %}
 
 {% set id = 'confirm-scrub-pause' %}
