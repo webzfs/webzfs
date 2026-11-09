@@ -8,10 +8,23 @@ from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from typing import Annotated, Optional
 from config.templates import templates
-from services.zfs_dataset import ZFSDatasetService
+from services.zfs_dataset import ZFSDatasetService, get_catalog_context
 from services.zfs_snapshot import ZFSSnapshotService
 from services.audit_logger import audit_logger
 from services.utils import is_netbsd, get_openzfs_man_page_url
+from core.zfs_property_catalog import (
+    editable_definitions,
+    existing_data_notice,
+    help_map,
+    label_map,
+    option_map,
+    option_selected_value,
+    user_properties,
+    validate_user_property_name,
+    value_type_map,
+    warning_map,
+    warnings_for,
+)
 from auth.dependencies import get_current_user
 
 
@@ -289,6 +302,14 @@ async def dataset_properties(
     try:
         properties = dataset_service.get_properties(dataset_path)
         openzfs_man_url = get_openzfs_man_page_url()
+        context = get_catalog_context()
+        dataset_type = None
+        type_entry = properties.get("type") if properties else None
+        if isinstance(type_entry, dict):
+            candidate = str(type_entry.get("value", "")).strip()
+            if candidate in ("filesystem", "volume"):
+                dataset_type = candidate
+        editable_props = [d.name for d in editable_definitions(context, dataset_type)]
         
         return templates.TemplateResponse(
             request,
@@ -297,6 +318,27 @@ async def dataset_properties(
                 "dataset_name": dataset_path,
                 "properties": properties,
                 "openzfs_man_url": openzfs_man_url,
+                "editable_props": editable_props,
+                "property_options": option_map(context, dataset_type),
+                "property_selected_values": {
+                    name: option_selected_value(
+                        name,
+                        (properties.get(name) or {}).get("value", "")
+                        if isinstance(properties.get(name), dict) else "",
+                        context,
+                    )
+                    for name in editable_props
+                },
+                "property_help": help_map(context, dataset_type),
+                "property_labels": label_map(context, dataset_type),
+                "property_warnings": warning_map(context, dataset_type),
+                "property_value_types": value_type_map(context, dataset_type),
+                "existing_data_notice_map": {
+                    name: existing_data_notice(name) for name in editable_props
+                },
+                "user_properties": user_properties(properties),
+                "catalog_zfs_version": context.zfs_version,
+                "catalog_platform": context.platform,
                 "page_title": f"Dataset Properties: {dataset_path}"
             }
         )
@@ -325,13 +367,38 @@ async def set_dataset_property(
 ):
     """Set a dataset property"""
     try:
-        dataset_service.set_property(dataset_path, property_name, property_value)
+        stripped_value = (property_value or "").strip()
+        if not stripped_value and ":" in (property_name or ""):
+            # An empty user-property value clears the local setting through
+            # `zfs inherit`, so the dataset falls back to the parent's value.
+            validate_user_property_name(property_name.strip())
+            dataset_service.inherit_property(dataset_path, property_name.strip())
+            message = "User property removed; the dataset now inherits it from its parent"
+        else:
+            dataset_service.set_property(dataset_path, property_name, property_value)
+            message = "Property updated successfully."
+            notice = existing_data_notice(property_name.strip())
+            if notice:
+                message = f"{message} {notice}"
+            # Only the special_small_blocks warning compares against the
+            # dataset's recordsize, so only then read the properties back.
+            current_properties = None
+            if property_name.strip() == "special_small_blocks":
+                try:
+                    current_properties = dataset_service.get_properties(dataset_path)
+                except Exception:
+                    current_properties = None
+            for warning in warnings_for(
+                property_name.strip(), stripped_value,
+                get_catalog_context(), current_properties
+            ):
+                message = f"{message} Warning: {warning}"
         audit_logger.log_dataset_property_change(
             user=current_user, dataset_name=dataset_path,
             property_name=property_name, property_value=property_value
         )
         return RedirectResponse(
-            url=f"/zfs/datasets/{dataset_path}/properties?message=Property updated successfully",
+            url=f"/zfs/datasets/{dataset_path}/properties?message={quote(message)}",
             status_code=303
         )
     except Exception as e:

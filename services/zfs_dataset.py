@@ -7,7 +7,14 @@ import re
 import subprocess
 from typing import List, Dict, Any, Optional
 
-from services.utils import is_netbsd, run_zfs_command
+from services.utils import is_freebsd, is_linux, is_netbsd, run_zfs_command
+from services.zfs_capabilities import get_capabilities
+from core.zfs_property_catalog import (
+    CatalogContext,
+    PropertyValidationError,
+    build_context,
+    validate_property_value,
+)
 
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
@@ -15,6 +22,46 @@ try:
     HAS_LIBZFS_CORE = True
 except ImportError:
     HAS_LIBZFS_CORE = False
+
+
+def read_max_recordsize() -> Optional[int]:
+    """Return the host's zfs_max_recordsize in bytes, or None if unreadable.
+
+    Linux exposes it as a module parameter in sysfs. FreeBSD exposes it as the
+    vfs.zfs.max_recordsize sysctl. NetBSD's older ZFS has no such tunable.
+    """
+    if is_linux():
+        try:
+            with open("/sys/module/zfs/parameters/zfs_max_recordsize", "r") as handle:
+                return int(handle.read().strip())
+        except (OSError, ValueError):
+            return None
+    if is_freebsd():
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "vfs.zfs.max_recordsize"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            if result.returncode == 0:
+                return int(result.stdout.strip())
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
+    return None
+
+
+def get_catalog_context() -> CatalogContext:
+    """Describe this host for the dataset property catalog.
+
+    The OpenZFS version and platform come from the F1 capability helper, which
+    caches its probe. NetBSD and failed probes report no version, so the
+    catalog offers only baseline properties and values there.
+    """
+    capabilities = get_capabilities()
+    return build_context(
+        capabilities.effective_version,
+        capabilities.platform,
+        read_max_recordsize(),
+    )
 
 
 class ZFSDatasetService:
@@ -468,11 +515,32 @@ class ZFSDatasetService:
             property_value: Value to set
         """
         self.validate_dataset_name(dataset_name)
+        property_name = (property_name or "").strip()
+        dataset_type = self._dataset_type(dataset_name)
+        try:
+            property_value = validate_property_value(
+                property_name, property_value, get_catalog_context(), dataset_type
+            )
+        except PropertyValidationError as error:
+            # Reject read-only, deferred, unsupported or invalid values before
+            # shelling out to zfs.
+            raise ValueError(str(error)) from error
         try:
             run_zfs_command(['zfs', 'set', f'{property_name}={property_value}', dataset_name])
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to set property: {e.stderr}")
+
+    def _dataset_type(self, dataset_name: str) -> Optional[str]:
+        """Return 'filesystem' or 'volume' for scope checks, or None."""
+        try:
+            result = run_zfs_command(['zfs', 'get', '-H', '-o', 'value', 'type', dataset_name])
+        except Exception:
+            return None
+        value = result.stdout.strip()
+        if value in ('filesystem', 'volume'):
+            return value
+        return None
     
     def inherit_property(self, dataset_name: str, property_name: str,
                         recursive: bool = False) -> None:
