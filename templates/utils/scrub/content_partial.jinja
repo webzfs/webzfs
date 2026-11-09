@@ -173,6 +173,7 @@
                         <td class="py-2.5 pl-4 text-right">
                             <div class="inline-flex items-center gap-2">
                             {% if pool.scrub_in_progress %}
+                            {% if caps.scrub_pause %}
                             <form method="post" action="/utils/scrub/{{ pool.name }}/pause" class="inline">
                                 <button type="submit"
                                         class="text-warning-400 hover:text-warning-300"
@@ -182,6 +183,7 @@
                                     </svg>
                                 </button>
                             </form>
+                            {% endif %}
                             <a href="/zfs/pools/{{ pool.name }}" class="text-info-400 hover:text-info-300" title="View scrub progress">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -218,7 +220,7 @@
                             </form>
                             {% endif %}
                             {% if pool.scan_errors|default(false) %}
-                            {% if caps.scrub_error and not pool.scrub_in_progress and not (pool.scrub_paused|default(false)) %}
+                            {% if caps.scrub_error and not (pool.scan_busy|default(false)) %}
                             <form method="post" action="/utils/scrub/{{ pool.name }}/error" class="inline">
                                 <button type="submit"
                                         class="text-danger-400 hover:text-danger-300"
@@ -231,7 +233,7 @@
                             {% else %}
                             <button type="button" disabled
                                     class="text-text-tertiary opacity-50 cursor-not-allowed"
-                                    title="{% if not caps.scrub_error %}Error scrub requires OpenZFS 2.2 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).{% else %}Error scrub cannot run while a regular scrub is running or paused.{% endif %}">
+                                    title="{% if not caps.scrub_error %}Error scrub requires OpenZFS 2.2 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).{% else %}Error scrub cannot start while a scrub, error scrub or resilver is running or paused.{% endif %}">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                                 </svg>

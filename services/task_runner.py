@@ -116,13 +116,13 @@ def run_scrub_task(task_id: str, trigger: str) -> int:
     """Start (or resume) a scrub on the pool named by a scrub schedule.
 
     Scheduled-scrub-on-paused policy: when a scrub is already **paused**, a
-    scheduled run *resumes* it (``zpool scrub`` on the paused pool) instead of
-    restarting from scratch, because the pause state is checkpointed to disk and
-    a restart would throw that progress away. Any other state starts a normal
-    scrub.
+    scheduled run *resumes* it instead of restarting from scratch, because the
+    pause state is checkpointed to disk and a restart would throw that progress
+    away. A paused error scrub is resumed the same way (``zpool scrub -e``,
+    chosen by ``resume_scrub``), since a full scrub cannot start until it is
+    finished or stopped. Any other state starts a normal scrub.
     """
     from services.storage import FileStorageService
-    from services.scan_status import parse_scan
     from services.zfs_pool import ZFSPoolService
 
     try:
@@ -145,8 +145,7 @@ def run_scrub_task(task_id: str, trigger: str) -> int:
     try:
         paused = False
         try:
-            status_output = service.get_pool_status(pool).get("status_output", "")
-            paused = parse_scan(status_output).paused
+            paused = service.get_scan_status(pool).scrub_paused
         except Exception as scan_error:
             logger.warning(
                 f"Could not read scrub state for pool {pool} before scheduled "

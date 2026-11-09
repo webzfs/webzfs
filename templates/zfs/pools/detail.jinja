@@ -472,8 +472,8 @@
                 Actions
             </h2>
             <div class="grid grid-cols-2 gap-3">
-                {% if parsed.scan_in_progress %}
-                <!-- Scrub Pause (zpool scrub -p) -->
+                {% if parsed.scrub_in_progress and caps.scrub_pause %}
+                <!-- Scrub Pause (zpool scrub -p; also pauses an error scrub) -->
                 <form method="post" action="/zfs/pools/{{ pool.name }}/scrub/pause" id="form-scrub-pause">
                     <button type="button"
                             class="btn-warning w-full inline-flex items-center justify-center gap-2"
@@ -484,8 +484,14 @@
                         Pause Scrub
                     </button>
                 </form>
-                {% elif parsed.scan_paused %}
-                <!-- Scrub Resume (zpool scrub on the paused pool) -->
+                {% elif parsed.scrub_in_progress %}
+                <button type="button" disabled
+                        class="btn-warning w-full inline-flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
+                        title="Pausing a scrub is not supported by the ZFS on this system ({{ caps.platform }}).">
+                    Pause Scrub
+                </button>
+                {% elif parsed.scrub_paused %}
+                <!-- Scrub Resume (zpool scrub, or zpool scrub -e for an error scrub) -->
                 <form method="post" action="/zfs/pools/{{ pool.name }}/scrub/resume" id="form-scrub-resume">
                     <button type="button"
                             class="btn-info w-full inline-flex items-center justify-center gap-2"
@@ -539,14 +545,14 @@
                 {% else %}
                 <button type="button" disabled
                         class="btn-secondary w-full inline-flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
-                        title="{% if not caps.scrub_error %}Error scrub requires OpenZFS 2.2 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).{% else %}Error scrub cannot run while a regular scrub is running or paused.{% endif %}">
+                        title="{% if not caps.scrub_error %}Error scrub requires OpenZFS 2.2 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).{% else %}Error scrub cannot start while a scrub, error scrub or resilver is running or paused.{% endif %}">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                     </svg>
                     Error Scrub
                 </button>
                 <p class="col-span-2 text-xs text-text-tertiary -mt-1">
-                    {% if not caps.scrub_error %}Error scrub requires OpenZFS 2.2 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).{% else %}Error scrub cannot run while a regular scrub is running or paused.{% endif %}
+                    {% if not caps.scrub_error %}Error scrub requires OpenZFS 2.2 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).{% else %}Error scrub cannot start while a scrub, error scrub or resilver is running or paused.{% endif %}
                 </p>
                 {% endif %}
                 {% endif %}
@@ -825,7 +831,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-scrub-pause' %}
 {% set title = 'Pause Pool Scrub' %}
-{% set message = 'Pause the running scrub on <strong>' ~ pool.name ~ '</strong>? Progress is checkpointed to disk, and the scrub stays paused across a reboot or export/import until it is resumed.' %}
+{% set message = 'Pause the running scrub on <strong>' ~ pool.name ~ '</strong>? Progress is checkpointed to disk, and the scrub stays paused across a reboot or export/import until it is resumed. A scheduled scrub of this pool that fires while it is paused resumes it rather than starting over.' %}
 {% set confirm_text = 'Pause Scrub' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-pause").submit()' %}
@@ -841,7 +847,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-scrub-error' %}
 {% set title = 'Start Error Scrub' %}
-{% set message = 'Run an error scrub (<span class="font-mono">zpool scrub -e</span>) on <strong>' ~ pool.name ~ '</strong>? Only files with known data errors reported by <span class="font-mono">zpool status -v</span> are scrubbed. It requires the head_errlog pool feature and cannot run while a regular scrub is running or paused.' %}
+{% set message = 'Run an error scrub (<span class="font-mono">zpool scrub -e</span>) on <strong>' ~ pool.name ~ '</strong>? Only files with known data errors reported by <span class="font-mono">zpool status -v</span> are scrubbed. It requires the head_errlog pool feature and at least one completed scrub since that feature was enabled, and it cannot start while another scrub or resilver is running or paused. Progress appears on the Scan line; Pause Scrub and Stop Scrub also act on an error scrub.' %}
 {% set confirm_text = 'Start Error Scrub' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-error").submit()' %}

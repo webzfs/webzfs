@@ -665,8 +665,13 @@ def _parse_scrub_info(status_output: str) -> dict[str, Any]:
         'last_scrub': None,
         'last_scrub_human': None,
         'scrub_within_30_days': False,
-        'scrub_in_progress': False,
-        'scrub_paused': False,
+        # Scrub-only flags: a running resilver is not reported as a scrub.
+        'scrub_in_progress': scan.scrub_in_progress,
+        'scrub_paused': scan.scrub_paused,
+        'error_scrub': scan.error_scrub,
+        # Any scan running or paused (resilver included); nothing else may
+        # start while this is true.
+        'scan_busy': scan.in_progress or scan.paused,
         'scrub_state': scan.state,
         'scrub_progress': scan.progress,
         'scan_line': scan.raw or None,
@@ -678,11 +683,6 @@ def _parse_scrub_info(status_output: str) -> dict[str, Any]:
         days_ago = (datetime.now() - scan.last_scrub).days
         info['scrub_within_30_days'] = days_ago <= 30
         info['last_scrub_human'] = humanize.naturaltime(scan.last_scrub)
-
-    if scan.in_progress:
-        info['scrub_in_progress'] = True
-    elif scan.paused:
-        info['scrub_paused'] = True
 
     if not scan.present:
         for line in status_output.split('\n'):
@@ -721,6 +721,8 @@ def get_scrub_status_all() -> dict[str, Any]:
                 'scrub_within_30_days': False,
                 'scrub_in_progress': False,
                 'scrub_paused': False,
+                'error_scrub': False,
+                'scan_busy': False,
                 'scrub_state': 'none',
                 'scrub_progress': None,
                 'scan_line': None,
@@ -728,8 +730,10 @@ def get_scrub_status_all() -> dict[str, Any]:
             }
 
             try:
+                # No -v: the errors: summary line is enough to detect data
+                # errors, and the file list can be long on a damaged pool.
                 res = run_zfs_command(
-                    ['zpool', 'status', '-v', pool_name],
+                    ['zpool', 'status', pool_name],
                     timeout=15, check=False,
                 )
                 if res.returncode == 0:

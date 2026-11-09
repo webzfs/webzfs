@@ -1467,10 +1467,9 @@ class HealthAnalysisService:
             days_ago = (datetime.now() - scan.last_scrub).days
             info["scrub_within_30_days"] = days_ago <= 30
 
-        if scan.in_progress:
-            info["scrub_in_progress"] = True
-        elif scan.paused:
-            info["scrub_paused"] = True
+        # Scrub-only flags: a running resilver is not reported as a scrub.
+        info["scrub_in_progress"] = scan.scrub_in_progress
+        info["scrub_paused"] = scan.scrub_paused
 
         return info
 
