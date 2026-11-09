@@ -11,7 +11,7 @@ from config.templates import templates
 from services.zfs_dataset import (
     ZFSDatasetService,
     get_catalog_context,
-    ShrinkConfirmationRequired,
+    ShrinkZVOLConfirmationRequired,
 )
 from services.zfs_snapshot import ZFSSnapshotService
 from services.audit_logger import audit_logger
@@ -840,7 +840,7 @@ async def resize_dataset_volume(
                 f"{result['old_size']} to {result['new_size']}",
             status_code=303
         )
-    except ShrinkConfirmationRequired as e:
+    except ShrinkZVOLConfirmationRequired as e:
         audit_logger.log_zfs_operation(
             user=current_user,
             operation="resize_volume",

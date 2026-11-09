@@ -66,7 +66,7 @@ class VolumeResizeError(Exception):
     """Raised when a zvol resize request cannot be applied."""
 
 
-class ShrinkConfirmationRequired(VolumeResizeError):
+class ShrinkZVOLConfirmationRequired(VolumeResizeError):
     """
     Raised when a zvol shrink is requested without explicit confirmation.
 
@@ -985,7 +985,7 @@ class ZFSDatasetService:
             Dict describing the applied resize
 
         Raises:
-            ShrinkConfirmationRequired: If shrinking without confirmation
+            ShrinkZVOLConfirmationRequired: If shrinking without confirmation
             VolumeResizeError: If the resize cannot be performed
         """
         self.validate_dataset_name(dataset_name)
@@ -1024,7 +1024,7 @@ class ZFSDatasetService:
         shrinking = new_bytes < current_bytes
 
         if shrinking and not confirm_shrink:
-            raise ShrinkConfirmationRequired(
+            raise ShrinkZVOLConfirmationRequired(
                 dataset_name, current_human, new_human, current_bytes, new_bytes
             )
 
