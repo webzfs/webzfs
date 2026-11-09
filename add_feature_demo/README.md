@@ -1,6 +1,6 @@
 # Feature Development Demo - NTP Configuration
 
-This directory contains a complete, working example of how to add a new feature to WebZFS. The example implements NTP (Network Time Protocol) configuration management that works on both Linux and FreeBSD.
+This directory contains a complete, working example of how to add a new feature to WebZFS. The example implements NTP (Network Time Protocol) configuration management that works on Linux, FreeBSD, and NetBSD.
 
 ## What's Included
 
@@ -62,31 +62,55 @@ router.include_router(views.utils_ntp.router)
 
 ### 3. Add Navigation (Optional)
 
-Edit `config/templates.py`, find the utilities section and add:
+Utilities links are rendered from the Utilities landing page
+(`templates/utils/index.jinja`), not from a navigation list in
+`config/templates.py`. Add a card to that page:
 
-```python
-{"label": "NTP Config", "url": "/utils/ntp"},
+```jinja
+<a href="/utils/ntp" class="card animate-fade-in hover:scale-[1.01] transition-transform duration-200 group">
+    <div class="card-body py-4">
+        <div class="flex items-center gap-4">
+            <div class="flex-1 min-w-0">
+                <h2 class="text-xl font-semibold text-text-primary group-hover:text-success-400 transition-colors">NTP Configuration</h2>
+                <p class="text-text-secondary text-sm mt-0.5">View NTP status, edit the configuration file, and manage the ntpd service</p>
+            </div>
+        </div>
+    </div>
+</a>
 ```
 
-### 4. Add Sudo Permissions
+The top-level navbar tabs are defined in `config/templates.py` as
+`NAV_TABS`. A utility feature does not add a tab there.
 
-Create `/etc/sudoers.d/webzfs-ntp`:
+### 4. Add Sudo Permissions (Linux Only)
+
+The Linux installers copy `sudoers.d/webzfs.linux` to `/etc/sudoers.d/webzfs`.
+Add the commands your feature needs to that file, not to a separate
+sudoers file, so `install_linux.sh` keeps managing one policy. The shipped
+policy already grants the commands this demo uses:
 
 ```
-# NTP Management
-webzfs ALL=(ALL) NOPASSWD: /bin/systemctl restart ntpd
-webzfs ALL=(ALL) NOPASSWD: /bin/systemctl enable ntpd
-webzfs ALL=(ALL) NOPASSWD: /bin/systemctl status ntpd
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/service ntpd restart
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/service ntpd status
-webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sysrc ntpd_enable=YES
-webzfs ALL=(ALL) NOPASSWD: /bin/cp /tmp/ntp.conf.tmp /etc/ntp.conf
+# System services and scheduled tasks use systemctl link/disable.
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
+# Configuration editing and ZED script creation
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
 ```
 
-Set correct permissions:
+`services.utils.run_privileged_command` uses the `systemctl` grant, and
+`services.file` uses the `cat` and `tee` grants to read and replace
+root-owned files. No additional entry is required for the NTP feature.
+
+If a feature needs a binary that is not already listed, add one line with
+the full path and validate the policy before installing it:
+
 ```bash
-sudo chmod 0440 /etc/sudoers.d/webzfs-ntp
+sudo visudo -c -f sudoers.d/webzfs.linux
+sudo install -m 0440 -o root -g root sudoers.d/webzfs.linux /etc/sudoers.d/webzfs
 ```
+
+FreeBSD and NetBSD installers run the application as root, so no sudo
+policy is required there. `services.utils.run_privileged_command` only
+prepends `sudo` on Linux.
 
 ### 5. Restart Application
 
@@ -119,17 +143,23 @@ Work through `ADDING_NEW_FEATURES.md` completely - it covers:
 
 ## Key Concepts
 
-### 1. OS Compatibility (Linux & FreeBSD)
+### 1. OS Compatibility (Linux, FreeBSD, NetBSD)
+
+Use the shared platform helpers from `services.utils` instead of calling
+`platform.system()` directly:
 
 ```python
+from services.utils import is_freebsd, is_linux, is_netbsd
+
 def _detect_os(self) -> str:
-    """Detect operating system - defaults to Linux"""
-    system = platform.system().lower()
-    if 'freebsd' in system:
-        return 'freebsd'
-    else:
-        # Default to Linux - handles all Linux distributions
-        return 'linux'
+    """Detect the operating system using the shared platform helpers."""
+    if is_linux():
+        return "linux"
+    if is_freebsd():
+        return "freebsd"
+    if is_netbsd():
+        return "netbsd"
+    return "unknown"
 ```
 
 ### 2. Service Pattern
@@ -137,49 +167,117 @@ def _detect_os(self) -> str:
 ```python
 class NTPService:
     """Handles logic and system operations"""
-    
-    def get_status(self) -> Dict:
+
+    def get_status(self) -> Dict[str, Any]:
         """Get current state"""
-        pass
-    
+        ...
+
     def update_config(self, config: str) -> bool:
         """Modify configuration"""
-        pass
+        ...
 ```
+
+Service methods use the shared command and file helpers, so the same code
+works on every platform:
+
+```python
+from services.file import read_file, save_file
+from services.utils import needs_sudo_for_privileged, run_privileged_command
+
+run_privileged_command(["systemctl", "restart", "ntpd"], check=False, timeout=10)
+read_file("/etc/ntp.conf", use_sudo=needs_sudo_for_privileged())
+save_file("/etc/ntp.conf", content, use_sudo=needs_sudo_for_privileged())
+```
+
+`run_privileged_command` prepends `sudo` only on Linux and only for
+commands listed in `PRIVILEGED_COMMANDS`. `save_file` writes through a
+secure temporary file and falls back to `sudo tee` for root-owned files.
 
 ### 3. FastAPI Routing
 
 ```python
+from fastapi.responses import RedirectResponse
+from starlette.responses import Response
+
 @router.get("/")
-async def index(request: Request):
+async def index(request: Request) -> Response:
     """Display main page"""
     data = service.get_data()
-    return templates.TemplateResponse("template.jinja", {"data": data})
+    return templates.TemplateResponse(
+        request,
+        name="utils/your-feature/index.jinja",
+        context={"data": data, "page_title": "Your Feature"},
+    )
 
 @router.post("/action")
-async def action(request: Request, param: Annotated[str, Form()]):
+async def action(
+    request: Request,
+    param: Annotated[str, Form()],
+) -> RedirectResponse:
     """Handle form submission"""
     result = service.do_action(param)
-    return RedirectResponse(url="/?message=Success", status_code=303)
+    return RedirectResponse(url="/utils/your-feature?message=Success", status_code=303)
 ```
+
+`TemplateResponse` takes `request` as the first positional argument, then
+`name=` and `context=`. Annotate every handler return type.
 
 ### 4. HTMX Integration
 
 ```jinja
-<button hx-get="/utils/ntp/status/refresh" 
+<button hx-get="/utils/ntp/status/refresh"
         hx-target="#status-container"
-        hx-swap="innerHTML">
+        hx-swap="innerHTML"
+        class="btn-secondary px-4 py-2">
     Refresh Status
 </button>
 ```
 
-### 5. Dark Mode Support
+### 5. Design Tokens Instead of Dark Mode Classes
+
+Templates no longer use `bg-white dark:bg-gray-800` pairs. The application
+is dark-theme first and the theme CSS overrides semantic tokens, so use the
+design tokens from `static/css/styles.css`:
 
 ```jinja
-<div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+<div class="bg-bg-elevated text-text-primary border border-border-subtle">
     Content
 </div>
 ```
+
+Common tokens:
+
+| Token | Use |
+|-------|-----|
+| `bg-bg-base` | Page background |
+| `bg-bg-elevated`, `bg-bg-elevated-2`, `bg-bg-elevated-3` | Nested surfaces |
+| `text-text-primary`, `text-text-secondary`, `text-text-tertiary` | Text hierarchy |
+| `border-border-subtle`, `divide-border-subtle` | Borders and dividers |
+| `text-success-400`, `text-danger-400`, `text-info-400`, `text-warning-400` | Status colors |
+| `btn-primary`, `btn-secondary`, `btn-danger` | Buttons |
+| `form-input`, `form-textarea`, `form-select` | Form controls |
+| `card`, `card-body` | Cards |
+
+### 6. Template Structure
+
+Utility pages extend `layout_main.jinja`, which already renders the
+breadcrumb, the page card, and the error container. Override `title`,
+`caption`, and `inner`:
+
+```jinja
+{% extends "layout_main.jinja" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block caption %}{{ page_title }}{% endblock %}
+
+{% block inner %}
+    <p class="text-text-secondary">Page content</p>
+{% endblock %}
+```
+
+Do not override `content` in a page that extends `layout_main.jinja`; that
+replaces the whole layout, including the breadcrumb and card.
 
 ## File Descriptions
 
@@ -188,7 +286,7 @@ async def action(request: Request, param: Annotated[str, Form()]):
 **Purpose**: Logic and system operations
 
 **Key Features**:
-- OS detection (Linux/FreeBSD)
+- OS detection (Linux/FreeBSD/NetBSD)
 - NTP service management (start/stop/restart/enable)
 - Configuration file handling
 - Time synchronization status
@@ -257,7 +355,7 @@ Even without installing, you can learn by examining:
 
 1. **Code flow**: Follow a request from view → service → system command
 2. **Error handling**: See how exceptions are caught and displayed
-3. **OS differences**: Compare Linux vs FreeBSD command execution
+3. **OS differences**: Compare Linux, FreeBSD, and NetBSD command execution
 4. **Template patterns**: Study the UI components and styling
 5. **Security**: Review input validation and sudo usage
 
@@ -270,7 +368,7 @@ A: No, start simple. You can have just one page with basic functionality.
 A: Not recommended. The service layer makes code testable and reusable.
 
 **Q: What if my feature only works on Linux?**
-A: That's fine! Just add a check and display an error on FreeBSD.
+A: That's fine! Just add a check and display an error on the other platforms.
 
 **Q: Should every feature have HTMX?**
 A: No, only if you need dynamic updates without page refresh.
@@ -303,4 +401,4 @@ A: No, only if you need dynamic updates without page refresh.
 
 ---
 
-Happy feature development! 🚀
+Happy feature development.

@@ -128,6 +128,26 @@
                 </p>
             </div>
 
+            <!-- Host Key Verification (before the password is entered) -->
+            <div>
+                <label class="form-label">Host Key Verification</label>
+                <button
+                    type="button"
+                    class="btn-secondary btn-sm"
+                    hx-post="/utils/ssh/scan-host-key"
+                    hx-include="#host, #port"
+                    hx-target="#host-key-preview"
+                    hx-swap="innerHTML"
+                >
+                    Check host key
+                </button>
+                <p class="mt-1 text-sm text-text-tertiary">
+                    Retrieve and review the server's host key fingerprint before
+                    sending the password. Nothing is trusted until you submit.
+                </p>
+                <div id="host-key-preview" class="mt-3"></div>
+            </div>
+
             <!-- Password (One-time use) -->
             <div>
                 <label for="password" class="form-label">
