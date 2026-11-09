@@ -44,62 +44,104 @@
         {% endif %}
     </div>
 
-    {% if not histogram.available %}
-    <!-- Panel hidden when zpool iostat -w is unavailable -->
-    <div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded mb-6" role="alert">
-        <div class="flex items-start">
-            <svg class="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-            </svg>
-            <div>
-                <strong class="font-semibold">Latency histogram unavailable{% if selected_pool %} for {{ selected_pool }}{% endif %}:</strong>
-                {{ histogram.error or 'zpool iostat -w produced no histogram data' }}
+    <div x-data="latencyHistogram()" data-pool="{{ selected_pool or '' }}">
+        <!-- Controls -->
+        <div class="card mb-6">
+            <div class="card-body flex flex-wrap items-center gap-3">
+                <button type="button" class="btn-secondary" @click="showCumulative()" :disabled="busy">
+                    Since import
+                </button>
+                <span class="text-text-tertiary">|</span>
+                <label for="sample-seconds" class="text-sm text-text-secondary">Sample window</label>
+                <select id="sample-seconds" class="form-select" x-model.number="seconds">
+                    {% for choice in sample_choices %}
+                    <option value="{{ choice }}">{{ choice }} seconds</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="btn-primary" @click="load(seconds)" :disabled="busy">
+                    Take sample
+                </button>
+                <button type="button" class="px-4 py-2 transition-colors"
+                        :class="autoRefresh ? 'btn-success' : 'btn-secondary'"
+                        @click="toggleAutoRefresh()">
+                    <span x-text="autoRefresh ? 'Auto refresh: ON' : 'Auto refresh: OFF'"></span>
+                </button>
+                <span class="text-sm text-text-tertiary" x-show="busy" x-text="status"></span>
             </div>
         </div>
-    </div>
-    {% else %}
 
-    <p class="text-sm text-text-tertiary mb-6">
-        Counts are I/Os observed during a one-second sample window
-        (<code class="font-mono">zpool iostat -w -y 1 1</code>).
-        <code class="font-mono">total_wait</code> is the time from I/O submission to completion,
-        <code class="font-mono">disk_wait</code> the time spent queued on the leaf vdev,
-        <code class="font-mono">syncq_wait</code>/<code class="font-mono">asyncq_wait</code> the time
-        spent in the sync and async issue queues.
-    </p>
-
-    {% for pool_name, data in histogram.pools.items() %}
-    <div class="card mb-8">
-        <div class="card-body">
-            <h2 class="text-xl font-semibold text-text-primary mb-1">{{ pool_name }}</h2>
-            <p class="text-xs text-text-tertiary mb-4">{{ data.buckets|length }} latency buckets</p>
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-border-subtle">
-                            <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Latency</th>
-                            {% for column in data.columns %}
-                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs whitespace-nowrap">{{ column.replace('_', ' ') }}</th>
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for bucket in data.buckets %}
-                        <tr class="border-b border-border-subtle">
-                            <td class="py-1.5 px-3 font-mono text-text-primary">{{ bucket.bucket }}</td>
-                            {% for column in data.columns %}
-                            <td class="py-1.5 px-3 text-right font-mono {% if bucket.get(column, 0) %}text-text-primary{% else %}text-text-tertiary{% endif %}">
-                                {% if bucket.get(column, 0) %}{{ '{:,}'.format(bucket.get(column, 0)) }}{% else %}&middot;{% endif %}
-                            </td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        <div id="histogram-panel">
+            <p class="text-text-tertiary">Loading latency histogram...</p>
         </div>
     </div>
-    {% endfor %}
-    {% endif %}
 </div>
+
+<script>
+    // Latency histogram page controller.
+    // "Since import" loads cumulative counts. "Take sample" blocks on the
+    // server for the selected window and shows only I/Os completed in it.
+    // Auto refresh repeats samples back to back until it is turned off.
+    function latencyHistogram() {
+        return {
+            pool: '',
+            seconds: 10,
+            autoRefresh: false,
+            busy: false,
+            status: '',
+            nextTimer: null,
+
+            init() {
+                this.pool = this.$el.dataset.pool;
+                this.load(0);
+            },
+
+            showCumulative() {
+                this.autoRefresh = false;
+                this.load(0);
+            },
+
+            toggleAutoRefresh() {
+                this.autoRefresh = !this.autoRefresh;
+                if (this.autoRefresh && !this.busy) {
+                    this.load(this.seconds);
+                }
+                if (!this.autoRefresh && this.nextTimer) {
+                    clearTimeout(this.nextTimer);
+                    this.nextTimer = null;
+                }
+            },
+
+            load(sample) {
+                if (this.busy) {
+                    return;
+                }
+                this.busy = true;
+                this.status = sample ? `Sampling for ${sample} seconds...` : 'Loading...';
+                const params = new URLSearchParams({ pool: this.pool, sample: sample });
+                htmx.ajax('GET', '/zfs/observability/latency-histogram-table?' + params.toString(),
+                          { target: '#histogram-panel', swap: 'innerHTML' })
+                    .then(() => this.finish(true), () => this.finish(false));
+            },
+
+            finish(ok) {
+                this.busy = false;
+                this.status = '';
+                const failed = !ok || document.querySelector('#histogram-panel [data-histogram-error]');
+                if (failed) {
+                    this.autoRefresh = false;
+                    return;
+                }
+                if (this.autoRefresh) {
+                    // Short pause so a fast failure cannot loop without delay.
+                    this.nextTimer = setTimeout(() => {
+                        this.nextTimer = null;
+                        if (this.autoRefresh) {
+                            this.load(this.seconds);
+                        }
+                    }, 1000);
+                }
+            },
+        };
+    }
+</script>
 {% endblock %}

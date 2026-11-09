@@ -3,6 +3,7 @@ ZFS Performance Monitoring Service
 Handles performance metrics, I/O statistics, and process monitoring
 """
 import subprocess
+import time
 import psutil
 import platform
 import re
@@ -190,6 +191,54 @@ def parse_latency_histogram(text: str) -> Dict[str, Any]:
         "available": any(pool["buckets"] for pool in pools.values()),
         "pools": pools,
     }
+
+
+#: Sample windows offered by the latency histogram page, in seconds.
+LATENCY_SAMPLE_SECONDS = (5, 10, 30)
+
+
+def subtract_latency_histogram(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the I/O counts that completed between two histogram snapshots.
+
+    Both arguments are :func:`parse_latency_histogram` results taken from
+    cumulative ``zpool iostat -w -p`` output. The difference is computed here
+    instead of using ``zpool iostat -w <interval>`` because ``zpool`` converts
+    interval histograms to a per-second rate and truncates it to an integer
+    (``print_iostat_histo()`` in ``cmd/zpool/zpool_main.c``), so a few slow
+    I/Os spread over a multi-second window print as 0.
+
+    Only pools present in both snapshots are returned. A count that went down
+    (pool exported and imported between the snapshots) is reported as 0.
+    """
+    pools: Dict[str, Dict[str, Any]] = {}
+    for pool_name, after_data in after.get("pools", {}).items():
+        before_data = before.get("pools", {}).get(pool_name)
+        if before_data is None:
+            continue
+        before_rows = {row["bucket"]: row for row in before_data["buckets"]}
+        buckets = []
+        for row in after_data["buckets"]:
+            before_row = before_rows.get(row["bucket"], {})
+            new_row: Dict[str, Any] = {"bucket": row["bucket"]}
+            for column in after_data["columns"]:
+                new_row[column] = max(row.get(column, 0) - before_row.get(column, 0), 0)
+            buckets.append(new_row)
+        pools[pool_name] = {"columns": after_data["columns"], "buckets": buckets}
+
+    return {
+        "available": any(pool["buckets"] for pool in pools.values()),
+        "pools": pools,
+    }
+
+
+def histogram_has_activity(histogram: Dict[str, Any]) -> bool:
+    """Return True when any bucket of any pool has a non-zero count."""
+    for data in histogram.get("pools", {}).values():
+        for row in data["buckets"]:
+            for column in data["columns"]:
+                if row.get(column, 0):
+                    return True
+    return False
 
 
 class ZFSPerformanceService:
@@ -1323,7 +1372,11 @@ class ZFSPerformanceService:
             parsed['error'] = 'Slow I/O column not available from zpool status -s'
         return parsed
 
-    def get_latency_histogram(self, pool_name: Optional[str] = None) -> Dict[str, Any]:
+    def get_latency_histogram(
+        self,
+        pool_name: Optional[str] = None,
+        sample_seconds: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """Return per-pool latency histograms from ``zpool iostat -w``.
 
         ``-w`` prints a histogram of I/O latency bucketed from nanoseconds to
@@ -1331,62 +1384,90 @@ class ZFSPerformanceService:
         ``asyncq_wait``. This is different from the ``-l`` latency averages
         already shown on the pool iostat page.
 
+        Without ``sample_seconds`` the counts are cumulative since the pool
+        was imported. With ``sample_seconds`` two cumulative snapshots are
+        taken that many seconds apart and subtracted, which gives the exact
+        number of I/Os completed in the window (see
+        :func:`subtract_latency_histogram`). The caller blocks for the window.
+
         Args:
             pool_name: Optional pool to restrict the histogram to.
+            sample_seconds: Optional sample window, one of
+                ``LATENCY_SAMPLE_SECONDS``.
 
         Returns:
-            The parsed result of :func:`parse_latency_histogram` plus a
-            ``timestamp``, or ``available=False`` with an ``error``.
+            The parsed histogram plus ``mode`` (``cumulative`` or ``sample``),
+            ``sample_seconds``, ``has_activity`` and ``timestamp``, or
+            ``available=False`` with an ``error``.
         """
         if not get_capabilities().latency_histogram:
-            return {
-                'available': False,
-                'pool': pool_name,
-                'pools': {},
-                'error': 'Latency histograms are not supported on this platform'
-            }
+            return self._histogram_error(pool_name, 'Latency histograms are not supported on this platform')
 
-        timeout = self.timeouts.get('iostat', self.timeouts['default'])
-        cmd = ['zpool', 'iostat', '-w', '-y']
         if pool_name:
             try:
                 ZFSPoolService.validate_pool_name(pool_name)
             except ValueError as e:
-                return {
-                    'available': False,
-                    'pool': pool_name,
-                    'pools': {},
-                    'error': str(e)
-                }
+                return self._histogram_error(pool_name, str(e))
+
+        if sample_seconds is not None and sample_seconds not in LATENCY_SAMPLE_SECONDS:
+            return self._histogram_error(pool_name, f'Invalid sample window: {sample_seconds} seconds')
+
+        first = self._read_latency_histogram(pool_name)
+        if 'error' in first:
+            return self._histogram_error(pool_name, first['error'])
+
+        if sample_seconds:
+            time.sleep(sample_seconds)
+            second = self._read_latency_histogram(pool_name)
+            if 'error' in second:
+                return self._histogram_error(pool_name, second['error'])
+            parsed = subtract_latency_histogram(first, second)
+            parsed['mode'] = 'sample'
+        else:
+            parsed = first
+            parsed['mode'] = 'cumulative'
+
+        parsed['pool'] = pool_name
+        parsed['sample_seconds'] = sample_seconds
+        parsed['has_activity'] = histogram_has_activity(parsed)
+        parsed['timestamp'] = datetime.now().isoformat()
+        if not parsed['available']:
+            parsed['error'] = 'Latency histogram not available from zpool iostat -w'
+        return parsed
+
+    @staticmethod
+    def _histogram_error(pool_name: Optional[str], message: str) -> Dict[str, Any]:
+        """Build the ``available=False`` result for the latency histogram."""
+        return {
+            'available': False,
+            'pool': pool_name,
+            'pools': {},
+            'error': message,
+        }
+
+    def _read_latency_histogram(self, pool_name: Optional[str]) -> Dict[str, Any]:
+        """Run ``zpool iostat -w -p`` once and parse the cumulative counts.
+
+        ``-p`` prints exact integers instead of ``4.82K``. With no interval
+        argument ``zpool`` prints the counts since the pool was imported.
+        The pool name must already be validated.
+
+        Returns:
+            The :func:`parse_latency_histogram` result, or ``{'error': str}``.
+        """
+        timeout = self.timeouts.get('iostat', self.timeouts['default'])
+        cmd = ['zpool', 'iostat', '-w', '-p']
+        if pool_name:
             cmd.append(pool_name)
-        cmd.extend(['1', '1'])
 
         try:
             result = run_zfs_command(cmd, check=False, timeout=timeout)
         except subprocess.TimeoutExpired:
-            return {
-                'available': False,
-                'pool': pool_name,
-                'error': f'zpool iostat -w timed out after {timeout} seconds'
-            }
+            return {'error': f'zpool iostat -w timed out after {timeout} seconds'}
         except Exception as e:
-            return {
-                'available': False,
-                'pool': pool_name,
-                'error': f'Failed to run zpool iostat -w: {str(e)}'
-            }
+            return {'error': f'Failed to run zpool iostat -w: {str(e)}'}
 
         if result.returncode != 0:
-            return {
-                'available': False,
-                'pool': pool_name,
-                'error': (result.stderr or '').strip() or 'zpool iostat -w failed'
-            }
+            return {'error': (result.stderr or '').strip() or 'zpool iostat -w failed'}
 
-        parsed = parse_latency_histogram(result.stdout)
-        parsed['pool'] = pool_name
-        parsed['timestamp'] = datetime.now().isoformat()
-        parsed['raw_output'] = result.stdout
-        if not parsed['available']:
-            parsed['error'] = 'Latency histogram not available from zpool iostat -w'
-        return parsed
+        return parse_latency_histogram(result.stdout)

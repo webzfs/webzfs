@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from typing import Optional
 from datetime import datetime
 from config.templates import templates
-from services.zfs_performance import ZFSPerformanceService
+from services.zfs_performance import ZFSPerformanceService, LATENCY_SAMPLE_SECONDS
 from services.dataset_iostat import DatasetIostatService
 from auth.dependencies import get_current_user
 
@@ -823,9 +823,9 @@ def latency_histogram_page(request: Request, pool: Optional[str] = None):
 
     Unlike the ``-l`` latency averages already shown on the pool iostat page,
     ``-w`` buckets every I/O by latency (nanoseconds to seconds) per queue
-    type, which is what makes tail latency visible. The panel is hidden when
-    the command is unavailable. Plain ``def`` so the one-second iostat sample
-    runs in the threadpool instead of blocking the event loop.
+    type, which is what makes tail latency visible. The page is a shell; the
+    table is loaded from ``/latency-histogram-table``. Plain ``def`` because
+    ``zpool list`` can wait on spun-down disks.
     """
     try:
         from services.zfs_pool import ZFSPoolService
@@ -835,16 +835,35 @@ def latency_histogram_page(request: Request, pool: Optional[str] = None):
         all_pools = []
 
     selected_pool = pool or (all_pools[0] if all_pools else None)
-    histogram = performance_service.get_latency_histogram(selected_pool)
 
     return templates.TemplateResponse(
         request,
         name="zfs/observability/latency_histogram.jinja",
         context={
-            "histogram": histogram,
             "pools": all_pools,
             "selected_pool": selected_pool,
+            "sample_choices": LATENCY_SAMPLE_SECONDS,
             "page_title": "Latency Histograms"
+        }
+    )
+
+
+@router.get("/latency-histogram-table", response_class=HTMLResponse)
+def latency_histogram_table(request: Request, pool: Optional[str] = None, sample: int = 0):
+    """Return the latency histogram table partial.
+
+    ``sample=0`` shows counts since pool import. ``sample=N`` (one of
+    ``LATENCY_SAMPLE_SECONDS``) blocks for N seconds and shows only the I/Os
+    completed in that window, so this handler must stay plain ``def``.
+    """
+    histogram = performance_service.get_latency_histogram(pool or None, sample or None)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/latency_histogram_table.jinja",
+        context={
+            "histogram": histogram,
+            "selected_pool": pool,
         }
     )
 
