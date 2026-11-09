@@ -47,13 +47,24 @@
                   class="space-y-6" hx-boost="false"
                   onsubmit="return prepareDatasetCreate(event)" x-data="{ 
                 datasetType: '{{ dataset_type if dataset_type else 'filesystem' }}', 
+                sparse: {{ 'true' if sparse else 'false' }},
                 encryption: '{{ encryption if encryption else '' }}',
                  passphrase: '',
                  passphraseConfirm: '',
-                 keyFormat: {{ (keyformat or 'passphrase')|tojson }},
-                 keyLocation: {{ (keylocation or 'prompt')|tojson }},
-                 keyFilePath: {{ (key_file_path or '')|tojson }},
-                 keyUrl: {{ (key_url or '')|tojson }},
+                 {# tojson does not escape double quotes; forceescape keeps them inside this double-quoted attribute #}
+                 keyFormat: {{ (keyformat or 'passphrase')|tojson|forceescape }},
+                 keyLocation: {{ (keylocation or 'prompt')|tojson|forceescape }},
+                 keyFilePath: {{ (key_file_path or '')|tojson|forceescape }},
+                 keyUrl: {{ (key_url or '')|tojson|forceescape }},
+                 keySource: {{ (key_source or 'existing')|tojson|forceescape }},
+                 keyString: '',
+                 get isKeyStringInvalid() {
+                     if (this.keySource !== 'string') return false;
+                     var bytes = new TextEncoder().encode(this.keyString).length;
+                     if (this.keyFormat === 'raw') return bytes !== 32;
+                     if (this.keyFormat === 'hex') return !/^[0-9a-fA-F]{64}$/.test(this.keyString.trim());
+                     return bytes < 8 || bytes > 512;
+                 },
                 parentDataset: '{{ parent if parent else (pool if pool else '') }}',
                 datasetSuffix: '',
                 get fullDatasetName() {
@@ -71,7 +82,7 @@
                              this.passphrase !== this.passphraseConfirm;
                      }
                      if (this.keyLocation === 'file') {
-                         return this.keyFilePath.trim() === '';
+                         return this.keyFilePath.trim() === '' || this.isKeyStringInvalid;
                      }
                      if (this.keyLocation === 'https') {
                          return this.keyUrl.trim() === '';
@@ -220,6 +231,58 @@
                     </p>
                 </div>
 
+                <!-- Volume Options (only for volumes) -->
+                <div x-show="datasetType === 'volume'" x-transition
+                     class="border-t border-border-subtle pt-6 space-y-6">
+                    <h3 class="text-lg font-semibold text-text-primary">Volume Options</h3>
+
+                    <div class="flex items-start gap-3">
+                        <input
+                            type="checkbox"
+                            id="sparse"
+                            name="sparse"
+                            value="on"
+                            class="form-checkbox mt-1"
+                            x-model="sparse"
+                        >
+                        <div>
+                            <label for="sparse" class="form-label mb-0 cursor-pointer">
+                                Sparse volume (thin provisioned)
+                            </label>
+                            <p class="text-text-tertiary text-sm mt-1">
+                                Creates the volume with no reservation
+                                (<span class="font-mono">refreservation=none</span>).
+                                Only space actually written is consumed, but writes can fail
+                                with ENOSPC when the pool is full.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="volblocksize" class="form-label">
+                            Volume Block Size (volblocksize)
+                        </label>
+                        <select
+                            id="volblocksize"
+                            name="volblocksize"
+                            class="form-select"
+                        >
+                            <option value="" {% if not volblocksize %}selected{% endif %}>
+                                Default (16K on OpenZFS 2.2 and later, 8K before)
+                            </option>
+                            {% for size in ['512', '1K', '2K', '4K', '8K', '16K', '32K', '64K', '128K'] %}
+                            <option value="{{ size }}" {% if volblocksize == size %}selected{% endif %}>
+                                {{ size }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-text-tertiary text-sm mt-1">
+                            Power of two between 512B and 128KiB. Cannot be changed once data
+                            has been written to the volume.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- Mountpoint (only for filesystems) -->
                 <div x-show="datasetType === 'filesystem'" x-transition>
                     <label for="mountpoint" class="form-label">
@@ -261,8 +324,8 @@
                     </p>
                 </div>
 
-                <!-- Record Size -->
-                <div>
+                <!-- Record Size (filesystems only; zvols use volblocksize) -->
+                <div x-show="datasetType === 'filesystem'" x-transition>
                     <label for="recordsize" class="form-label">
                         Record Size
                     </label>
@@ -513,6 +576,55 @@
                         </div>
                     </div>
 
+                    <p x-show="encryption !== '' && keyLocation === 'prompt' && keyFormat !== 'passphrase'"
+                       class="text-danger-400 text-sm">
+                        Hex and raw keys cannot be typed at a prompt. Choose a file or https key location.
+                    </p>
+
+                    <!-- File key source -->
+                    <div x-show="keyLocation === 'file'" class="space-y-2">
+                        <label for="key_source" class="form-label">
+                            Key File Source <span class="text-danger-400">*</span>
+                        </label>
+                        <select
+                            id="key_source"
+                            name="key_source"
+                            class="form-select"
+                            x-model="keySource"
+                            :disabled="encryption === '' || keyLocation !== 'file'"
+                        >
+                            <option value="existing">Use an existing key file</option>
+                            <option value="generate">Generate a new random key file</option>
+                            <option value="string">Create a key file from text I enter</option>
+                        </select>
+                        <p class="text-text-tertiary text-sm mt-1" x-show="keySource === 'generate'">
+                            WebZFS writes a new random key in the selected format (32 random bytes for raw, 64 hex digits for hex, a random passphrase for passphrase). The key is never shown or logged.
+                        </p>
+                    </div>
+
+                    <!-- Key text (create key file from text) -->
+                    <div x-show="keyLocation === 'file' && keySource === 'string'" class="space-y-2">
+                        <label for="key_string" class="form-label">
+                            Key Text <span class="text-danger-400">*</span>
+                        </label>
+                        <input
+                            type="password"
+                            id="key_string"
+                            name="key_string"
+                            class="form-input font-mono"
+                            autocomplete="off"
+                            x-model="keyString"
+                            :required="encryption !== '' && keyLocation === 'file' && keySource === 'string'"
+                            :disabled="encryption === '' || keyLocation !== 'file' || keySource !== 'string'"
+                        >
+                        <p class="text-text-tertiary text-sm mt-1">
+                            Raw: exactly 32 bytes. Hex: exactly 64 hexadecimal characters. Passphrase: 8 to 512 bytes. The text is written to the key file and is never shown or logged.
+                        </p>
+                        <p x-show="keyString.length > 0 && isKeyStringInvalid" class="text-danger-400 text-sm mt-1">
+                            The key text does not match the size required by the selected key format.
+                        </p>
+                    </div>
+
                     <!-- File key path -->
                     <div x-show="keyLocation === 'file'" class="space-y-2">
                         <label for="key_file_path" class="form-label">
@@ -528,8 +640,19 @@
                             :required="encryption !== '' && keyLocation === 'file'"
                             :disabled="encryption === '' || keyLocation !== 'file'"
                         >
-                        <p class="text-text-tertiary text-sm mt-1">
+                        <p class="text-text-tertiary text-sm mt-1" x-show="keySource === 'existing'">
                             Absolute path to an existing key file. It must be a regular file owned by root with mode 0600. WebZFS verifies the permissions without reading the key.
+                        </p>
+                        <p class="text-text-tertiary text-sm mt-1" x-show="keySource !== 'existing'">
+                            Absolute path for the new key file. The file must not exist; WebZFS never overwrites a key file. The directory must be owned by root with no group or other access (mode 0700) and is created with mode 0700 if missing. The file is created owned by root with mode 0600.
+                        </p>
+                    </div>
+
+                    <!-- Offsite backup warning for key files -->
+                    <div x-show="keyLocation === 'file'" class="card-nested bg-warning-900/20 border-warning-700">
+                        <h4 class="text-sm font-semibold text-warning-400 mb-1">Back up the key file offsite</h4>
+                        <p class="text-sm text-text-secondary">
+                            The key file is the only way to unlock this dataset. If it is lost or the disk holding it fails, the encrypted data cannot be recovered. Copy the key file to secure offsite storage as soon as it exists, and keep it off the pool it unlocks.
                         </p>
                     </div>
 
@@ -562,7 +685,7 @@
                             <div>
                                 <h4 class="text-sm font-semibold text-info-400 mb-1">Key handling</h4>
                                 <p class="text-sm text-text-secondary">
-                                    File and https keys are loaded by ZFS without a prompt, so the dataset can be unlocked again after <code class="bg-bg-tertiary px-1 py-0.5 rounded text-xs">zfs unload-key</code> without entering a passphrase. Passphrase and key material are never written to WebZFS logs. Raw and hex keys cannot be entered interactively and must use a file or https location.
+                                    File and https keys are loaded by ZFS without a prompt, so the dataset can be unlocked again after <code class="bg-bg-tertiary px-1 py-0.5 rounded text-xs">zfs unload-key</code> without entering a passphrase. Passphrases and key material are never written to WebZFS logs; the key file path is recorded in the audit log. Raw and hex keys cannot be entered interactively and must use a file or https location.
                                 </p>
                             </div>
                         </div>

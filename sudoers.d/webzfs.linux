@@ -6,7 +6,9 @@
 webzfs ALL=(ALL) NOPASSWD: /usr/sbin/zpool, /usr/sbin/zfs, /usr/sbin/zdb -l *, /usr/bin/zpool, /usr/bin/zfs, /usr/bin/zdb -l *, /sbin/zpool, /sbin/zfs, /sbin/zdb -l *
 webzfs ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /sbin/smartctl
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsblk, /usr/bin/blkid
-# Encryption key file validation: stat reads metadata only, never key material.
+# Encryption key files: stat reads metadata only, never key material. New key
+# files are written with the tee, mkdir and chmod grants below; the key is
+# passed on stdin, never on the command line.
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/stat, /bin/stat
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/lsof, /usr/bin/lslocks, /bin/lsof, /bin/lslocks
 webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid, /usr/bin/syncoid, /usr/local/sbin/sanoid, /usr/local/sbin/syncoid
@@ -14,7 +16,7 @@ webzfs ALL=(ALL) NOPASSWD: /usr/sbin/sanoid, /usr/sbin/syncoid, /usr/bin/sanoid,
 # System services and scheduled tasks use systemctl link/disable.
 webzfs ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
 # Configuration editing and ZED script creation
-webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir
+webzfs ALL=(ALL) NOPASSWD: /usr/bin/cat, /usr/bin/tee, /usr/bin/mkdir, /bin/mkdir
 
 # ZED management also needs ln, rm, mv, chown, chmod and kill. sudo-rs
 # cannot express the previous dynamic zed.d filename globs. The existing

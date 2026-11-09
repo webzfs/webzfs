@@ -1,75 +1,65 @@
 {% extends "layout_main.jinja" %}
 
-{% block content %}
-<div class="container mx-auto px-4 py-6">
-    <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Edit NTP Configuration</h1>
-        <p class="text-gray-600 dark:text-gray-400 mt-2">Configuration file: {{ config_path }}</p>
-    </div>
+{% block title %}{{ page_title }}{% endblock %}
 
-    <!-- Display Messages -->
+{% block caption %}{{ page_title }}{% endblock %}
+
+{% block inner %}
+    <!-- Success/Error Messages -->
     {% if request.query_params.get('message') %}
-    <div class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+    <div class="bg-success-900/30 border-2 border-success-500/50 text-success-400 px-4 py-3 rounded mb-4">
         {{ request.query_params.get('message') }}
     </div>
     {% endif %}
-    
+
     {% if request.query_params.get('error') %}
-    <div class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-        {{ request.query_params.get('error') }}
+    <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded mb-4">
+        <strong>Error:</strong> {{ request.query_params.get('error') }}
     </div>
     {% endif %}
 
-    <!-- Configuration Editor Card -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <form method="POST" action="/utils/ntp/config/save">
-            <div class="mb-4">
-                <label for="config" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Configuration Content
-                </label>
-                <textarea 
-                    name="config" 
-                    id="config" 
-                    rows="20"
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
-                    required>{{ config }}</textarea>
-                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                    Edit the NTP configuration file. Be careful as incorrect syntax may prevent the service from starting.
-                </p>
-            </div>
-            
-            <div class="flex gap-4">
-                <button type="submit" 
-                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        onclick="return confirm('Save NTP configuration? The service will need to be restarted for changes to take effect.');">
-                    Save Configuration
-                </button>
-                
-                <a href="/utils/ntp" 
-                   class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
-                    Cancel
-                </a>
-            </div>
-        </form>
-    </div>
+    <p class="text-text-secondary mb-4">
+        Configuration file: <span class="font-mono text-text-primary">{{ config_path }}</span>
+    </p>
 
-    <!-- Help Card -->
-    <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 mt-6">
-        <h3 class="text-lg font-bold text-blue-900 dark:text-blue-300 mb-2">
-            Configuration Help
-        </h3>
-        <p class="text-blue-800 dark:text-blue-400 mb-2">
-            Common NTP configuration directives:
-        </p>
-        <ul class="list-disc list-inside text-blue-800 dark:text-blue-400 space-y-1">
+    <form method="POST" action="/utils/ntp/config/save">
+        <div class="mb-4">
+            <label for="config" class="block text-sm font-medium text-text-secondary mb-2">
+                Configuration Content
+            </label>
+            <textarea
+                name="config"
+                id="config"
+                rows="20"
+                class="form-textarea w-full font-mono text-sm"
+                required>{{ config }}</textarea>
+            <p class="mt-2 text-sm text-text-tertiary">
+                Edit the NTP configuration file. Incorrect syntax may prevent the service from starting.
+            </p>
+        </div>
+        <div class="flex gap-3">
+            <button type="submit"
+                    class="btn-primary px-4 py-2"
+                    onclick="return confirm('Save NTP configuration? The service will need to be restarted for changes to take effect.');">
+                Save Configuration
+            </button>
+
+            <a href="/utils/ntp" class="btn-secondary px-4 py-2 inline-flex items-center">
+                Cancel
+            </a>
+        </div>
+    </form>
+
+    <!-- Help -->
+    <div class="mt-6 bg-info-900/30 border-2 border-info-500/50 text-info-400 px-4 py-3 rounded">
+        <h3 class="text-sm font-semibold mb-2">Configuration Help</h3>
+        <p class="text-sm mb-2">Common NTP configuration directives:</p>
+        <ul class="list-disc list-inside text-sm space-y-1">
             <li><code>server [address]</code> - Add an NTP server</li>
             <li><code>pool [address]</code> - Add a pool of NTP servers</li>
             <li><code>driftfile [path]</code> - Specify drift file location</li>
             <li><code>restrict [options]</code> - Set access restrictions</li>
         </ul>
-        <p class="text-blue-800 dark:text-blue-400 mt-2">
-            Remember to restart the NTP service after making changes.
-        </p>
+        <p class="text-sm mt-2">Restart the NTP service after making changes.</p>
     </div>
-</div>
 {% endblock %}

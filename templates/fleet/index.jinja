@@ -71,13 +71,22 @@
     </div>
   </div>
 
-  {# Success/Error Messages #}
+  {# Success/Error Messages.
+     partials/success.jinja guards on `message` and partials/error.jinja
+     guards on `error`, so the query parameter must be bound to those
+     names explicitly. A bare `with context` include leaves both unset
+     and renders an empty block, which silently hid the outcome of
+     redirect-based actions such as Trust host key. #}
   {% if request.query_params.get('success') %}
-    {% include "partials/success.jinja" with context %}
+    {% with message=request.query_params.get('success') %}
+      {% include "partials/success.jinja" %}
+    {% endwith %}
   {% endif %}
-  
+
   {% if request.query_params.get('error') %}
-    {% include "partials/error.jinja" with context %}
+    {% with error=request.query_params.get('error') %}
+      {% include "partials/error.jinja" %}
+    {% endwith %}
   {% endif %}
 
   {# Action Buttons and Auto-Refresh #}
@@ -127,6 +136,13 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7m-16 0c0 2.21 3.582 4 8 4s8-1.79 8-4m-16 0c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
         </svg>
         Fleet Pools
+      </a>
+
+      <a href="/fleet/command" class="btn-secondary inline-flex items-center">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+        </svg>
+        FleetView C&amp;C
       </a>
       
       {% if servers %}

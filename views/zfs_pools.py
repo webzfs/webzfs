@@ -1012,25 +1012,37 @@ async def import_pool(
     request: Request,
     pool_name: str,
     force: Annotated[bool, Form()] = False,
+    readonly: Annotated[bool, Form()] = False,
     current_user: str = Depends(get_current_user)
 ):
     """Import a pool"""
     try:
-        pool_service.import_pool(pool_name, force=force)
-        audit_logger.log_pool_import(user=current_user, pool_name=pool_name, force=force)
+        pool_service.import_pool(pool_name, force=force, readonly=readonly)
+        audit_logger.log_pool_import(
+            user=current_user, pool_name=pool_name, force=force, readonly=readonly
+        )
+        if readonly:
+            message = f"Pool {pool_name} imported read-only successfully"
+        else:
+            message = f"Pool {pool_name} imported successfully"
         return RedirectResponse(
-            url=f"/zfs/pools?message=Pool {pool_name} imported successfully",
+            url=f"/zfs/pools?message={message}",
             status_code=303
         )
     except Exception as e:
-        audit_logger.log_pool_import(user=current_user, pool_name=pool_name, force=force, success=False, error=str(e))
+        audit_logger.log_pool_import(
+            user=current_user, pool_name=pool_name, force=force,
+            readonly=readonly, success=False, error=str(e)
+        )
         # Carry the full failure reason back to the import page, along with
-        # which pool failed and whether force was already attempted, so the
-        # page can show the reason and offer a force import when appropriate.
+        # which pool failed and whether force / read-only was already
+        # attempted, so the page can show the reason and offer a force import
+        # only when it will not silently drop the read-only option.
         error_params = urlencode({
             "error": str(e),
             "failed_pool": pool_name,
             "force_attempted": "true" if force else "false",
+            "readonly_attempted": "true" if readonly else "false",
         })
         return RedirectResponse(
             url=f"/zfs/pools/import/list?{error_params}",

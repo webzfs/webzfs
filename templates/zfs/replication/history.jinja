@@ -21,6 +21,9 @@
         </a>
     </div>
 
+    {# Redirects from the resume and delete routes report failures through an
+       error query parameter, so bind it here as well as the context value. #}
+    {% set error = error or request.query_params.get('error') %}
     {% if error %}
     <div class="alert alert-danger mb-6">
         {{ error }}
@@ -156,6 +159,9 @@
                             </td>
                             <td class="px-3 py-3">
                                 <span class="badge-info">{{ execution.replication_type }}</span>
+                                {% if execution.receive_resume_token %}
+                                <span class="badge-warning" title="A partially received stream is saved on the receiving side">Resumable</span>
+                                {% endif %}
                             </td>
                             <td class="px-3 py-3">
                                 {% if execution.status == 'success' %}

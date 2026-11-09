@@ -128,7 +128,12 @@ class FileStorageService:
         source_dataset: str,
         target_dataset: str,
         replication_type: str,
-        command: Optional[str] = None
+        command: Optional[str] = None,
+        receive_options: Optional[Dict[str, Any]] = None,
+        resumable: bool = False,
+        remote_host: Optional[str] = None,
+        remote_port: Optional[int] = None,
+        ssh_key: Optional[str] = None
     ) -> int:
         """
         Create a new execution record
@@ -140,6 +145,13 @@ class FileStorageService:
             target_dataset: Target dataset path
             replication_type: Type of replication (local, push, pull)
             command: Full shell command string that was executed
+            receive_options: Structured receive options used for this run
+                (``-u``/``-o``/``-x``/``-d``/``-e``), stored so the
+                history shows exactly how the target was received.
+            resumable: Whether the receive used -s (resumable receive)
+            remote_host: Remote receive host, when the target is remote
+            remote_port: SSH port for the remote receive host
+            ssh_key: Private key path used for the SSH transport
         
         Returns:
             execution_id: ID of created execution record
@@ -163,8 +175,22 @@ class FileStorageService:
                 'bytes_transferred': 0,
                 'snapshot_name': None,
                 'command': command,
+                'receive_options': receive_options,
                 'error_message': None,
-                'log_output': None
+                'log_output': None,
+                # Issue #7: resumable receive state. The token is the
+                # receive_resume_token read from the target dataset after
+                # an interrupted receive; it is consumed by `zfs send -t`.
+                'resumable': bool(resumable),
+                'receive_resume_token': None,
+                # Dataset that owns the saved receive state. For a full send
+                # this is target/<source basename>, not the selected target.
+                'receive_resume_target': None,
+                # Transport details, persisted so a failed execution can be
+                # resumed or discarded without re-entering the connection.
+                'remote_host': remote_host,
+                'remote_port': remote_port,
+                'ssh_key': ssh_key
             }
             
             if 'executions' not in data:
@@ -188,9 +214,17 @@ class FileStorageService:
         snapshot_name: Optional[str] = None,
         command: Optional[str] = None,
         error_message: Optional[str] = None,
-        log_output: Optional[str] = None
+        log_output: Optional[str] = None,
+        receive_resume_token: Optional[str] = None,
+        receive_resume_target: Optional[str] = None
     ) -> None:
-        """Update an execution record"""
+        """Update an execution record
+
+        receive_resume_token and receive_resume_target are only written when
+        a value is supplied, so ordinary status updates never clobber the
+        saved-state information recorded after a failed resumable receive.
+        Pass an empty string to clear them.
+        """
         with self._lock, self._interprocess_lock():
             data = self._read_json(self.history_file)
             
@@ -205,11 +239,35 @@ class FileStorageService:
                         execution['command'] = command
                     execution['error_message'] = error_message
                     execution['log_output'] = log_output
+                    if receive_resume_token is not None:
+                        execution['receive_resume_token'] = receive_resume_token or None
+                    if receive_resume_target is not None:
+                        execution['receive_resume_target'] = receive_resume_target or None
                     break
             
             self._write_json(self.history_file, data)
             self._write_log(f"Execution #{execution_id} completed: {status}")
     
+    def clear_receive_resume_token(self, execution_id: int) -> bool:
+        """Forget a stored receive_resume_token without touching other fields.
+
+        Called after `zfs receive -A` aborts a partially received stream, or
+        after a resume completes, so the UI stops offering a resume action
+        for a token that no longer exists on the receiving side.
+        """
+        with self._lock, self._interprocess_lock():
+            data = self._read_json(self.history_file)
+            for execution in data.get('executions', []):
+                if execution['id'] == execution_id:
+                    execution['receive_resume_token'] = None
+                    execution['receive_resume_target'] = None
+                    self._write_json(self.history_file, data)
+                    self._write_log(
+                        f"Execution #{execution_id} resume token cleared"
+                    )
+                    return True
+            return False
+
     def add_progress_update(
         self,
         execution_id: int,
@@ -497,7 +555,8 @@ class FileStorageService:
         large_blocks: bool = False,
         additional_flags: Optional[str] = None,
         ssh_connection_id: Optional[str] = None,
-        replication_type: str = 'local'
+        replication_type: str = 'local',
+        receive_options: Optional[Dict[str, Any]] = None
     ) -> int:
         """
         Create a new syncoid scheduled job
@@ -536,6 +595,7 @@ class FileStorageService:
                 'additional_flags': additional_flags or '',
                 'ssh_connection_id': ssh_connection_id,
                 'replication_type': replication_type,
+                'receive_options': receive_options,
                 'last_run': None,
                 'last_status': None,
                 'next_run': None,
@@ -599,7 +659,8 @@ class FileStorageService:
         large_blocks: Optional[bool] = None,
         additional_flags: Optional[str] = None,
         ssh_connection_id: Optional[str] = None,
-        replication_type: Optional[str] = None
+        replication_type: Optional[str] = None,
+        receive_options: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update an existing syncoid job"""
         with self._lock, self._interprocess_lock():
@@ -648,6 +709,8 @@ class FileStorageService:
                         job['ssh_connection_id'] = ssh_connection_id or None
                     if replication_type is not None:
                         job['replication_type'] = replication_type
+                    if receive_options is not None:
+                        job['receive_options'] = receive_options
                     
                     job['updated_at'] = datetime.now().isoformat()
                     

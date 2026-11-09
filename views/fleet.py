@@ -10,6 +10,7 @@ from config.templates import templates
 from auth.dependencies import get_current_user
 from services.fleet_monitoring import FleetMonitoringService
 from services.ssh_connection import SSHConnectionService
+from services.fleet_command import get_command_context, save_order
 from typing import Optional, Annotated
 
 logger = logging.getLogger(__name__)
@@ -227,6 +228,91 @@ async def test_server_connection(request: Request, server_id: str):
         )
 
 
+@router.get("/servers/{server_id}/trust-host-key", response_class=HTMLResponse)
+async def trust_server_host_key_form(request: Request, server_id: str):
+    """
+    Step 1 of the show-and-confirm host key trust flow.
+
+    Scans the remote host key WITHOUT pinning it and renders the
+    fingerprints so the administrator can verify them out of band (for
+    example against `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
+    run on the server's console). Nothing is written to known_hosts by
+    this route.
+    """
+    try:
+        server = fleet_service.get_server(server_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    host = server["ip"]
+    port = server["port"]
+    try:
+        preview = ssh_service.preview_host_key(host, port)
+    except Exception as e:
+        logger.error(f"Host key scan failed for fleet server {server_id}: {e}")
+        return RedirectResponse(
+            url=f"/fleet/?error=Host key scan failed for {host}:{port}: {e}",
+            status_code=303
+        )
+
+    return templates.TemplateResponse(
+        request,
+        name="fleet/trust_host_key.jinja",
+        context={
+            "active_page": "fleet",
+            "server": server,
+            "preview": preview,
+        }
+    )
+
+
+@router.post("/servers/{server_id}/trust-host-key")
+async def trust_server_host_key(
+    request: Request,
+    server_id: str,
+    fingerprint: Annotated[list[str], Form()] = []
+):
+    """
+    Step 2 of the show-and-confirm host key trust flow.
+
+    Pins the host key only after the administrator confirmed the exact
+    fingerprints rendered by the GET route. The service re-scans and
+    refuses the pin if the remote key changed in between, so a key is
+    never trusted without having been displayed first.
+
+    Servers added before host-key verification was enforced may have no
+    pinned key, and a server whose key changed fails to connect. This is
+    the deliberate "I verified the new key out of band" path; the key is
+    never re-pinned automatically.
+    """
+    try:
+        server = fleet_service.get_server(server_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    host = server["ip"]
+    port = server["port"]
+    try:
+        fingerprints = ssh_service.confirm_host_key(host, port, fingerprint)
+        logger.info(
+            f"Pinned SSH host key for fleet server {server_id} "
+            f"({host}:{port}): {', '.join(fingerprints)}"
+        )
+        return RedirectResponse(
+            url=(
+                f"/fleet/?success=Host key pinned for {host}:{port} "
+                f"({', '.join(fingerprints)})"
+            ),
+            status_code=303
+        )
+    except Exception as e:
+        logger.error(f"Failed to pin host key for fleet server {server_id}: {e}")
+        return RedirectResponse(
+            url=f"/fleet/?error={e}",
+            status_code=303
+        )
+
+
 @router.post("/refresh")
 async def refresh_all_servers(request: Request):
     """Refresh pool data from all servers"""
@@ -414,3 +500,70 @@ async def fleet_pools_data(request: Request):
             "sort_by": sort_by,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# FleetView C&C - read-only server stack view of the whole fleet
+# ---------------------------------------------------------------------------
+
+
+@router.get("/command", response_class=HTMLResponse)
+def fleet_command_page(request: Request):
+    """
+    FleetView C&C page shell. Renders immediately; the server stack and
+    the Needs Attention bar load from /fleet/command/data via HTMX.
+    """
+    return templates.TemplateResponse(
+        request,
+        name="fleet/command.jinja",
+        context={
+            "active_page": "fleet",
+        }
+    )
+
+
+@router.get("/command/data", response_class=HTMLResponse)
+def fleet_command_data(request: Request):
+    """
+    HTMX endpoint that polls the local host and every Fleet View server
+    with read-only commands and returns the C&C content partial.
+
+    Declared as a plain function so FastAPI runs the blocking SSH and
+    subprocess work in its threadpool instead of on the event loop.
+    """
+    return templates.TemplateResponse(
+        request,
+        name="fleet/partials/command_data.jinja",
+        context=get_command_context(fleet_service),
+    )
+
+
+@router.post("/command/order")
+async def fleet_command_order(request: Request):
+    """
+    Save the FleetView C&C server card order. Body: {"order": [server ids]}.
+    An empty list resets to the default order.
+
+    This only stores a display preference; it does not touch any server.
+    Only application/json bodies are accepted, which a cross-site HTML form
+    cannot send without a CORS preflight.
+    """
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type != "application/json":
+        raise HTTPException(status_code=415, detail="Content-Type must be application/json")
+
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    order = body.get("order") if isinstance(body, dict) else None
+    try:
+        saved = save_order(order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        logger.error(f"Failed to save FleetView C&C card order: {exc}")
+        raise HTTPException(status_code=500, detail="Could not save the card order")
+
+    return JSONResponse({"order": saved})
