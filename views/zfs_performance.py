@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from typing import Optional
 from datetime import datetime
 from config.templates import templates
-from services.zfs_performance import ZFSPerformanceService
+from services.zfs_performance import ZFSPerformanceService, LATENCY_SAMPLE_SECONDS
 from services.dataset_iostat import DatasetIostatService
 from auth.dependencies import get_current_user
 
@@ -814,5 +814,64 @@ async def dataset_stats_table(
             "mode": mode,
             "stats": stats,
         },
+    )
+
+
+@router.get("/latency-histogram", response_class=HTMLResponse)
+def latency_histogram_page(request: Request, pool: Optional[str] = None, sample: int = 0):
+    """Display I/O latency histograms from ``zpool iostat -w``.
+
+    Unlike the ``-l`` latency averages already shown on the pool iostat page,
+    ``-w`` buckets every I/O by latency (nanoseconds to seconds) per queue
+    type, which is what makes tail latency visible. The page is a shell; the
+    table is loaded and auto refreshed from ``/latency-histogram-table`` with
+    htmx polling, as on the system iostat page. Plain ``def`` because
+    ``zpool list`` can wait on spun-down disks.
+    """
+    if sample not in LATENCY_SAMPLE_SECONDS:
+        sample = 0
+
+    try:
+        from services.zfs_pool import ZFSPoolService
+        pool_service = ZFSPoolService()
+        all_pools = [p.get("name") for p in pool_service.list_pools() if p.get("name")]
+    except Exception:
+        all_pools = []
+
+    selected_pool = pool or (all_pools[0] if all_pools else None)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/latency_histogram.jinja",
+        context={
+            "pools": all_pools,
+            "selected_pool": selected_pool,
+            "sample": sample,
+            "sample_choices": LATENCY_SAMPLE_SECONDS,
+            # A sample request blocks for its window, so poll one second
+            # after it ends; the cumulative view polls every 5 seconds.
+            "refresh_seconds": sample + 1 if sample else 5,
+            "page_title": "Latency Histograms"
+        }
+    )
+
+
+@router.get("/latency-histogram-table", response_class=HTMLResponse)
+def latency_histogram_table(request: Request, pool: Optional[str] = None, sample: int = 0):
+    """Return the latency histogram table partial.
+
+    ``sample=0`` shows counts since pool import. ``sample=N`` (one of
+    ``LATENCY_SAMPLE_SECONDS``) blocks for N seconds and shows only the I/Os
+    completed in that window, so this handler must stay plain ``def``.
+    """
+    histogram = performance_service.get_latency_histogram(pool or None, sample or None)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/latency_histogram_table.jinja",
+        context={
+            "histogram": histogram,
+            "selected_pool": pool,
+        }
     )
 

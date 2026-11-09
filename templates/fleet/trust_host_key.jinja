@@ -1,0 +1,177 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}Trust Host Key - Fleet View - {{ settings.CAPTION }}{% endblock %}
+
+{% block content %}
+<div class="container-page py-8 max-w-3xl mx-auto">
+
+  {# Breadcrumb Navigation #}
+  <nav class="flex mb-6 text-sm" aria-label="Breadcrumb">
+    <ol class="inline-flex items-center space-x-2">
+      <li>
+        <a href="/fleet/" class="text-text-secondary hover:text-primary-400 transition-colors">
+          Fleet View
+        </a>
+      </li>
+      <li>
+        <svg class="w-4 h-4 text-text-secondary" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+        </svg>
+      </li>
+      <li>
+        <span class="text-text-primary font-medium">Trust Host Key</span>
+      </li>
+    </ol>
+  </nav>
+
+  {# Page Header #}
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold text-text-primary mb-2">Verify SSH Host Key</h1>
+    <p class="text-text-secondary">
+      {{ server.name }} <span class="font-mono text-sm">({{ server.username }}@{{ server.ip }}:{{ server.port }})</span>
+    </p>
+  </div>
+
+  {% if not preview.scanned %}
+    {# ssh-keyscan returned nothing: host down, filtered, or wrong port. #}
+    <div class="card-nested bg-danger-900/30 border-danger-900 mb-6">
+      <div class="flex gap-3">
+        <svg class="w-5 h-5 text-danger-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div class="text-sm">
+          <p class="font-medium text-danger-400 mb-1">No host key could be retrieved</p>
+          <p class="text-text-secondary">
+            ssh-keyscan returned no host keys for {{ preview.host }}:{{ preview.port }}.
+            The server may be offline, the port may be wrong, or a firewall may be
+            blocking the connection. Nothing has been changed.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-3">
+      <a href="/fleet/" class="btn-secondary">Back to Fleet View</a>
+    </div>
+
+  {% else %}
+
+    {% if preview.is_changed %}
+      {# The pinned key and the remote key disagree. This is the MITM case. #}
+      <div class="card-nested bg-danger-900/30 border-danger-900 mb-6">
+        <div class="flex gap-3">
+          <svg class="w-5 h-5 text-danger-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <div class="text-sm">
+            <p class="font-medium text-danger-400 mb-1">Warning: this host key has changed</p>
+            <p class="text-text-secondary">
+              A different key is already pinned for this server. This happens after a
+              legitimate server rebuild or SSH key rotation, but it is also exactly what
+              a man-in-the-middle attack looks like. Do not continue unless you can
+              account for the change.
+            </p>
+          </div>
+        </div>
+      </div>
+    {% elif preview.is_pinned %}
+      <div class="card-nested bg-info-500/10 border-info-500/30 mb-6">
+        <div class="flex gap-3">
+          <svg class="w-5 h-5 text-info-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <div class="text-sm text-text-secondary">
+            This host key is already pinned and matches the remote server. Re-pinning
+            it will not change anything.
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <div class="card-nested bg-warning-900/20 border-warning-700 mb-6">
+        <div class="flex gap-3">
+          <svg class="w-5 h-5 text-warning-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <div class="text-sm">
+            <p class="font-medium text-warning-400 mb-1">This host is not yet trusted</p>
+            <p class="text-text-secondary">
+              No host key is pinned for this server. Verify the fingerprint below
+              before trusting it.
+            </p>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    {# The fingerprints being approved. This is the show half of
+       show-and-confirm: the exact values posted back are the ones
+       rendered here. #}
+    <div class="card mb-6">
+      <div class="card-body">
+        <h2 class="text-sm font-semibold text-text-primary mb-3">
+          Host keys reported by {{ preview.host }}:{{ preview.port }}
+        </h2>
+        <p class="text-xs text-text-tertiary mb-3">
+          The server offers one key per key type. All keys listed here are pinned
+          when you confirm.
+        </p>
+        <ul class="space-y-2 mb-4">
+          {% for key in preview.keys %}
+            <li class="flex items-center gap-3 font-mono text-xs text-text-primary bg-bg-elevated-2 rounded px-3 py-2">
+              <span class="badge badge-info flex-shrink-0">{{ key.type }}</span>
+              <span class="break-all">{{ key.fingerprint }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+
+        {% if preview.is_changed and preview.pinned_keys %}
+          <h2 class="text-sm font-semibold text-text-primary mb-3">
+            Currently pinned (will be replaced)
+          </h2>
+          <ul class="space-y-2 mb-4">
+            {% for key in preview.pinned_keys %}
+              <li class="flex items-center gap-3 font-mono text-xs text-danger-300 bg-bg-elevated-2 rounded px-3 py-2">
+                <span class="badge badge-danger flex-shrink-0">{{ key.type }}</span>
+                <span class="break-all line-through">{{ key.fingerprint }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        <div class="text-sm text-text-secondary">
+          <p class="mb-2">
+            Confirm each key matches the server's real keys. On the server console, run:
+          </p>
+          <pre class="bg-bg-elevated-2 rounded px-3 py-2 font-mono text-xs overflow-x-auto">for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$f"; done</pre>
+          <p class="mt-2">
+            Compare it over a channel that is not this network path. Do not rely on
+            the value shown above to verify itself.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# Each displayed fingerprint is posted back, so the service can
+       refuse the pin if the remote key rotated since this page rendered. #}
+    <form method="post"
+          action="/fleet/servers/{{ server.id }}/trust-host-key"
+          hx-boost="false">
+      {% for fp in preview.fingerprints %}
+        <input type="hidden" name="fingerprint" value="{{ fp }}">
+      {% endfor %}
+      <div class="flex justify-end gap-3">
+        <a href="/fleet/" class="btn-secondary">Cancel</a>
+        <button type="submit" class="{% if preview.is_changed %}btn-danger{% else %}btn-primary{% endif %}">
+          {% if preview.is_changed %}
+            I verified this new key, replace the pin
+          {% else %}
+            I verified this fingerprint, trust this host
+          {% endif %}
+        </button>
+      </div>
+    </form>
+
+  {% endif %}
+
+</div>
+{% endblock %}

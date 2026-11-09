@@ -428,6 +428,8 @@
                             <td class="px-4 py-2">
                                 {% if pool_scrub.scrub_in_progress %}
                                 <span class="text-info-400">Running</span>
+                                {% elif pool_scrub.scrub_paused %}
+                                <span class="text-warning-400">Paused</span>
                                 {% else %}
                                 <span class="text-text-tertiary">No</span>
                                 {% endif %}

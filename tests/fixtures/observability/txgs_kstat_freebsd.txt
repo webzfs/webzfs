@@ -1,0 +1,5 @@
+kstat.zfs.tank.txgs:
+txg      birth            state ndirty       nread        nwritten     reads    writes   otime        qtime        wtime        stime
+390251   361698140699850  C     1671168      0            888832       0        63       5120961672   5797         31429        11715735
+390252   361700140699850  C     0            4096         4096         2        1        2100000      1200         400          900000
+390253   361702140699850  O     524288       0            0            0        0        0            0            0            0

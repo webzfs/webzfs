@@ -16,6 +16,54 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class HostKeyVerificationError(Exception):
+    """Raised when a remote SSH host key is unknown, unpinned, or changed."""
+
+
+# Substrings that OpenSSH and paramiko use when host key verification fails.
+HOST_KEY_FAILURE_MARKERS = (
+    'host key verification failed',
+    'remote host identification has changed',
+    'no matching host key',
+    'not found in known_hosts',
+)
+
+
+def is_host_key_error(text: str) -> bool:
+    """Return True when SSH output describes a host-key verification failure."""
+    lowered = (text or '').lower()
+    return any(marker in lowered for marker in HOST_KEY_FAILURE_MARKERS)
+
+
+def normalize_known_hosts_host(host: str) -> str:
+    """
+    Strip a leading ``user@`` from an SSH destination.
+
+    Destinations coming from the replication UI are ``username@host`` (the
+    form ssh itself expects), while known_hosts stores the bare host.
+    Normalising before a known_hosts lookup keeps an already pinned host
+    recognised instead of being reported as unpinned.
+    """
+    if not host:
+        return host
+    return host.rsplit('@', 1)[-1]
+
+
+def host_key_error_message(host: str, port: int, detail: str = '') -> str:
+    """Build a clear, user-facing host-key error message."""
+    message = (
+        f"SSH host key verification failed for {host}:{port}. "
+        "The remote host key is not pinned in WebZFS's known_hosts file, "
+        "or it has changed since it was pinned. Add this host under SSH "
+        "Connections first; if the key change is expected, use the "
+        "'Trust host key' action to re-pin it."
+    )
+    if detail:
+        message = f"{message} Details: {detail}"
+    return message
+
+
+
 class SSHConnectionService:
     """Service for managing SSH connections with key-based authentication"""
     
@@ -79,7 +127,8 @@ class SSHConnectionService:
         username: str,
         password: str,
         port: int = 22,
-        notes: str = ""
+        notes: str = "",
+        confirmed_fingerprints: Optional[List[str]] = None
     ) -> str:
         """
         Create a new SSH connection with automatic key setup
@@ -100,6 +149,11 @@ class SSHConnectionService:
             password: SSH password (used once, then discarded)
             port: SSH port (default 22)
             notes: Optional notes about the connection
+            confirmed_fingerprints: Host key fingerprints the administrator
+                reviewed and approved before submitting. When supplied, the
+                host key is pinned only if the remote key still matches, so
+                the password is never sent to a host whose key was not
+                confirmed. When omitted the host is pinned on first use.
             
         Returns:
             connection_id: UUID of created connection
@@ -119,7 +173,22 @@ class SSHConnectionService:
                 f"uvicorn-zfs-{name}"
             )
             
-            # Copy public key to remote server
+            # Pin and verify the remote host key BEFORE any password is
+            # sent. When the administrator reviewed the fingerprint on the
+            # add form, the pin is bound to that exact approved value and
+            # a key that changed in between aborts without sending the
+            # password. Without a confirmation this falls back to pinning
+            # on first use; either way a changed key on an already pinned
+            # host raises HostKeyVerificationError rather than being
+            # silently accepted.
+            if confirmed_fingerprints:
+                host_key_fingerprints = self.confirm_host_key(
+                    host, port, confirmed_fingerprints
+                )
+            else:
+                host_key_fingerprints = self._trust_host_key(host, port)
+            
+            # Copy public key to remote server (now against a pinned host)
             success = self._copy_key_to_remote(host, port, username, password, public_key_path)
             if not success:
                 raise Exception("Failed to copy SSH key to remote server. Check credentials and network connectivity.")
@@ -130,12 +199,6 @@ class SSHConnectionService:
             
             # Get key fingerprint
             fingerprint = self._get_key_fingerprint(public_key_path)
-            
-            # Capture and store the remote host key so subsequent SSH
-            # commands can use strict host key verification. Connection
-            # creation is an explicit administrator action, so trusting
-            # the host key at this point is a deliberate trust decision.
-            host_key_fingerprints = self._trust_host_key(host, port)
             
             # Create connection record (password is NOT stored)
             connection = {
@@ -176,6 +239,9 @@ class SSHConnectionService:
                     Path(public_key_path).unlink(missing_ok=True)
             except:
                 pass
+            # Keep host-key failures distinguishable for callers/UI.
+            if isinstance(e, HostKeyVerificationError):
+                raise
             raise Exception(f"Failed to create SSH connection: {str(e)}")
     
     def update_connection(
@@ -405,6 +471,11 @@ class SSHConnectionService:
         """
         public_key = public_key_path.read_text().strip()
         
+        # Never send the password to an unverified host. Pin/verify the
+        # host key first; a changed key raises HostKeyVerificationError.
+        self._trust_host_key(host, port)
+        host_key_options = self.get_host_key_options()
+        
         # Method 1: Try ssh-copy-id with sshpass
         if shutil.which('sshpass') and shutil.which('ssh-copy-id'):
             try:
@@ -413,10 +484,10 @@ class SSHConnectionService:
                     'ssh-copy-id',
                     '-i', str(public_key_path),
                     '-p', str(port),
-                    '-o', 'StrictHostKeyChecking=no',
-                    '-o', 'UserKnownHostsFile=/dev/null',
-                    f'{username}@{host}'
                 ]
+                for option in host_key_options:
+                    cmd.extend(['-o', option])
+                cmd.append(f'{username}@{host}')
                 
                 result = subprocess.run(
                     cmd,
@@ -428,12 +499,18 @@ class SSHConnectionService:
                 if result.returncode == 0:
                     logger.info(f"Copied SSH key to {host} using ssh-copy-id")
                     return True
+                if is_host_key_error(result.stderr):
+                    raise HostKeyVerificationError(
+                        host_key_error_message(host, port, result.stderr.strip())
+                    )
+            except HostKeyVerificationError:
+                raise
             except Exception as e:
                 logger.warning(f"ssh-copy-id failed: {e}, trying paramiko method")
         
         # Method 2: Use paramiko
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.configure_paramiko_client(client)
         
         try:
             # Connect with password
@@ -472,6 +549,7 @@ class SSHConnectionService:
             return False
         except paramiko.SSHException as e:
             logger.error(f"SSH error: {e}")
+            self.raise_for_paramiko_host_key_error(e, host, port)
             return False
         except Exception as e:
             logger.error(f"Failed to copy key via paramiko: {e}")
@@ -497,7 +575,7 @@ class SSHConnectionService:
             
             # Create SSH client with key authentication
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.configure_paramiko_client(client)
             
             # Connect using the key we're about to remove (it still works until we remove it)
             key = paramiko.Ed25519Key.from_private_key_file(connection["private_key_path"])
@@ -538,7 +616,7 @@ class SSHConnectionService:
         """
         try:
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.configure_paramiko_client(client)
             
             # Load the private key
             key = paramiko.Ed25519Key.from_private_key_file(str(private_key_path))
@@ -563,6 +641,7 @@ class SSHConnectionService:
             return result == "test"
             
         except Exception as e:
+            self.raise_for_paramiko_host_key_error(e, host, port)
             logger.error(f"Key authentication test failed: {e}")
             return False
     
@@ -599,22 +678,9 @@ class SSHConnectionService:
     
     # Host Key Trust Management
     
-    def _trust_host_key(self, host: str, port: int) -> List[str]:
-        """
-        Retrieve the remote host keys with ssh-keyscan and store them in
-        the WebZFS-owned known_hosts file. Returns the fingerprints of the
-        stored keys.
-        
-        Existing entries for the same host are replaced so a deliberate
-        re-trust (connection re-creation) updates stale keys.
-        
-        Args:
-            host: Remote hostname or IP
-            port: SSH port
-            
-        Returns:
-            List of host key fingerprint strings (may be empty on failure)
-        """
+    def _scan_host_keys(self, host: str, port: int) -> List[str]:
+        """Return the remote host key lines reported by ssh-keyscan."""
+        host = normalize_known_hosts_host(host)
         try:
             scan_cmd = ['ssh-keyscan', '-p', str(port), '-T', '10', host]
             result = subprocess.run(
@@ -623,67 +689,327 @@ class SSHConnectionService:
                 text=True,
                 timeout=30
             )
-            
-            key_lines = [
+            return [
                 line for line in result.stdout.splitlines()
                 if line.strip() and not line.startswith('#')
             ]
-            
-            if not key_lines:
-                logger.warning(f"ssh-keyscan returned no host keys for {host}:{port}")
-                return []
-            
-            # Remove any existing entries for this host, then append new ones
-            existing_lines = []
-            if self.known_hosts_file.exists():
-                host_token = f"[{host}]:{port}" if port != 22 else host
-                for line in self.known_hosts_file.read_text().splitlines():
-                    if line.strip() and not line.split()[0] == host_token:
-                        existing_lines.append(line)
-            
-            all_lines = existing_lines + key_lines
-            self.known_hosts_file.write_text('\n'.join(all_lines) + '\n')
-            os.chmod(self.known_hosts_file, 0o600)
-            
-            # Compute fingerprints for the stored keys
-            fingerprints = []
-            for line in key_lines:
-                try:
-                    fp_result = subprocess.run(
-                        ['ssh-keygen', '-lf', '-'],
-                        input=line + '\n',
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if fp_result.returncode == 0:
-                        parts = fp_result.stdout.strip().split()
-                        if len(parts) >= 2:
-                            fingerprints.append(parts[1])
-                except Exception:
-                    pass
-            
-            logger.info(f"Stored {len(key_lines)} host key(s) for {host}:{port}")
-            return fingerprints
-            
         except Exception as e:
-            logger.warning(f"Failed to capture host key for {host}:{port}: {e}")
+            logger.warning(f"ssh-keyscan failed for {host}:{port}: {e}")
             return []
-    
+
+    def _key_details_for_lines(self, key_lines: List[str]) -> List[Dict[str, str]]:
+        """
+        Compute the key type and SHA256 fingerprint for raw known_hosts
+        lines.
+
+        ssh-keygen -lf prints "256 SHA256:XXXX host (ED25519)". The
+        fingerprint is the second field and the key type is the last
+        field, wrapped in parentheses.
+
+        Returns:
+            List of dicts with "type" (for example ED25519, RSA, ECDSA)
+            and "fingerprint" (SHA256:XXXX).
+        """
+        details = []
+        for line in key_lines:
+            try:
+                fp_result = subprocess.run(
+                    ['ssh-keygen', '-lf', '-'],
+                    input=line + '\n',
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if fp_result.returncode == 0:
+                    parts = fp_result.stdout.strip().split()
+                    if len(parts) >= 2:
+                        key_type = "UNKNOWN"
+                        last = parts[-1]
+                        if last.startswith('(') and last.endswith(')'):
+                            key_type = last[1:-1]
+                        details.append({
+                            "type": key_type,
+                            "fingerprint": parts[1],
+                        })
+            except Exception:
+                pass
+        return details
+
+    def _fingerprints_for_lines(self, key_lines: List[str]) -> List[str]:
+        """Compute SHA256 fingerprints for raw known_hosts lines."""
+        return [
+            detail["fingerprint"]
+            for detail in self._key_details_for_lines(key_lines)
+        ]
+
+    def _pinned_key_lines(self, host: str, port: int) -> List[str]:
+        """Return known_hosts lines pinned for the given host and port."""
+        host = normalize_known_hosts_host(host)
+        host_token = f"[{host}]:{port}" if port != 22 else host
+        if not self.known_hosts_file.exists():
+            return []
+        return [
+            line for line in self.known_hosts_file.read_text().splitlines()
+            if line.strip() and line.split()[0] == host_token
+        ]
+
+    def is_host_key_pinned(self, host: str, port: int) -> bool:
+        """Return True when a host key for host:port is already pinned."""
+        return len(self._pinned_key_lines(host, port)) > 0
+
+    def preview_host_key(self, host: str, port: int) -> Dict[str, Any]:
+        """
+        Scan the remote host key WITHOUT pinning it, so the fingerprint
+        can be shown to the administrator for out-of-band confirmation.
+
+        This is the first half of the show-and-confirm trust model: the
+        key is only written to known_hosts by a subsequent
+        confirm_host_key() call carrying the exact fingerprints that were
+        displayed here.
+
+        Args:
+            host: Remote hostname or IP
+            port: SSH port
+
+        Returns:
+            Dictionary with keys:
+                host: normalised bare host
+                port: SSH port
+                scanned: True when ssh-keyscan returned at least one key
+                fingerprints: SHA256 fingerprints of the remote keys
+                keys: type and fingerprint of each remote key
+                pinned_fingerprints: fingerprints currently pinned, if any
+                pinned_keys: type and fingerprint of each pinned key
+                is_pinned: whether a pin already exists
+                is_changed: whether the remote key differs from the pin
+        """
+        host = normalize_known_hosts_host(host)
+        key_lines = self._scan_host_keys(host, port)
+        pinned_lines = self._pinned_key_lines(host, port)
+
+        keys = self._key_details_for_lines(key_lines)
+        pinned_keys = self._key_details_for_lines(pinned_lines)
+        fingerprints = [key["fingerprint"] for key in keys]
+        pinned_fingerprints = [key["fingerprint"] for key in pinned_keys]
+
+        is_changed = False
+        if key_lines and pinned_lines:
+            is_changed = (
+                self._key_bodies(pinned_lines) != self._key_bodies(key_lines)
+            )
+
+        return {
+            "host": host,
+            "port": port,
+            "scanned": bool(key_lines),
+            "fingerprints": fingerprints,
+            "keys": keys,
+            "pinned_fingerprints": pinned_fingerprints,
+            "pinned_keys": pinned_keys,
+            "is_pinned": bool(pinned_lines),
+            "is_changed": is_changed,
+        }
+
+    def confirm_host_key(
+        self, host: str, port: int, confirmed_fingerprints: List[str]
+    ) -> List[str]:
+        """
+        Pin the remote host key after the administrator confirmed the
+        fingerprints shown by preview_host_key().
+
+        The confirmation is bound to the exact key material that was
+        displayed. The host is re-scanned here and the pin is refused if
+        the remote key no longer matches what the administrator approved,
+        so a key that rotates between the preview and the confirmation
+        cannot be trusted unseen.
+
+        Args:
+            host: Remote hostname or IP
+            port: SSH port
+            confirmed_fingerprints: Fingerprints the administrator approved
+
+        Returns:
+            Fingerprints of the newly pinned host keys.
+
+        Raises:
+            HostKeyVerificationError: If nothing was confirmed, the scan
+                fails, or the remote key changed since the preview.
+        """
+        host = normalize_known_hosts_host(host)
+
+        if not confirmed_fingerprints:
+            raise HostKeyVerificationError(
+                host_key_error_message(
+                    host, port, "no host key fingerprint was confirmed"
+                )
+            )
+
+        key_lines = self._scan_host_keys(host, port)
+        if not key_lines:
+            raise HostKeyVerificationError(
+                host_key_error_message(
+                    host, port,
+                    "ssh-keyscan returned no host keys; the host may be "
+                    "unreachable or the port may be wrong"
+                )
+            )
+
+        current = self._fingerprints_for_lines(key_lines)
+        if set(current) != set(confirmed_fingerprints):
+            raise HostKeyVerificationError(
+                host_key_error_message(
+                    host, port,
+                    "the remote host key changed between the preview and "
+                    f"the confirmation (confirmed {', '.join(confirmed_fingerprints)}, "
+                    f"now {', '.join(current) or 'unknown'}). Nothing was pinned."
+                )
+            )
+
+        return self._trust_host_key(host, port, replace=True)
+
+    @staticmethod
+    def _key_bodies(key_lines: List[str]) -> set:
+        """
+        Extract the key material from known_hosts lines.
+
+        Lines are "host keytype keyblob [comment]". The key body (index 2)
+        is compared rather than the key type, because a rotated key
+        usually keeps the same type.
+        """
+        return {
+            line.split()[2] for line in key_lines if len(line.split()) >= 3
+        }
+
+    def _trust_host_key(
+        self, host: str, port: int, replace: bool = False
+    ) -> List[str]:
+        """
+        Retrieve the remote host keys with ssh-keyscan and store them in
+        the WebZFS-owned known_hosts file. Returns the fingerprints of the
+        stored keys.
+
+        Unknown hosts are pinned on first use (the explicit connection
+        creation / trust action is the trust decision). A host whose
+        pinned key no longer matches the remote key raises
+        HostKeyVerificationError unless ``replace`` is True, which is the
+        deliberate "Trust host key" re-pin path.
+
+        Args:
+            host: Remote hostname or IP
+            port: SSH port
+            replace: Re-pin an already trusted host whose key changed
+
+        Returns:
+            List of host key fingerprint strings (may be empty on failure)
+
+        Raises:
+            HostKeyVerificationError: If the pinned key differs from the
+                remote key and ``replace`` is False.
+        """
+        # Normalise once, up front. Every known_hosts token built below
+        # must use the bare host, otherwise a 'user@host' caller writes a
+        # token no lookup will ever match and the superseded key is left
+        # behind in the file instead of being replaced.
+        host = normalize_known_hosts_host(host)
+
+        key_lines = self._scan_host_keys(host, port)
+
+        if not key_lines:
+            logger.warning(f"ssh-keyscan returned no host keys for {host}:{port}")
+            return []
+
+        pinned_lines = self._pinned_key_lines(host, port)
+        if pinned_lines and not replace:
+            if self._key_bodies(pinned_lines) != self._key_bodies(key_lines):
+                old_fps = self._fingerprints_for_lines(pinned_lines)
+                new_fps = self._fingerprints_for_lines(key_lines)
+                raise HostKeyVerificationError(
+                    host_key_error_message(
+                        host,
+                        port,
+                        "pinned host key(s) "
+                        f"{', '.join(old_fps) or 'unknown'} do not match remote "
+                        f"host key(s) {', '.join(new_fps) or 'unknown'}"
+                    )
+                )
+
+        host_token = f"[{host}]:{port}" if port != 22 else host
+        existing_lines = [
+            line for line in (
+                self.known_hosts_file.read_text().splitlines()
+                if self.known_hosts_file.exists() else []
+            )
+            if line.strip() and not line.split()[0] == host_token
+        ]
+
+        self.known_hosts_file.write_text(
+            '\n'.join(existing_lines + key_lines) + '\n'
+        )
+        os.chmod(self.known_hosts_file, 0o600)
+
+        fingerprints = self._fingerprints_for_lines(key_lines)
+        logger.info(f"Stored {len(key_lines)} host key(s) for {host}:{port}")
+        return fingerprints
+
+    def trust_host_key(self, host: str, port: int) -> List[str]:
+        """
+        Explicitly (re)pin the remote host key for host:port.
+
+        This is the one-time "Trust host key" action: it is the only path
+        that accepts a changed key. Use it deliberately after verifying
+        the new fingerprint out of band.
+
+        Returns:
+            Fingerprints of the newly pinned host keys.
+        """
+        return self._trust_host_key(host, port, replace=True)
+
     def ensure_host_key_trusted(self, host: str, port: int) -> bool:
         """
         Ensure the known_hosts file contains an entry for the given host.
-        If missing, attempt to capture it via ssh-keyscan.
-        
+        If missing, attempt to capture it via ssh-keyscan. An existing
+        entry is never replaced or re-verified here; a host whose key has
+        changed is detected when the connection is made (paramiko with
+        RejectPolicy, or ssh with StrictHostKeyChecking=yes), which raises
+        HostKeyVerificationError. Re-pinning is the explicit
+        trust_host_key() action.
+
         Returns:
             True if a host key entry exists after this call.
         """
-        host_token = f"[{host}]:{port}" if port != 22 else host
-        if self.known_hosts_file.exists():
-            for line in self.known_hosts_file.read_text().splitlines():
-                if line.strip() and line.split()[0] == host_token:
-                    return True
+        if self.is_host_key_pinned(host, port):
+            return True
         return len(self._trust_host_key(host, port)) > 0
+
+    def configure_paramiko_client(self, client: paramiko.SSHClient) -> paramiko.SSHClient:
+        """
+        Load the WebZFS pinned known_hosts file into a paramiko client and
+        reject unknown or changed host keys.
+
+        Args:
+            client: A fresh paramiko.SSHClient
+
+        Returns:
+            The same client, configured for strict host key verification.
+        """
+        if self.known_hosts_file.exists():
+            client.load_host_keys(str(self.known_hosts_file))
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        return client
+
+    def raise_for_paramiko_host_key_error(
+        self, exc: Exception, host: str, port: int
+    ) -> None:
+        """Translate a paramiko host-key exception into HostKeyVerificationError."""
+        if isinstance(exc, paramiko.BadHostKeyException):
+            raise HostKeyVerificationError(
+                host_key_error_message(host, port, f"host key changed: {exc}")
+            ) from exc
+        if isinstance(exc, paramiko.SSHException) and is_host_key_error(str(exc)):
+            raise HostKeyVerificationError(
+                host_key_error_message(host, port, str(exc))
+            ) from exc
+
     
     def get_host_key_options(self) -> List[str]:
         """
@@ -859,19 +1185,23 @@ class SSHConnectionService:
             raise Exception(f"Connection {connection_id} not found")
         
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.configure_paramiko_client(client)
         
         # Load the private key
         key = paramiko.Ed25519Key.from_private_key_file(conn["private_key_path"])
         
         # Connect
-        client.connect(
-            hostname=conn["host"],
-            port=conn["port"],
-            username=conn["username"],
-            pkey=key,
-            timeout=10
-        )
+        try:
+            client.connect(
+                hostname=conn["host"],
+                port=conn["port"],
+                username=conn["username"],
+                pkey=key,
+                timeout=10
+            )
+        except paramiko.SSHException as e:
+            self.raise_for_paramiko_host_key_error(e, conn["host"], conn["port"])
+            raise
         
         # Mark as used
         self.mark_connection_used(connection_id, "ssh_client")

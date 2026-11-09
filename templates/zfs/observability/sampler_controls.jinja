@@ -1,0 +1,25 @@
+{# Control bar for pages using static/js/observability_sampler.js.
+   Expects: sample_choices (seconds), cumulative_label (button text). #}
+<div class="card mb-6">
+    <div class="card-body flex flex-wrap items-center gap-3">
+        <button type="button" class="btn-secondary" @click="showCumulative()" :disabled="busy">
+            {{ cumulative_label }}
+        </button>
+        <span class="text-text-tertiary">|</span>
+        <label for="sample-seconds" class="text-sm text-text-secondary">Sample window</label>
+        <select id="sample-seconds" class="form-select" x-model.number="seconds">
+            {% for choice in sample_choices %}
+            <option value="{{ choice }}">{{ choice }} second{{ 's' if choice != 1 }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn-primary" @click="load(seconds)" :disabled="busy">
+            Take sample
+        </button>
+        <button type="button" class="px-4 py-2 transition-colors"
+                :class="autoRefresh ? 'btn-success' : 'btn-secondary'"
+                @click="toggleAutoRefresh()">
+            <span x-text="autoRefresh ? 'Auto refresh: ON' : 'Auto refresh: OFF'"></span>
+        </button>
+        <span class="text-sm text-text-tertiary" x-show="busy" x-text="status"></span>
+    </div>
+</div>
