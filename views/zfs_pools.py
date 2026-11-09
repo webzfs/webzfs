@@ -1522,6 +1522,14 @@ async def vdev_management_data(request: Request, pool_name: str):
             'dedup_vdevs': topology.get('dedup_vdevs', []),
         }
 
+        # Slow I/O counts per leaf vdev (`zpool status -s`, M11). The column is
+        # only rendered by the frontend when the command exposes it.
+        slow_io_result = {'available': False, 'slow_io': {}}
+        try:
+            slow_io_result = ZFSPerformanceService().get_slow_io_counts(pool_name)
+        except Exception:
+            slow_io_result = {'available': False, 'slow_io': {}}
+
         return JSONResponse(content={
             "success": True,
             "topology": topology_dict,
@@ -1531,6 +1539,8 @@ async def vdev_management_data(request: Request, pool_name: str):
             "min_data_device_size": min_data_device_size,
             "is_single_disk_pool": is_single_disk_pool,
             "data_vdev_types": data_vdev_types,
+            "slow_io": slow_io_result.get('slow_io', {}),
+            "slow_io_available": bool(slow_io_result.get('available')),
         })
 
 

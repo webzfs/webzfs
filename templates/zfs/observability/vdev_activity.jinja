@@ -1,0 +1,133 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container-page max-w-6xl">
+    <!-- Breadcrumb -->
+    <nav class="text-sm mb-6" aria-label="Breadcrumb">
+        <ol class="flex items-center space-x-2">
+            <li class="flex items-center">
+                <a href="/" class="text-primary-400 hover:text-primary-300 transition-colors">Home</a>
+                <svg class="w-4 h-4 mx-2 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li class="flex items-center">
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300 transition-colors">Observability</a>
+                <svg class="w-4 h-4 mx-2 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li>
+                <span class="text-text-primary font-medium">TRIM / Initialize</span>
+            </li>
+        </ol>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary mb-2">TRIM / Initialize Status</h1>
+            <p class="text-text-secondary">Per-vdev TRIM and initialize progress reported by <code class="font-mono">zpool status -t</code> / <code class="font-mono">-i</code></p>
+        </div>
+        {% if pools %}
+        <form method="get" action="/zfs/observability/vdev-activity" class="flex items-center gap-2">
+            <label for="pool-select" class="text-sm text-text-secondary">Pool</label>
+            <select id="pool-select" name="pool" class="form-select" onchange="this.form.submit()">
+                {% for name in pools %}
+                <option value="{{ name }}" {% if name == selected_pool %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn-secondary">Show</button></noscript>
+        </form>
+        {% endif %}
+    </div>
+
+    {% if not activity.available %}
+    <!-- Panel hidden when zpool status -t/-i is unsupported -->
+    <div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded mb-6" role="alert">
+        <div class="flex items-start">
+            <svg class="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div>
+                <strong class="font-semibold">TRIM / initialize status unavailable:</strong>
+                {{ activity.error or 'zpool status -t/-i is not supported by the installed OpenZFS version' }}
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    {% for kind, label in [('trim', 'TRIM'), ('initialize', 'Initialize')] %}
+    {% set data = activity[kind] %}
+    {% if data and not data.get('error') %}
+    <div class="card mb-8">
+        <div class="card-body">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold text-text-primary">{{ label }}</h2>
+                <span class="text-sm font-medium
+                    {% if data.state == 'in_progress' %}text-primary-400
+                    {% elif data.state == 'completed' %}text-success-400
+                    {% elif data.state == 'suspended' %}text-warning-400
+                    {% elif data.state == 'unsupported' %}text-text-tertiary
+                    {% else %}text-text-secondary{% endif %}">
+                    {{ data.state.replace('_', ' ')|title }}
+                    {% if data.percent is not none %}&middot; {{ data.percent }}%{% endif %}
+                </span>
+            </div>
+
+            <div class="flex flex-wrap gap-4 mb-4 text-xs text-text-tertiary">
+                <span>In progress: <span class="font-mono text-text-secondary">{{ data.counts.get('in_progress', 0) }}</span></span>
+                <span>Completed: <span class="font-mono text-text-secondary">{{ data.counts.get('completed', 0) }}</span></span>
+                <span>Not started: <span class="font-mono text-text-secondary">{{ data.counts.get('none', 0) }}</span></span>
+                <span>Unsupported: <span class="font-mono text-text-secondary">{{ data.counts.get('unsupported', 0) }}</span></span>
+                <span>Suspended: <span class="font-mono text-text-secondary">{{ data.counts.get('suspended', 0) }}</span></span>
+            </div>
+
+            {% if data.devices %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-border-subtle">
+                            <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Device</th>
+                            <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">State</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Progress</th>
+                            <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Detail</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for device in data.devices %}
+                        <tr class="border-b border-border-subtle">
+                            <td class="py-2 px-3 font-mono text-text-primary">{{ device.name }}</td>
+                            <td class="py-2 px-3 text-text-secondary">{{ device.state.replace('_', ' ')|title }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">
+                                {% if device.percent is not none %}{{ device.percent }}%{% else %}&mdash;{% endif %}
+                            </td>
+                            <td class="py-2 px-3 text-text-tertiary text-xs">
+                                {% if device.completed_at %}completed at {{ device.completed_at }}
+                                {% elif device.suspended_at %}suspended at {{ device.suspended_at }}
+                                {% elif device.started_at %}started at {{ device.started_at }}
+                                {% elif device.annotation %}{{ device.annotation }}
+                                {% else %}&mdash;{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-sm text-text-tertiary">No leaf vdevs reported {{ label|lower }} state.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded mb-6" role="alert">
+        <strong class="font-semibold">{{ label }} unavailable:</strong>
+        {{ data.get('error') if data else 'no data returned' }}
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+</div>
+{% endblock %}

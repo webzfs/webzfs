@@ -57,10 +57,15 @@ _CAPABILITY_SPECS: Dict[str, _CapabilitySpec] = {
     "fast_dedup": _CapabilitySpec((2, 3, 0)),
     # zpool ddtprune, zfs-2.3.0.
     "ddtprune": _CapabilitySpec((2, 3, 0)),
+<<<<<<< HEAD
     # zpool prefetch -t ddt subcommand, zfs-2.3.0 (zpool-prefetch(8) is absent
     # from the 2.2 man pages). This flag gates the subcommand, not the
     # long-standing zfs_dedup_prefetch module parameter.
     "prefetch_ddt": _CapabilitySpec((2, 3, 0)),
+=======
+    # zfs_dedup_prefetch module parameter, present since zfs-2.0.0.
+    "prefetch_ddt": _CapabilitySpec((2, 0, 0)),
+>>>>>>> f936a59 (add more info to observe)
     # "direct" dataset property (ZFS_PROP_DIRECT), zfs-2.3.0.
     "direct_io": _CapabilitySpec((2, 3, 0)),
     # zpool reguid -g <guid>, zfs-2.3.0.
@@ -69,9 +74,12 @@ _CAPABILITY_SPECS: Dict[str, _CapabilitySpec] = {
     "zfs_rewrite": _CapabilitySpec((2, 3, 4)),
     # zfs rewrite -P (preserve logical birth time), zfs-2.4.0.
     "rewrite_preserve_birth": _CapabilitySpec((2, 4, 0)),
+<<<<<<< HEAD
     # zpool scrub -p (pause), zfs-0.7.0. Every OpenZFS that F1 can probe has
     # it; the flag exists so the control is hidden on NetBSD like the others.
     "scrub_pause": _CapabilitySpec((0, 7, 0)),
+=======
+>>>>>>> f936a59 (add more info to observe)
     # zpool scrub -e (error scrub), zfs-2.2.0.
     "scrub_error": _CapabilitySpec((2, 2, 0)),
     # zpool scrub -S/-E date range, zfs-2.4.0.
@@ -86,10 +94,15 @@ _CAPABILITY_SPECS: Dict[str, _CapabilitySpec] = {
     "redundant_metadata_some_none": _CapabilitySpec((2, 2, 0)),
     # zpool initialize -u (uninitialize), zfs-2.2.0.
     "initialize_uninit": _CapabilitySpec((2, 2, 0)),
+<<<<<<< HEAD
     # zfs zone/unzone: attach a dataset to a Linux user namespace, zfs-2.2.0.
     # Linux only. The FreeBSD equivalent is the separate zfs jail/unjail pair,
     # which would need its own flag; do not widen this one to FreeBSD.
     "zfs_zone": _CapabilitySpec((2, 2, 0), frozenset({"Linux"})),
+=======
+    # zfs zone (FreeBSD jails), zfs-2.2.0; FreeBSD only.
+    "zfs_zone": _CapabilitySpec((2, 2, 0), frozenset({"FreeBSD"})),
+>>>>>>> f936a59 (add more info to observe)
     # Pool feature org.openzfs:draid, zfs-2.1.0.
     "draid": _CapabilitySpec((2, 1, 0)),
     # zpool compatibility property, zfs-2.1.0.
@@ -119,7 +132,10 @@ class ZfsCapabilities:
     reguid_with_guid: bool
     zfs_rewrite: bool
     rewrite_preserve_birth: bool
+<<<<<<< HEAD
     scrub_pause: bool
+=======
+>>>>>>> f936a59 (add more info to observe)
     scrub_error: bool
     scrub_time_range: bool
     all_pools_flag: bool
