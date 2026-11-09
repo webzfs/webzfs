@@ -50,6 +50,20 @@
                 encryption: '{{ encryption if encryption else '' }}',
                  passphrase: '',
                  passphraseConfirm: '',
+                 {# tojson does not escape double quotes; forceescape keeps them inside this double-quoted attribute #}
+                 keyFormat: {{ (keyformat or 'passphrase')|tojson|forceescape }},
+                 keyLocation: {{ (keylocation or 'prompt')|tojson|forceescape }},
+                 keyFilePath: {{ (key_file_path or '')|tojson|forceescape }},
+                 keyUrl: {{ (key_url or '')|tojson|forceescape }},
+                 keySource: {{ (key_source or 'existing')|tojson|forceescape }},
+                 keyString: '',
+                 get isKeyStringInvalid() {
+                     if (this.keySource !== 'string') return false;
+                     var bytes = new TextEncoder().encode(this.keyString).length;
+                     if (this.keyFormat === 'raw') return bytes !== 32;
+                     if (this.keyFormat === 'hex') return !/^[0-9a-fA-F]{64}$/.test(this.keyString.trim());
+                     return bytes < 8 || bytes > 512;
+                 },
                 parentDataset: '{{ parent if parent else (pool if pool else '') }}',
                 datasetSuffix: '',
                 get fullDatasetName() {
@@ -59,14 +73,23 @@
                 get isNameIncomplete() {
                     return !this.parentDataset || !this.datasetSuffix || this.datasetSuffix.includes('/');
                  },
-                 get isPassphraseInvalid() {
-                     return this.encryption !== '' && (
-                         this.passphrase.length < 8 ||
-                         this.passphrase !== this.passphraseConfirm
-                     );
+                 get isKeyConfigInvalid() {
+                     if (this.encryption === '') return false;
+                     if (this.keyLocation === 'prompt') {
+                         return this.keyFormat !== 'passphrase' ||
+                             this.passphrase.length < 8 ||
+                             this.passphrase !== this.passphraseConfirm;
+                     }
+                     if (this.keyLocation === 'file') {
+                         return this.keyFilePath.trim() === '' || this.isKeyStringInvalid;
+                     }
+                     if (this.keyLocation === 'https') {
+                         return this.keyUrl.trim() === '';
+                     }
+                     return true;
                  },
                  get isFormIncomplete() {
-                     return this.isNameIncomplete || this.isPassphraseInvalid;
+                     return this.isNameIncomplete || this.isKeyConfigInvalid;
                 }
             }">
                 <!-- Hidden field for the full dataset name (submitted to server) -->
@@ -400,64 +423,216 @@
                     {% endif %}
                 </div>
 
-                <!-- Encryption Passphrase (only when encryption is enabled) -->
+                <!-- Encryption key options (only when encryption is enabled) -->
                 <div x-show="encryption !== ''" x-transition class="space-y-4">
-                    <div>
-                        <label for="passphrase" class="form-label">
-                            Encryption Passphrase <span class="text-danger-400">*</span>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="keyformat" class="form-label">
+                                Key Format <span class="text-danger-400">*</span>
+                            </label>
+                            <select
+                                id="keyformat"
+                                name="keyformat"
+                                class="form-select"
+                                x-model="keyFormat"
+                                :disabled="encryption === ''"
+                            >
+                                <option value="passphrase">Passphrase</option>
+                                <option value="hex">Hex key</option>
+                                <option value="raw">Raw key (32 bytes)</option>
+                            </select>
+                            <p class="text-text-tertiary text-sm mt-1">
+                                Passphrases may be entered in the form. Hex and raw keys are read by ZFS from the key location, never by WebZFS.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label for="keylocation" class="form-label">
+                                Key Location <span class="text-danger-400">*</span>
+                            </label>
+                            <select
+                                id="keylocation"
+                                name="keylocation"
+                                class="form-select"
+                                x-model="keyLocation"
+                                :disabled="encryption === ''"
+                            >
+                                <option value="prompt">Prompt (enter a passphrase)</option>
+                                <option value="file">File (file:///absolute/path)</option>
+                                {% if https_keylocation_supported %}
+                                <option value="https">HTTPS URL</option>
+                                {% endif %}
+                            </select>
+                            {% if https_keylocation_supported %}
+                            <p class="text-text-tertiary text-sm mt-1">
+                                https:// key locations use the libfetch/libcurl back-end compiled into OpenZFS.
+                            </p>
+                            {% else %}
+                            <p class="text-warning-400 text-sm mt-1">
+                                https:// key locations are unavailable: this OpenZFS build has no libfetch/libcurl back-end.
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Passphrase fields (prompt location) -->
+                    <div x-show="keyLocation === 'prompt'" class="space-y-4">
+                        <div>
+                            <label for="passphrase" class="form-label">
+                                Encryption Passphrase <span class="text-danger-400">*</span>
+                            </label>
+                            <input
+                                type="password"
+                                id="passphrase"
+                                name="passphrase"
+                                class="form-input"
+                                placeholder="Enter a strong passphrase"
+                                x-model="passphrase"
+                                minlength="8"
+                                :required="encryption !== '' && keyLocation === 'prompt'"
+                                :disabled="encryption === '' || keyLocation !== 'prompt'"
+                            >
+                            <p class="text-text-tertiary text-sm mt-1">
+                                Use at least 8 characters. This passphrase will be required to unlock the dataset after system reboot.
+                            </p>
+                            <p x-show="encryption !== '' && keyLocation === 'prompt' && passphrase.length > 0 && passphrase.length < 8"
+                               class="text-danger-400 text-sm mt-1">
+                                Passphrase must be at least 8 characters long.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label for="passphrase_confirm" class="form-label">
+                                Confirm Passphrase <span class="text-danger-400">*</span>
+                            </label>
+                            <input
+                                type="password"
+                                id="passphrase_confirm"
+                                name="passphrase_confirm"
+                                class="form-input"
+                                placeholder="Re-enter passphrase"
+                                x-model="passphraseConfirm"
+                                minlength="8"
+                                :required="encryption !== '' && keyLocation === 'prompt'"
+                                :disabled="encryption === '' || keyLocation !== 'prompt'"
+                            >
+                            <p x-show="encryption !== '' && keyLocation === 'prompt' && passphraseConfirm.length > 0 && passphrase !== passphraseConfirm"
+                               class="text-danger-400 text-sm mt-1">
+                                Passphrases do not match.
+                            </p>
+                        </div>
+                    </div>
+
+                    <p x-show="encryption !== '' && keyLocation === 'prompt' && keyFormat !== 'passphrase'"
+                       class="text-danger-400 text-sm">
+                        Hex and raw keys cannot be typed at a prompt. Choose a file or https key location.
+                    </p>
+
+                    <!-- File key source -->
+                    <div x-show="keyLocation === 'file'" class="space-y-2">
+                        <label for="key_source" class="form-label">
+                            Key File Source <span class="text-danger-400">*</span>
                         </label>
-                        <input 
-                            type="password" 
-                            id="passphrase" 
-                            name="passphrase"
-                            class="form-input"
-                            placeholder="Enter a strong passphrase"
-                            x-model="passphrase"
-                            minlength="8"
-                            :required="encryption !== ''"
-                            :disabled="encryption === ''"
+                        <select
+                            id="key_source"
+                            name="key_source"
+                            class="form-select"
+                            x-model="keySource"
+                            :disabled="encryption === '' || keyLocation !== 'file'"
+                        >
+                            <option value="existing">Use an existing key file</option>
+                            <option value="generate">Generate a new random key file</option>
+                            <option value="string">Create a key file from text I enter</option>
+                        </select>
+                        <p class="text-text-tertiary text-sm mt-1" x-show="keySource === 'generate'">
+                            WebZFS writes a new random key in the selected format (32 random bytes for raw, 64 hex digits for hex, a random passphrase for passphrase). The key is never shown or logged.
+                        </p>
+                    </div>
+
+                    <!-- Key text (create key file from text) -->
+                    <div x-show="keyLocation === 'file' && keySource === 'string'" class="space-y-2">
+                        <label for="key_string" class="form-label">
+                            Key Text <span class="text-danger-400">*</span>
+                        </label>
+                        <input
+                            type="password"
+                            id="key_string"
+                            name="key_string"
+                            class="form-input font-mono"
+                            autocomplete="off"
+                            x-model="keyString"
+                            :required="encryption !== '' && keyLocation === 'file' && keySource === 'string'"
+                            :disabled="encryption === '' || keyLocation !== 'file' || keySource !== 'string'"
                         >
                         <p class="text-text-tertiary text-sm mt-1">
-                            Use at least 8 characters. This passphrase will be required to unlock the dataset after system reboot.
+                            Raw: exactly 32 bytes. Hex: exactly 64 hexadecimal characters. Passphrase: 8 to 512 bytes. The text is written to the key file and is never shown or logged.
                         </p>
-                        <p x-show="encryption !== '' && passphrase.length > 0 && passphrase.length < 8"
-                           class="text-danger-400 text-sm mt-1">
-                            Passphrase must be at least 8 characters long.
+                        <p x-show="keyString.length > 0 && isKeyStringInvalid" class="text-danger-400 text-sm mt-1">
+                            The key text does not match the size required by the selected key format.
                         </p>
                     </div>
 
-                    <div>
-                        <label for="passphrase_confirm" class="form-label">
-                            Confirm Passphrase <span class="text-danger-400">*</span>
+                    <!-- File key path -->
+                    <div x-show="keyLocation === 'file'" class="space-y-2">
+                        <label for="key_file_path" class="form-label">
+                            Key File Path <span class="text-danger-400">*</span>
                         </label>
-                        <input 
-                            type="password" 
-                            id="passphrase_confirm" 
-                            name="passphrase_confirm"
-                            class="form-input"
-                            placeholder="Re-enter passphrase"
-                            x-model="passphraseConfirm"
-                            minlength="8"
-                            :required="encryption !== ''"
-                            :disabled="encryption === ''"
+                        <input
+                            type="text"
+                            id="key_file_path"
+                            name="key_file_path"
+                            class="form-input font-mono"
+                            placeholder="/etc/zfs/keys/my-dataset.key"
+                            x-model="keyFilePath"
+                            :required="encryption !== '' && keyLocation === 'file'"
+                            :disabled="encryption === '' || keyLocation !== 'file'"
                         >
-                        <p x-show="encryption !== '' && passphraseConfirm.length > 0 && passphrase !== passphraseConfirm"
-                           class="text-danger-400 text-sm mt-1">
-                            Passphrases do not match.
+                        <p class="text-text-tertiary text-sm mt-1" x-show="keySource === 'existing'">
+                            Absolute path to an existing key file. It must be a regular file owned by root with mode 0600. WebZFS verifies the permissions without reading the key.
+                        </p>
+                        <p class="text-text-tertiary text-sm mt-1" x-show="keySource !== 'existing'">
+                            Absolute path for the new key file. The file must not exist; WebZFS never overwrites a key file. The directory must be owned by root with no group or other access (mode 0700) and is created with mode 0700 if missing. The file is created owned by root with mode 0600.
                         </p>
                     </div>
 
-                    <!-- Info box about keyfile -->
+                    <!-- Offsite backup warning for key files -->
+                    <div x-show="keyLocation === 'file'" class="card-nested bg-warning-900/20 border-warning-700">
+                        <h4 class="text-sm font-semibold text-warning-400 mb-1">Back up the key file offsite</h4>
+                        <p class="text-sm text-text-secondary">
+                            The key file is the only way to unlock this dataset. If it is lost or the disk holding it fails, the encrypted data cannot be recovered. Copy the key file to secure offsite storage as soon as it exists, and keep it off the pool it unlocks.
+                        </p>
+                    </div>
+
+                    <!-- HTTPS key URL -->
+                    <div x-show="keyLocation === 'https'" class="space-y-2">
+                        <label for="key_url" class="form-label">
+                            Key URL <span class="text-danger-400">*</span>
+                        </label>
+                        <input
+                            type="url"
+                            id="key_url"
+                            name="key_url"
+                            class="form-input font-mono"
+                            placeholder="https://keys.example.com/my-dataset.key"
+                            x-model="keyUrl"
+                            :required="encryption !== '' && keyLocation === 'https'"
+                            :disabled="encryption === '' || keyLocation !== 'https'"
+                        >
+                        <p class="text-text-tertiary text-sm mt-1">
+                            ZFS fetches the key from this URL itself. ZFS must be built with the libfetch or libcurl back-end; SSL_CA_CERT_FILE / SSL_CA_CERT_PATH can be set in the service environment for private CAs.
+                        </p>
+                    </div>
+
+                    <!-- Info box about key handling -->
                     <div class="card-nested bg-info-900/20 border-info-700">
                         <div class="flex items-start gap-3">
                             <svg class="w-5 h-5 text-info-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
                             </svg>
                             <div>
-                                <h4 class="text-sm font-semibold text-info-400 mb-1">Keyfile Support</h4>
+                                <h4 class="text-sm font-semibold text-info-400 mb-1">Key handling</h4>
                                 <p class="text-sm text-text-secondary">
-                                    To use a keyfile instead of a passphrase, you can change the key format from the command line after creation using: 
-                                    <code class="bg-bg-tertiary px-1 py-0.5 rounded text-xs">zfs change-key -o keyformat=raw -o keylocation=file:///path/to/keyfile dataset-name</code>
+                                    File and https keys are loaded by ZFS without a prompt, so the dataset can be unlocked again after <code class="bg-bg-tertiary px-1 py-0.5 rounded text-xs">zfs unload-key</code> without entering a passphrase. Passphrases and key material are never written to WebZFS logs; the key file path is recorded in the audit log. Raw and hex keys cannot be entered interactively and must use a file or https location.
                                 </p>
                             </div>
                         </div>
@@ -564,7 +739,8 @@ function prepareDatasetCreate(event) {
     const passphrase = document.getElementById('passphrase');
     const passphraseConfirm = document.getElementById('passphrase_confirm');
     const encryption = document.getElementById('encryption');
-    if (encryption && encryption.value) {
+    const keyLocation = document.getElementById('keylocation');
+    if (encryption && encryption.value && keyLocation && keyLocation.value === 'prompt') {
         if (!passphrase || passphrase.value.length < 8) {
             passphrase.setCustomValidity('Passphrase must be at least 8 characters long.');
             passphrase.reportValidity();

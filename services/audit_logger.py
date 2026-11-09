@@ -511,14 +511,51 @@ class AuditLogger:
         dataset_name: str,
         success: bool = True,
         error: Optional[str] = None,
+        keyformat: Optional[str] = None,
+        keylocation: Optional[str] = None,
     ) -> None:
-        """Log dataset creation"""
+        """Log dataset creation.
+
+        ``keyformat`` and ``keylocation`` are recorded for encrypted datasets.
+        Callers pass a log-safe key location; key material is never logged.
+        """
+        details = {}
+        if keyformat:
+            details["keyformat"] = keyformat
+        if keylocation:
+            details["keylocation"] = keylocation
         self.log_zfs_operation(
             user=user,
             operation="create_dataset",
             dataset=dataset_name,
             success=success,
             error=error,
+            **details,
+        )
+
+    def log_dataset_key_operation(
+        self,
+        user: str,
+        operation: str,
+        dataset_name: Optional[str] = None,
+        success: bool = True,
+        error: Optional[str] = None,
+        **details,
+    ) -> None:
+        """Log an encryption key operation.
+
+        ``operation`` is one of load_key, unload_key, load_all_keys,
+        change_key, inherit_key or create_key_file. ``details`` may hold the
+        key format, a log-safe key location or a key file path. Passphrases
+        and key material must never be passed here.
+        """
+        self.log_zfs_operation(
+            user=user,
+            operation=operation,
+            dataset=dataset_name,
+            success=success,
+            error=error,
+            **details,
         )
 
     def log_dataset_destroy(
