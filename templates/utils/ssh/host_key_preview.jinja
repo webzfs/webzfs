@@ -29,20 +29,21 @@
     {% endif %}
 
     <p class="text-sm text-text-secondary mb-2">
-      Host key fingerprint for {{ preview.host }}:{{ preview.port }}:
+      Host keys for {{ preview.host }}:{{ preview.port }} (one per key type):
     </p>
 
     <ul class="space-y-2 mb-3">
-      {% for fp in preview.fingerprints %}
-        <li class="font-mono text-xs text-text-primary break-all bg-bg-elevated-2 rounded px-3 py-2">
-          {{ fp }}
+      {% for key in preview.keys %}
+        <li class="flex items-center gap-3 font-mono text-xs text-text-primary bg-bg-elevated-2 rounded px-3 py-2">
+          <span class="badge badge-info flex-shrink-0">{{ key.type }}</span>
+          <span class="break-all">{{ key.fingerprint }}</span>
         </li>
       {% endfor %}
     </ul>
 
     <p class="text-xs text-text-tertiary">
-      Verify this out of band before submitting. On the server console run
-      <span class="font-mono">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</span>.
+      Verify these out of band before submitting. On the server console run
+      <span class="font-mono">for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$f"; done</span>.
       Submitting the form pins this exact key; if it changes in the meantime
       the connection is refused and no password is sent.
     </p>

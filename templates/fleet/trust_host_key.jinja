@@ -109,24 +109,30 @@
     <div class="card mb-6">
       <div class="card-body">
         <h2 class="text-sm font-semibold text-text-primary mb-3">
-          Fingerprint reported by {{ preview.host }}:{{ preview.port }}
+          Host keys reported by {{ preview.host }}:{{ preview.port }}
         </h2>
+        <p class="text-xs text-text-tertiary mb-3">
+          The server offers one key per key type. All keys listed here are pinned
+          when you confirm.
+        </p>
         <ul class="space-y-2 mb-4">
-          {% for fp in preview.fingerprints %}
-            <li class="font-mono text-xs text-text-primary break-all bg-bg-elevated-2 rounded px-3 py-2">
-              {{ fp }}
+          {% for key in preview.keys %}
+            <li class="flex items-center gap-3 font-mono text-xs text-text-primary bg-bg-elevated-2 rounded px-3 py-2">
+              <span class="badge badge-info flex-shrink-0">{{ key.type }}</span>
+              <span class="break-all">{{ key.fingerprint }}</span>
             </li>
           {% endfor %}
         </ul>
 
-        {% if preview.is_changed and preview.pinned_fingerprints %}
+        {% if preview.is_changed and preview.pinned_keys %}
           <h2 class="text-sm font-semibold text-text-primary mb-3">
             Currently pinned (will be replaced)
           </h2>
           <ul class="space-y-2 mb-4">
-            {% for fp in preview.pinned_fingerprints %}
-              <li class="font-mono text-xs text-danger-300 break-all bg-bg-elevated-2 rounded px-3 py-2 line-through">
-                {{ fp }}
+            {% for key in preview.pinned_keys %}
+              <li class="flex items-center gap-3 font-mono text-xs text-danger-300 bg-bg-elevated-2 rounded px-3 py-2">
+                <span class="badge badge-danger flex-shrink-0">{{ key.type }}</span>
+                <span class="break-all line-through">{{ key.fingerprint }}</span>
               </li>
             {% endfor %}
           </ul>
@@ -134,9 +140,9 @@
 
         <div class="text-sm text-text-secondary">
           <p class="mb-2">
-            Confirm this matches the server's real key. On the server console, run:
+            Confirm each key matches the server's real keys. On the server console, run:
           </p>
-          <pre class="bg-bg-elevated-2 rounded px-3 py-2 font-mono text-xs overflow-x-auto">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</pre>
+          <pre class="bg-bg-elevated-2 rounded px-3 py-2 font-mono text-xs overflow-x-auto">for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$f"; done</pre>
           <p class="mt-2">
             Compare it over a channel that is not this network path. Do not rely on
             the value shown above to verify itself.

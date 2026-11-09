@@ -99,12 +99,27 @@
        verification was enforced, or whose key changed. Links to the
        confirmation page, which scans and displays the fingerprint
        without pinning anything; the pin happens only after the
-       administrator confirms the displayed value there. #}
+       administrator confirms the displayed value there.
+
+       server.host_key_pinned is set by views/fleet.py. Once a key is
+       pinned the card shows a "Host key trusted" link instead, which
+       still opens the review page so a changed key can be re-pinned. #}
+    {% if server.host_key_pinned %}
+    <a href="/fleet/servers/{{ server.id }}/trust-host-key"
+       class="btn-secondary btn-sm inline-flex items-center flex-shrink-0"
+       title="Host key is pinned. Click to review the pinned key against the server.">
+      <svg class="w-3.5 h-3.5 mr-1 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+      </svg>
+      Host key trusted
+    </a>
+    {% else %}
     <a href="/fleet/servers/{{ server.id }}/trust-host-key"
        class="btn-warning btn-sm inline-flex items-center flex-shrink-0"
        title="Review and trust this server's SSH host key">
       Trust host key
     </a>
+    {% endif %}
   </div>
 
   {% if refresh_error %}

@@ -20,6 +20,18 @@ fleet_service = FleetMonitoringService()
 ssh_service = SSHConnectionService()
 
 
+def add_host_key_status(server: dict) -> dict:
+    """
+    Mark whether the server's SSH host key is pinned in the WebZFS
+    known_hosts file, so the server card can show "Host key trusted"
+    instead of the "Trust host key" action once a key is confirmed.
+    """
+    server["host_key_pinned"] = ssh_service.is_host_key_pinned(
+        server["ip"], server["port"]
+    )
+    return server
+
+
 @router.get("/", response_class=HTMLResponse)
 async def fleet_index(request: Request):
     """
@@ -34,6 +46,8 @@ async def fleet_index(request: Request):
     a couple of seconds.
     """
     servers = fleet_service.list_servers()
+    for server in servers:
+        add_host_key_status(server)
 
     return templates.TemplateResponse(
         request,
@@ -76,6 +90,7 @@ async def get_server_card_partial(request: Request, server_id: str):
         server = fleet_service.get_server(server_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Server not found")
+    add_host_key_status(server)
 
     return templates.TemplateResponse(
         request,

@@ -697,9 +697,20 @@ class SSHConnectionService:
             logger.warning(f"ssh-keyscan failed for {host}:{port}: {e}")
             return []
 
-    def _fingerprints_for_lines(self, key_lines: List[str]) -> List[str]:
-        """Compute SHA256 fingerprints for raw known_hosts lines."""
-        fingerprints = []
+    def _key_details_for_lines(self, key_lines: List[str]) -> List[Dict[str, str]]:
+        """
+        Compute the key type and SHA256 fingerprint for raw known_hosts
+        lines.
+
+        ssh-keygen -lf prints "256 SHA256:XXXX host (ED25519)". The
+        fingerprint is the second field and the key type is the last
+        field, wrapped in parentheses.
+
+        Returns:
+            List of dicts with "type" (for example ED25519, RSA, ECDSA)
+            and "fingerprint" (SHA256:XXXX).
+        """
+        details = []
         for line in key_lines:
             try:
                 fp_result = subprocess.run(
@@ -712,10 +723,24 @@ class SSHConnectionService:
                 if fp_result.returncode == 0:
                     parts = fp_result.stdout.strip().split()
                     if len(parts) >= 2:
-                        fingerprints.append(parts[1])
+                        key_type = "UNKNOWN"
+                        last = parts[-1]
+                        if last.startswith('(') and last.endswith(')'):
+                            key_type = last[1:-1]
+                        details.append({
+                            "type": key_type,
+                            "fingerprint": parts[1],
+                        })
             except Exception:
                 pass
-        return fingerprints
+        return details
+
+    def _fingerprints_for_lines(self, key_lines: List[str]) -> List[str]:
+        """Compute SHA256 fingerprints for raw known_hosts lines."""
+        return [
+            detail["fingerprint"]
+            for detail in self._key_details_for_lines(key_lines)
+        ]
 
     def _pinned_key_lines(self, host: str, port: int) -> List[str]:
         """Return known_hosts lines pinned for the given host and port."""
@@ -752,7 +777,9 @@ class SSHConnectionService:
                 port: SSH port
                 scanned: True when ssh-keyscan returned at least one key
                 fingerprints: SHA256 fingerprints of the remote keys
+                keys: type and fingerprint of each remote key
                 pinned_fingerprints: fingerprints currently pinned, if any
+                pinned_keys: type and fingerprint of each pinned key
                 is_pinned: whether a pin already exists
                 is_changed: whether the remote key differs from the pin
         """
@@ -760,8 +787,10 @@ class SSHConnectionService:
         key_lines = self._scan_host_keys(host, port)
         pinned_lines = self._pinned_key_lines(host, port)
 
-        fingerprints = self._fingerprints_for_lines(key_lines)
-        pinned_fingerprints = self._fingerprints_for_lines(pinned_lines)
+        keys = self._key_details_for_lines(key_lines)
+        pinned_keys = self._key_details_for_lines(pinned_lines)
+        fingerprints = [key["fingerprint"] for key in keys]
+        pinned_fingerprints = [key["fingerprint"] for key in pinned_keys]
 
         is_changed = False
         if key_lines and pinned_lines:
@@ -774,7 +803,9 @@ class SSHConnectionService:
             "port": port,
             "scanned": bool(key_lines),
             "fingerprints": fingerprints,
+            "keys": keys,
             "pinned_fingerprints": pinned_fingerprints,
+            "pinned_keys": pinned_keys,
             "is_pinned": bool(pinned_lines),
             "is_changed": is_changed,
         }
