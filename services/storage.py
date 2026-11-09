@@ -129,7 +129,7 @@ class FileStorageService:
         target_dataset: str,
         replication_type: str,
         command: Optional[str] = None,
-        receive_options: Optional[Dict[str, Any]] = None
+        receive_options: Optional[Dict[str, Any]] = None,
         resumable: bool = False,
         remote_host: Optional[str] = None,
         remote_port: Optional[int] = None,
