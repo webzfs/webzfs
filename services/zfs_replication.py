@@ -18,6 +18,13 @@ from services.utils import run_zfs_command, build_zfs_command
 from services.zfs_snapshot import ZFSSnapshotService
 from services.zfs_dataset import ZFSDatasetService
 from services.audit_logger import audit_logger
+from services.ssh_connection import (
+    HostKeyVerificationError,
+    SSHConnectionService,
+    host_key_error_message,
+    is_host_key_error,
+    normalize_known_hosts_host,
+)
 
 
 # `zfs send -t` accepts a very small flag set. OpenZFS zfs-send(8):
@@ -31,13 +38,6 @@ RESUME_SEND_ALLOWED_FLAGS = ('P', 'e', 'n', 'v')
 # The token is passed as a single argv element, but validating it here keeps
 # a corrupt stored token from reaching the command line at all.
 _RESUME_TOKEN_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:+/=-]{0,4095}$')
-from services.ssh_connection import (
-    HostKeyVerificationError,
-    SSHConnectionService,
-    host_key_error_message,
-    is_host_key_error,
-    normalize_known_hosts_host,
-)
 
 
 class ReplicationType(Enum):
@@ -1190,9 +1190,11 @@ class ZFSReplicationService:
         the remote receive reports a generic error we can surface the
         real cause from the local send side.
         """
-        if not options.get('remote_host'):
+        remote_host = options.get('remote_host')
+        remote_port = options.get('remote_port', 22)
+        if not remote_host:
             raise Exception("remote_host required for remote replication")
-        
+
         # Build send command with sudo if needed (Linux)
         full_send_cmd = build_zfs_command(send_cmd)
 
@@ -1295,7 +1297,6 @@ class ZFSReplicationService:
         ssh_cmd.append(remote_host)
         ssh_cmd.extend(remote_cmd)
         return ssh_cmd
-
 
     def _run_zfs_command(
         self, cmd: List[str], replication_type: ReplicationType,
