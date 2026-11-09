@@ -1,0 +1,76 @@
+{# Latency histogram table partial, loaded by latency_histogram.jinja. #}
+{% if not histogram.available %}
+<div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded mb-6" role="alert" data-sample-error>
+    <div class="flex items-start">
+        <svg class="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <div>
+            <strong class="font-semibold">Latency histogram unavailable{% if selected_pool %} for {{ selected_pool }}{% endif %}:</strong>
+            {{ histogram.error or 'zpool iostat -w produced no histogram data' }}
+        </div>
+    </div>
+</div>
+{% else %}
+
+{% set updated = histogram.timestamp[11:19] if histogram.timestamp else '' %}
+<p class="text-sm text-text-secondary mb-2">
+    {% if histogram.mode == 'sample' %}
+    <strong class="text-text-primary">Sample:</strong> I/Os completed during a {{ histogram.sample_seconds }}-second window ending at {{ updated }}.
+    {% else %}
+    <strong class="text-text-primary">Since pool import:</strong> all I/Os completed since the pool was imported, read at {{ updated }}.
+    {% endif %}
+</p>
+<p class="text-sm text-text-tertiary mb-6">
+    <code class="font-mono">total_wait</code> is the time from I/O submission to completion,
+    <code class="font-mono">disk_wait</code> the time spent queued on the leaf vdev,
+    <code class="font-mono">syncq_wait</code>/<code class="font-mono">asyncq_wait</code> the time
+    spent in the sync and async issue queues.
+</p>
+
+{% if not histogram.has_activity %}
+<div class="card mb-8">
+    <div class="card-body text-center py-10">
+        {% if histogram.mode == 'sample' %}
+        <p class="text-lg text-text-secondary mb-1">No I/O completed during the {{ histogram.sample_seconds }}-second sample.</p>
+        <p class="text-sm text-text-tertiary">The pool was idle. Take a longer sample, or sample while the workload of interest is running.</p>
+        {% else %}
+        <p class="text-lg text-text-secondary mb-1">No I/O has been recorded since the pool was imported.</p>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+{% for pool_name, data in histogram.pools.items() %}
+<div class="card mb-8">
+    <div class="card-body">
+        <h2 class="text-xl font-semibold text-text-primary mb-1">{{ pool_name }}</h2>
+        <p class="text-xs text-text-tertiary mb-4">{{ data.buckets|length }} latency buckets</p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle">
+                        <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Latency</th>
+                        {% for column in data.columns %}
+                        <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs whitespace-nowrap">{{ column.replace('_', ' ') }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bucket in data.buckets %}
+                    <tr class="border-b border-border-subtle">
+                        <td class="py-1.5 px-3 font-mono text-text-primary">{{ bucket.bucket }}</td>
+                        {% for column in data.columns %}
+                        <td class="py-1.5 px-3 text-right font-mono {% if bucket.get(column, 0) %}text-text-primary{% else %}text-text-tertiary{% endif %}">
+                            {% if bucket.get(column, 0) %}{{ '{:,}'.format(bucket.get(column, 0)) }}{% else %}&middot;{% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endif %}

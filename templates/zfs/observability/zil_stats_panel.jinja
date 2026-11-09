@@ -1,0 +1,185 @@
+{# ZIL statistics partial, loaded by zil_stats.jinja. #}
+{% if not zil.available %}
+<div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded mb-6" role="alert" data-sample-error>
+    <div class="flex items-start">
+        <svg class="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <div>
+            <strong class="font-semibold">ZIL statistics unavailable:</strong>
+            {{ zil.error or 'the zil kstat is not published on this system' }}
+            {% if zil.platform %}<span class="text-text-tertiary">(platform: {{ zil.platform }})</span>{% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+
+{% set sampling = zil.mode == 'sample' and zil.sample_seconds %}
+{% set updated = zil.timestamp[11:19] if zil.timestamp else '' %}
+
+{# Per-second rate for a counter, shown only for a sample. #}
+{% macro per_second(value) -%}
+{% if sampling %}<p class="text-xs text-text-tertiary">{{ '{:,.1f}'.format(value / zil.sample_seconds) }} per second</p>{% endif %}
+{%- endmacro %}
+
+<p class="text-sm text-text-secondary mb-2">
+    {% if sampling %}
+    <strong class="text-text-primary">Sample:</strong> change during a {{ zil.sample_seconds }}-second window ending at {{ updated }}.
+    {% else %}
+    <strong class="text-text-primary">Since module load:</strong> totals since the ZFS kernel module was loaded, read at {{ updated }}.
+    {% endif %}
+</p>
+<p class="text-sm text-text-tertiary mb-6">
+    Counters cover all pools. Source: <code class="font-mono">{{ zil.source }}</code> &middot; platform: {{ zil.platform }}
+</p>
+
+{% if not zil.has_activity %}
+<div class="card mb-8">
+    <div class="card-body text-center py-10">
+        {% if sampling %}
+        <p class="text-lg text-text-secondary mb-1">No ZIL activity during the {{ zil.sample_seconds }}-second sample.</p>
+        {% else %}
+        <p class="text-lg text-text-secondary mb-1">No ZIL activity since the ZFS module was loaded.</p>
+        {% endif %}
+        <p class="text-sm text-text-tertiary">
+            The ZIL is only written for synchronous writes: <code class="font-mono">fsync</code>,
+            <code class="font-mono">O_SYNC</code>/<code class="font-mono">O_DSYNC</code>, NFS commits, databases,
+            and datasets with <code class="font-mono">sync=always</code>.
+        </p>
+    </div>
+</div>
+{% else %}
+
+<!-- Commit summary -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="card">
+        <div class="card-body">
+            <p class="text-sm font-medium text-text-secondary">Commit Count</p>
+            <p class="text-2xl font-semibold text-text-primary">{{ '{:,}'.format(zil.summary.commit_count) }}</p>
+            {{ per_second(zil.summary.commit_count) }}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <p class="text-sm font-medium text-text-secondary">Writer Commits</p>
+            <p class="text-2xl font-semibold text-text-primary">{{ '{:,}'.format(zil.summary.commit_writer_count) }}</p>
+            {{ per_second(zil.summary.commit_writer_count) }}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <p class="text-sm font-medium text-text-secondary">Commit Errors</p>
+            <p class="text-2xl font-semibold {% if zil.summary.commit_error_count %}text-danger-400{% else %}text-text-primary{% endif %}">
+                {{ '{:,}'.format(zil.summary.commit_error_count) }}
+            </p>
+            <p class="text-xs text-text-tertiary">{{ '%.4f'|format(zil.summary.commit_error_rate) }}% error rate</p>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <p class="text-sm font-medium text-text-secondary">ITX Count</p>
+            <p class="text-2xl font-semibold text-text-primary">{{ '{:,}'.format(zil.summary.itx_count) }}</p>
+            {{ per_second(zil.summary.itx_count) }}
+        </div>
+    </div>
+</div>
+
+<!-- Commit health -->
+<div class="card mb-8">
+    <div class="card-body">
+        <h2 class="text-xl font-semibold text-text-primary mb-4">Commit Health</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle">
+                        <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Metric</th>
+                        <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="border-b border-border-subtle">
+                        <td class="py-2 px-3 text-text-secondary">Stalls</td>
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ '{:,}'.format(zil.summary.commit_stall_count) }}</td>
+                    </tr>
+                    <tr class="border-b border-border-subtle">
+                        <td class="py-2 px-3 text-text-secondary">Suspends</td>
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ '{:,}'.format(zil.summary.commit_suspend_count) }}</td>
+                    </tr>
+                    <tr class="border-b border-border-subtle">
+                        <td class="py-2 px-3 text-text-secondary">Crash commits</td>
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ '{:,}'.format(zil.summary.commit_crash_count) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ITX breakdown -->
+{% set itx_rows = [
+    ('Indirect', zil.summary.itx_indirect_count, zil.summary.itx_indirect_bytes),
+    ('Copied', zil.summary.itx_copied_count, zil.summary.itx_copied_bytes),
+    ('Need copy', zil.summary.itx_needcopy_count, zil.summary.itx_needcopy_bytes),
+    ('Metaslab (normal)', zil.summary.itx_metaslab_normal_count, zil.summary.itx_metaslab_normal_bytes),
+    ('Metaslab (SLOG)', zil.summary.itx_metaslab_slog_count, zil.summary.itx_metaslab_slog_bytes),
+] %}
+<div class="card mb-8">
+    <div class="card-body">
+        <h2 class="text-xl font-semibold text-text-primary mb-4">Intent Log Records (ITX)</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle">
+                        <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Type</th>
+                        <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Records</th>
+                        <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Bytes</th>
+                        {% if sampling %}
+                        <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Records/s</th>
+                        <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Bytes/s</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for label, count, size in itx_rows %}
+                    <tr class="{% if not loop.last %}border-b border-border-subtle{% endif %}">
+                        <td class="py-2 px-3 text-text-secondary">{{ label }}</td>
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ '{:,}'.format(count) }}</td>
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ '{:,}'.format(size) }}</td>
+                        {% if sampling %}
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ '{:,.1f}'.format(count / zil.sample_seconds) }}</td>
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ (size / zil.sample_seconds)|filesizeformat(true) }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Raw kstat values -->
+<div class="card">
+    <div class="card-body">
+        <h2 class="text-xl font-semibold text-text-primary mb-4">Raw kstat Values{% if sampling %} (change during sample){% endif %}</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-border-subtle">
+                        <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Statistic</th>
+                        <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for name, value in zil.stats.items() %}
+                    <tr class="border-b border-border-subtle">
+                        <td class="py-2 px-3 font-mono text-text-secondary">{{ name }}</td>
+                        <td class="py-2 px-3 text-right font-mono text-text-primary">{{ value }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
