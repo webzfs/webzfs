@@ -512,7 +512,7 @@ class ZFSReplicationService:
                 completed_at=end_time.isoformat(),
                 duration_seconds=duration,
                 error_message=error_message,
-                log_output='\n'.join(warnings + [error_message]).strip()
+                log_output='\n'.join(warnings + [error_message]).strip(),
                 receive_resume_token=resume_token,
                 receive_resume_target=resume_target if resume_token else ''
             )
@@ -951,27 +951,20 @@ class ZFSReplicationService:
                 check=False
             )
             if result.returncode != 0:
+                # Report host key failures distinctly so the UI can offer
+                # the Trust host key action instead of "no common snapshot".
+                if is_host_key_error(result.stderr):
+                    raise HostKeyVerificationError(
+                        host_key_error_message(
+                            remote_host, remote_port, result.stderr.strip()
+                        )
+                    )
                 return []
 
             return self._parse_incremental_points(
                 result.stdout, dataset, recursive
             )
 
-            
-            if result.returncode == 0:
-                all_snaps = [line.strip() for line in result.stdout.split('\n') if line.strip()]
-                if recursive:
-                    return all_snaps
-                # Filter to only exact dataset matches
-                return [s for s in all_snaps if s.split('@')[0] == dataset]
-            if is_host_key_error(result.stderr):
-                raise HostKeyVerificationError(
-                    host_key_error_message(
-                        remote_host, remote_port, result.stderr.strip()
-                    )
-                )
-            return []
-            
         except HostKeyVerificationError:
             raise
         except Exception:
