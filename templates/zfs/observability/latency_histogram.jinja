@@ -2,6 +2,10 @@
 
 {% block title %}{{ page_title }}{% endblock %}
 
+{% block head_assets %}
+<script src="{{ request.app.url_path_for('static', path='js/observability_sampler.js') }}"></script>
+{% endblock %}
+
 {% block content %}
 <div class="container-page max-w-6xl">
     <!-- Breadcrumb -->
@@ -44,104 +48,17 @@
         {% endif %}
     </div>
 
-    <div x-data="latencyHistogram()" data-pool="{{ selected_pool or '' }}">
-        <!-- Controls -->
-        <div class="card mb-6">
-            <div class="card-body flex flex-wrap items-center gap-3">
-                <button type="button" class="btn-secondary" @click="showCumulative()" :disabled="busy">
-                    Since import
-                </button>
-                <span class="text-text-tertiary">|</span>
-                <label for="sample-seconds" class="text-sm text-text-secondary">Sample window</label>
-                <select id="sample-seconds" class="form-select" x-model.number="seconds">
-                    {% for choice in sample_choices %}
-                    <option value="{{ choice }}">{{ choice }} seconds</option>
-                    {% endfor %}
-                </select>
-                <button type="button" class="btn-primary" @click="load(seconds)" :disabled="busy">
-                    Take sample
-                </button>
-                <button type="button" class="px-4 py-2 transition-colors"
-                        :class="autoRefresh ? 'btn-success' : 'btn-secondary'"
-                        @click="toggleAutoRefresh()">
-                    <span x-text="autoRefresh ? 'Auto refresh: ON' : 'Auto refresh: OFF'"></span>
-                </button>
-                <span class="text-sm text-text-tertiary" x-show="busy" x-text="status"></span>
-            </div>
-        </div>
+    <div x-data="observabilitySampler()"
+         data-url="/zfs/observability/latency-histogram-table"
+         data-target="#histogram-panel"
+         data-pool="{{ selected_pool or '' }}">
+        {% with cumulative_label = 'Since import' %}
+        {% include "zfs/observability/sampler_controls.jinja" %}
+        {% endwith %}
 
         <div id="histogram-panel">
             <p class="text-text-tertiary">Loading latency histogram...</p>
         </div>
     </div>
 </div>
-
-<script>
-    // Latency histogram page controller.
-    // "Since import" loads cumulative counts. "Take sample" blocks on the
-    // server for the selected window and shows only I/Os completed in it.
-    // Auto refresh repeats samples back to back until it is turned off.
-    function latencyHistogram() {
-        return {
-            pool: '',
-            seconds: 10,
-            autoRefresh: false,
-            busy: false,
-            status: '',
-            nextTimer: null,
-
-            init() {
-                this.pool = this.$el.dataset.pool;
-                this.load(0);
-            },
-
-            showCumulative() {
-                this.autoRefresh = false;
-                this.load(0);
-            },
-
-            toggleAutoRefresh() {
-                this.autoRefresh = !this.autoRefresh;
-                if (this.autoRefresh && !this.busy) {
-                    this.load(this.seconds);
-                }
-                if (!this.autoRefresh && this.nextTimer) {
-                    clearTimeout(this.nextTimer);
-                    this.nextTimer = null;
-                }
-            },
-
-            load(sample) {
-                if (this.busy) {
-                    return;
-                }
-                this.busy = true;
-                this.status = sample ? `Sampling for ${sample} seconds...` : 'Loading...';
-                const params = new URLSearchParams({ pool: this.pool, sample: sample });
-                htmx.ajax('GET', '/zfs/observability/latency-histogram-table?' + params.toString(),
-                          { target: '#histogram-panel', swap: 'innerHTML' })
-                    .then(() => this.finish(true), () => this.finish(false));
-            },
-
-            finish(ok) {
-                this.busy = false;
-                this.status = '';
-                const failed = !ok || document.querySelector('#histogram-panel [data-histogram-error]');
-                if (failed) {
-                    this.autoRefresh = false;
-                    return;
-                }
-                if (this.autoRefresh) {
-                    // Short pause so a fast failure cannot loop without delay.
-                    this.nextTimer = setTimeout(() => {
-                        this.nextTimer = null;
-                        if (this.autoRefresh) {
-                            this.load(this.seconds);
-                        }
-                    }, 1000);
-                }
-            },
-        };
-    }
-</script>
 {% endblock %}

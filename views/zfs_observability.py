@@ -9,7 +9,7 @@ from datetime import datetime
 import io
 import zipfile
 from config.templates import templates
-from services.zfs_observability import ZFSObservabilityService
+from services.zfs_observability import ZFSObservabilityService, ZIL_SAMPLE_SECONDS
 from services.utils import get_openzfs_man_page_url
 from auth.dependencies import get_current_user
 
@@ -1420,28 +1420,37 @@ async def zil_stats(request: Request):
 
     Reads the ``zil`` kstat, which Linux publishes as
     ``/proc/spl/kstat/zfs/zil`` and FreeBSD/NetBSD as
-    ``kstat.zfs.misc.zil``. The panel is hidden when the kstat is absent.
+    ``kstat.zfs.misc.zil``. The page is a shell; the statistics are loaded
+    from ``/zil-stats-panel``.
+    """
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/zil_stats.jinja",
+        context={
+            "sample_choices": ZIL_SAMPLE_SECONDS,
+            "page_title": "ZIL Statistics"
+        }
+    )
+
+
+@router.get("/zil-stats-panel", response_class=HTMLResponse)
+def zil_stats_panel(request: Request, sample: int = 0):
+    """Return the ZIL statistics partial.
+
+    ``sample=0`` shows counters since the ZFS module was loaded. ``sample=N``
+    (one of ``ZIL_SAMPLE_SECONDS``) blocks for N seconds and shows only the
+    change in that window, so this handler must stay plain ``def``.
     """
     try:
-        zil = observability_service.get_zil_stats()
-        return templates.TemplateResponse(
-            request,
-            name="zfs/observability/zil_stats.jinja",
-            context={
-                "zil": zil,
-                "page_title": "ZIL Statistics"
-            }
-        )
+        zil = observability_service.get_zil_stats(sample or None)
     except Exception as e:
-        return templates.TemplateResponse(
-            request,
-            name="zfs/observability/zil_stats.jinja",
-            context={
-                "zil": {"available": False, "error": str(e)},
-                "error": str(e),
-                "page_title": "ZIL Statistics"
-            }
-        )
+        zil = {"available": False, "error": str(e)}
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/zil_stats_panel.jinja",
+        context={"zil": zil}
+    )
 
 
 @router.get("/txg-history", response_class=HTMLResponse)

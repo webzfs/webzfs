@@ -4,6 +4,7 @@ Handles retrieval and parsing of ZFS logs, events, and history
 """
 import subprocess
 import re
+import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
@@ -180,6 +181,27 @@ def summarize_txg_history(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         "total_reads": sum(_ints("reads")),
         "total_writes": sum(_ints("writes")),
     }
+
+
+#: Sample windows offered by the ZIL statistics page, in seconds.
+ZIL_SAMPLE_SECONDS = (5, 10, 30)
+
+
+def subtract_kstat(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the change in integer kstat counters between two reads.
+
+    Keys are taken from ``after``. Integer values become ``after - before``,
+    clamped at 0 (a counter that went down means the module was reloaded
+    between reads). Non-integer values are copied from ``after``.
+    """
+    delta: Dict[str, Any] = {}
+    for key, value in after.items():
+        old = before.get(key, 0)
+        if isinstance(value, int) and isinstance(old, int):
+            delta[key] = max(value - old, 0)
+        else:
+            delta[key] = value
+    return delta
 
 
 def summarize_zil_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
@@ -791,17 +813,29 @@ class ZFSObservabilityService:
         except Exception as e:
             return {'error': f'Failed to read module parameters: {str(e)}'}
 
-    def get_zil_stats(self) -> Dict[str, Any]:
+    def get_zil_stats(self, sample_seconds: Optional[int] = None) -> Dict[str, Any]:
         """Get ZIL (ZFS Intent Log) statistics.
 
         Linux exposes the ``zil`` kstat as ``/proc/spl/kstat/zfs/zil``; FreeBSD
         and NetBSD expose the same named kstat through the sysctl tree as
         ``kstat.zfs.misc.zil`` (``kstat_create("zfs", 0, "zil", "misc", ...)``
-        in ``module/zfs/zil.c``).
+        in ``module/zfs/zil.c``). The counters are global (all pools) and
+        cumulative since the ZFS module was loaded.
+
+        Without ``sample_seconds`` the cumulative counters are returned. With
+        ``sample_seconds`` the kstat is read twice that many seconds apart and
+        the difference is returned (see :func:`subtract_kstat`). The caller
+        blocks for the window.
+
+        Args:
+            sample_seconds: Optional sample window, one of
+                ``ZIL_SAMPLE_SECONDS``.
 
         Returns:
             ``{'available': bool, 'platform': str, 'stats': {...},
-            'summary': {...}}`` on success, or ``available=False`` with an
+            'summary': {...}, 'mode': 'cumulative'|'sample',
+            'sample_seconds': int|None, 'has_activity': bool,
+            'timestamp': str}`` on success, or ``available=False`` with an
             ``error`` when the platform does not publish the kstat.
         """
         platform = self._platform_name()
@@ -813,6 +847,48 @@ class ZFSObservabilityService:
                 'error': 'ZIL statistics are not supported on this platform'
             }
 
+        if sample_seconds is not None and sample_seconds not in ZIL_SAMPLE_SECONDS:
+            return {
+                'available': False,
+                'platform': platform,
+                'error': f'Invalid sample window: {sample_seconds} seconds'
+            }
+
+        first = self._read_zil_kstat(platform)
+        if 'error' in first:
+            return first
+
+        if sample_seconds:
+            time.sleep(sample_seconds)
+            second = self._read_zil_kstat(platform)
+            if 'error' in second:
+                return second
+            stats = subtract_kstat(first['stats'], second['stats'])
+            mode = 'sample'
+        else:
+            stats = first['stats']
+            mode = 'cumulative'
+
+        summary = summarize_zil_stats(stats)
+        return {
+            'available': True,
+            'platform': platform,
+            'source': first['source'],
+            'stats': stats,
+            'summary': summary,
+            'mode': mode,
+            'sample_seconds': sample_seconds,
+            'has_activity': bool(summary['commit_count'] or summary['itx_count']),
+            'timestamp': datetime.now().isoformat(),
+        }
+
+    def _read_zil_kstat(self, platform: str) -> Dict[str, Any]:
+        """Read the ``zil`` kstat once.
+
+        Returns:
+            ``{'stats': {...}, 'source': str}``, or the ``available=False``
+            result with an ``error``.
+        """
         if platform in ('FreeBSD', 'NetBSD'):
             try:
                 result = subprocess.run(
@@ -864,13 +940,10 @@ class ZFSObservabilityService:
                 }
 
         return {
-            'available': True,
-            'platform': platform,
+            'stats': stats,
             'source': ('sysctl kstat.zfs.misc.zil'
                        if platform in ('FreeBSD', 'NetBSD')
                        else '/proc/spl/kstat/zfs/zil'),
-            'stats': stats,
-            'summary': summarize_zil_stats(stats)
         }
 
     def get_txg_history(self, pool_name: str) -> Dict[str, Any]:
