@@ -194,7 +194,7 @@ def parse_latency_histogram(text: str) -> Dict[str, Any]:
 
 
 #: Sample windows offered by the latency histogram page, in seconds.
-LATENCY_SAMPLE_SECONDS = (5, 10, 30)
+LATENCY_SAMPLE_SECONDS = (1, 5, 10, 30)
 
 
 def subtract_latency_histogram(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:

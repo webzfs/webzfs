@@ -184,7 +184,7 @@ def summarize_txg_history(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 #: Sample windows offered by the ZIL statistics page, in seconds.
-ZIL_SAMPLE_SECONDS = (5, 10, 30)
+ZIL_SAMPLE_SECONDS = (1, 5, 10, 30)
 
 
 def subtract_kstat(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
