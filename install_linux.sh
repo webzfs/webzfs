@@ -42,6 +42,25 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Confirm that the administrator installed the distribution packages
+# documented in the README.md Prerequisites section before any changes
+# are made. Installation must not continue without an explicit 'y'.
+echo "Before continuing, confirm the required packages for your distribution"
+echo "are installed. The package lists are in the 'Prerequisites' section of"
+echo "README.md in this directory."
+echo
+printf "Have you installed the required packages listed in README.md? (press y to continue): "
+read -r PACKAGES_CONFIRMED || PACKAGES_CONFIRMED=""
+if [ "$PACKAGES_CONFIRMED" != "y" ] && [ "$PACKAGES_CONFIRMED" != "Y" ]; then
+    echo
+    echo -e "${RED}Installation stopped.${NC}"
+    echo "Install the packages listed in the README.md Prerequisites section"
+    echo "for your distribution, then rerun this installer."
+    exit 1
+fi
+echo -e "${GREEN}✓${NC} Required packages confirmed"
+echo
+
 # Function to check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -89,7 +108,7 @@ echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)"
 
 if ! command_exists node; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js v20+ and try again"
+    echo "Please install Node.js v22+ and try again"
     exit 1
 fi
 
@@ -116,7 +135,7 @@ case "$NODE_REAL_PATH:$NPM_REAL_PATH" in
         echo "build runs as the 'webzfs' service account with HOME=/opt/webzfs,"
         echo "and snapd rejects home directories outside of /home."
         echo
-        echo "Please install a system (non-Snap) Node.js 20+ and npm, then"
+        echo "Please install a system (non-Snap) Node.js 22+ and npm, then"
         echo "rerun this installer. For example, on Debian/Ubuntu:"
         echo
         echo "  sudo apt update"
@@ -129,21 +148,21 @@ case "$NODE_REAL_PATH:$NPM_REAL_PATH" in
         ;;
 esac
 
-# Enforce the Node.js 20+ requirement
+# Enforce the Node.js 22+ requirement
 NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//')
 NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1)
 
 case "$NODE_MAJOR" in
     ''|*[!0-9]*)
         echo -e "${RED}Error: Unable to determine the Node.js version${NC}"
-        echo "Please install Node.js v20 or newer and try again"
+        echo "Please install Node.js v22 or newer and try again"
         exit 1
         ;;
 esac
 
-if [ "$NODE_MAJOR" -lt 20 ]; then
-    echo -e "${RED}Error: Node.js 20+ is required (found ${NODE_VERSION})${NC}"
-    echo "Please install Node.js v20 or newer and try again"
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo -e "${RED}Error: Node.js 22+ is required (found ${NODE_VERSION})${NC}"
+    echo "Please install Node.js v22 or newer and try again"
     exit 1
 fi
 

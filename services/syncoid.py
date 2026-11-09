@@ -11,11 +11,14 @@ import subprocess
 import json
 import shlex
 import threading
+import logging
 from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 
 from services.utils import run_privileged_command, run_zfs_command
 from core.receive_options import recvoptions_string, validate_receive_options
+
+logger = logging.getLogger(__name__)
 
 
 class SyncoidService:
@@ -600,6 +603,31 @@ class SyncoidService:
         unit = match.group(2)
         return int(value * self.BYTE_UNIT_FACTORS.get(unit, 1))
     
+    def _pinned_ssh_options(self, host_string: str) -> List[str]:
+        """
+        Return SSH -o options that verify host keys against WebZFS's own
+        known_hosts file, when the host is pinned there.
+
+        If the host is not pinned in WebZFS, OpenSSH's default strict host
+        key checking still applies (it fails closed for a non-interactive
+        ssh), so no bypass options are ever added.
+
+        Args:
+            host_string: SSH destination such as 'user@host'
+
+        Returns:
+            List of '-o' option values, possibly empty
+        """
+        host = host_string.rsplit('@', 1)[-1]
+        try:
+            from services.ssh_connection import SSHConnectionService
+            ssh_service = SSHConnectionService()
+            if ssh_service.is_host_key_pinned(host, 22):
+                return ssh_service.get_host_key_options()
+        except Exception as e:
+            logger.warning(f"Could not resolve pinned host key for {host}: {e}")
+        return []
+
     def estimate_transfer_size(
         self,
         source: str,
@@ -619,8 +647,11 @@ class SyncoidService:
         """
         try:
             # Get list of snapshots for source
+            ssh_options = []
             if source_host:
-                list_cmd = ['ssh', source_host, 'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
+                for option in self._pinned_ssh_options(source_host):
+                    ssh_options.extend(['-o', option])
+                list_cmd = ['ssh'] + ssh_options + [source_host, 'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
             else:
                 list_cmd = ['zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
             
@@ -640,7 +671,7 @@ class SyncoidService:
             
             # Use zfs send with dry-run to estimate size
             if source_host:
-                send_cmd = ['ssh', source_host, 'zfs', 'send', '-nv', latest_snapshot]
+                send_cmd = ['ssh'] + ssh_options + [source_host, 'zfs', 'send', '-nv', latest_snapshot]
             else:
                 send_cmd = ['zfs', 'send', '-nv', latest_snapshot]
             

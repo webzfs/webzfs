@@ -50,6 +50,36 @@ async def ssh_add_form(request: Request):
     )
 
 
+@router.post("/scan-host-key", response_class=HTMLResponse)
+async def ssh_scan_host_key(
+    request: Request,
+    host: Annotated[str, Form()],
+    port: Annotated[int, Form()] = 22
+):
+    """
+    Scan a host key and render its fingerprint for review, without
+    pinning anything and without a password being involved.
+
+    This backs the "Check host key" step on the add form so the
+    administrator can verify the fingerprint out of band before the
+    password is ever submitted.
+    """
+    try:
+        preview = ssh_service.preview_host_key(host, port)
+    except Exception as e:
+        return templates.TemplateResponse(
+            request,
+            name="utils/ssh/host_key_preview.jinja",
+            context={"error": str(e)}
+        )
+
+    return templates.TemplateResponse(
+        request,
+        name="utils/ssh/host_key_preview.jinja",
+        context={"preview": preview}
+    )
+
+
 @router.post("/add")
 async def ssh_add_submit(
     request: Request,
@@ -58,7 +88,8 @@ async def ssh_add_submit(
     username: Annotated[str, Form()],
     password: Annotated[str, Form()],
     port: Annotated[int, Form()] = 22,
-    notes: Annotated[str, Form()] = ""
+    notes: Annotated[str, Form()] = "",
+    fingerprint: Annotated[list[str], Form()] = []
 ):
     """Create new SSH connection with automatic key setup"""
     try:
@@ -68,7 +99,10 @@ async def ssh_add_submit(
             username=username,
             password=password,  # Used once for key setup, then discarded
             port=port,
-            notes=notes
+            notes=notes,
+            # Fingerprints the admin reviewed on the form, if any. Binds
+            # the pin to the approved key before the password is sent.
+            confirmed_fingerprints=fingerprint
         )
         
         # Redirect back to the main page

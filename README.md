@@ -68,7 +68,7 @@ The application automatically detects the operating system and adapts its behavi
 
 - Linux or FreeBSD or NetBSD with ZFS installed
 - Python 3.12+
-- Node.js v20+ and npm
+- Node.js v22+ and npm
 - sudo (required on Linux; the service runs as an unprivileged user and uses sudo for approved commands)
 - ZFS utilities (zpool, zfs, zdb, etc)
 - smartmontools (smartctl)
@@ -83,6 +83,7 @@ The application automatically detects the operating system and adapts its behavi
 #### Fedora Package Requirements: 
 #### SUSE Package Requirements:
 #### Debain/Ubuntu/Proxmox Package Requirements: sudo rsync nodejs npm libsodium-dev python3.13-venv python3-pip python3-full sanoid smartmontools
+#### Mint Package Requirements: sudo git curl ca-certificates rsync build-essential pkg-config libsodium-dev libffi-dev libssl-dev python3.12 python3.12-venv python3.12-dev python3-pip smartmontools sanoid
 
 ### Installation
 
