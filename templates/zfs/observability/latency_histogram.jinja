@@ -2,10 +2,6 @@
 
 {% block title %}{{ page_title }}{% endblock %}
 
-{% block head_assets %}
-<script src="{{ request.app.url_path_for('static', path='js/observability_sampler.js') }}"></script>
-{% endblock %}
-
 {% block content %}
 <div class="container-page max-w-6xl">
     <!-- Breadcrumb -->
@@ -30,35 +26,65 @@
     </nav>
 
     <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8" x-data="{ autoRefresh: false }" x-init="window.autoRefresh = autoRefresh">
         <div>
             <h1 class="text-3xl font-bold text-text-primary mb-2">I/O Latency Histograms</h1>
             <p class="text-text-secondary">Per-bucket I/O latency distribution from <code class="font-mono">zpool iostat -w</code></p>
         </div>
-        {% if pools %}
-        <form method="get" action="/zfs/observability/latency-histogram" class="flex items-center gap-2">
-            <label for="pool-select" class="text-sm text-text-secondary">Pool</label>
-            <select id="pool-select" name="pool" class="form-select" onchange="this.form.submit()">
-                {% for name in pools %}
-                <option value="{{ name }}" {% if name == selected_pool %}selected{% endif %}>{{ name }}</option>
-                {% endfor %}
-            </select>
-            <noscript><button type="submit" class="btn-secondary">Show</button></noscript>
-        </form>
-        {% endif %}
+        <button @click="autoRefresh = !autoRefresh; window.autoRefresh = autoRefresh"
+                class="px-4 py-2 transition-colors"
+                :class="autoRefresh ? 'btn-success' : 'btn-secondary'">
+            <span class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span x-text="autoRefresh ? 'Auto-refresh: ON' : 'Auto-refresh: OFF'"></span>
+            </span>
+        </button>
     </div>
 
-    <div x-data="observabilitySampler()"
-         data-url="/zfs/observability/latency-histogram-table"
-         data-target="#histogram-panel"
-         data-pool="{{ selected_pool or '' }}">
-        {% with cumulative_label = 'Since import' %}
-        {% include "zfs/observability/sampler_controls.jinja" %}
-        {% endwith %}
+    <!-- Settings -->
+    <div class="bg-bg-elevated rounded-lg shadow mb-6 p-6">
+        <form method="get" action="/zfs/observability/latency-histogram" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {% if pools %}
+                <div>
+                    <label for="pool" class="block text-sm font-medium text-text-secondary mb-1">Pool</label>
+                    <select name="pool" id="pool" class="form-input">
+                        {% for name in pools %}
+                        <option value="{{ name }}" {% if name == selected_pool %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div>
+                    <label for="sample" class="block text-sm font-medium text-text-secondary mb-1">Sample Window</label>
+                    <select name="sample" id="sample" class="form-input">
+                        <option value="0" {% if sample == 0 %}selected{% endif %}>Since import</option>
+                        {% for choice in sample_choices %}
+                        <option value="{{ choice }}" {% if sample == choice %}selected{% endif %}>{{ choice }} second{{ 's' if choice != 1 }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
 
-        <div id="histogram-panel">
-            <p class="text-text-tertiary">Loading latency histogram...</p>
-        </div>
+            <button type="submit" class="px-6 py-2 btn-primary transition-colors">
+                Apply Settings
+            </button>
+        </form>
+    </div>
+
+    <!-- Histogram Display -->
+    <div x-data
+         hx-get="/zfs/observability/latency-histogram-table?pool={{ (selected_pool or '')|urlencode }}&sample={{ sample }}"
+         hx-trigger="load, every {{ refresh_seconds }}s[autoRefresh]"
+         hx-swap="innerHTML">
+        <p class="text-text-tertiary">{% if sample %}Sampling for {{ sample }} second{{ 's' if sample != 1 }}...{% else %}Loading latency histogram...{% endif %}</p>
     </div>
 </div>
+
+<script>
+    // Global autoRefresh variable for HTMX conditional triggers
+    window.autoRefresh = false;
+</script>
 {% endblock %}

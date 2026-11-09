@@ -818,15 +818,19 @@ async def dataset_stats_table(
 
 
 @router.get("/latency-histogram", response_class=HTMLResponse)
-def latency_histogram_page(request: Request, pool: Optional[str] = None):
+def latency_histogram_page(request: Request, pool: Optional[str] = None, sample: int = 0):
     """Display I/O latency histograms from ``zpool iostat -w``.
 
     Unlike the ``-l`` latency averages already shown on the pool iostat page,
     ``-w`` buckets every I/O by latency (nanoseconds to seconds) per queue
     type, which is what makes tail latency visible. The page is a shell; the
-    table is loaded from ``/latency-histogram-table``. Plain ``def`` because
+    table is loaded and auto refreshed from ``/latency-histogram-table`` with
+    htmx polling, as on the system iostat page. Plain ``def`` because
     ``zpool list`` can wait on spun-down disks.
     """
+    if sample not in LATENCY_SAMPLE_SECONDS:
+        sample = 0
+
     try:
         from services.zfs_pool import ZFSPoolService
         pool_service = ZFSPoolService()
@@ -842,7 +846,11 @@ def latency_histogram_page(request: Request, pool: Optional[str] = None):
         context={
             "pools": all_pools,
             "selected_pool": selected_pool,
+            "sample": sample,
             "sample_choices": LATENCY_SAMPLE_SECONDS,
+            # A sample request blocks for its window, so poll one second
+            # after it ends; the cumulative view polls every 5 seconds.
+            "refresh_seconds": sample + 1 if sample else 5,
             "page_title": "Latency Histograms"
         }
     )

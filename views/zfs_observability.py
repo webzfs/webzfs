@@ -1415,19 +1415,27 @@ Each file contains detailed information about various aspects of your ZFS system
 
 
 @router.get("/zil-stats", response_class=HTMLResponse)
-async def zil_stats(request: Request):
+async def zil_stats(request: Request, sample: int = 0):
     """Display ZIL (ZFS Intent Log) statistics.
 
     Reads the ``zil`` kstat, which Linux publishes as
     ``/proc/spl/kstat/zfs/zil`` and FreeBSD/NetBSD as
     ``kstat.zfs.misc.zil``. The page is a shell; the statistics are loaded
-    from ``/zil-stats-panel``.
+    and auto refreshed from ``/zil-stats-panel`` with htmx polling, as on the
+    system iostat page.
     """
+    if sample not in ZIL_SAMPLE_SECONDS:
+        sample = 0
+
     return templates.TemplateResponse(
         request,
         name="zfs/observability/zil_stats.jinja",
         context={
+            "sample": sample,
             "sample_choices": ZIL_SAMPLE_SECONDS,
+            # A sample request blocks for its window, so poll one second
+            # after it ends; the cumulative view polls every 5 seconds.
+            "refresh_seconds": sample + 1 if sample else 5,
             "page_title": "ZIL Statistics"
         }
     )
