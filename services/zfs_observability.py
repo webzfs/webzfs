@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from services.utils import is_freebsd, is_netbsd, run_zfs_command
+from services.zfs_capabilities import get_capabilities
+from services.zfs_pool import ZFSPoolService
 from config.settings import Settings
 
 
@@ -124,7 +126,13 @@ def parse_txg_history(text: str) -> List[Dict[str, Any]]:
     entries: List[Dict[str, Any]] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("kstat."):
+        if line.startswith("kstat."):
+            # sysctl label. Keep anything printed after "name: " on the same
+            # line so the table header is not lost if it starts there.
+            if ": " not in line:
+                continue
+            line = line.split(": ", 1)[1].strip()
+        if not line:
             continue
         parts = line.split()
         if columns is None:
@@ -798,6 +806,13 @@ class ZFSObservabilityService:
         """
         platform = self._platform_name()
 
+        if not get_capabilities().kstat_observability:
+            return {
+                'available': False,
+                'platform': platform,
+                'error': 'ZIL statistics are not supported on this platform'
+            }
+
         if platform in ('FreeBSD', 'NetBSD'):
             try:
                 result = subprocess.run(
@@ -877,6 +892,29 @@ class ZFSObservabilityService:
         """
         platform = self._platform_name()
         entries: List[Dict[str, Any]] = []
+
+        if not get_capabilities().kstat_observability:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'platform': platform,
+                'entries': [],
+                'error': 'txg history is not supported on this platform'
+            }
+
+        # The pool name becomes a sysctl OID component on FreeBSD and a path
+        # component under /proc/spl/kstat/zfs on Linux, so it must be a valid
+        # pool name (no "/", "..", or leading "-") before either is built.
+        try:
+            ZFSPoolService.validate_pool_name(pool_name)
+        except ValueError as e:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'platform': platform,
+                'entries': [],
+                'error': str(e)
+            }
 
         if platform in ('FreeBSD', 'NetBSD'):
             try:
@@ -969,6 +1007,18 @@ class ZFSObservabilityService:
         )
 
         results: Dict[str, Any] = {'pool': pool_name}
+        if not get_capabilities().vdev_activity_status:
+            results['available'] = False
+            results['error'] = ('TRIM/initialize status is not supported '
+                                'on this platform')
+            return results
+        try:
+            ZFSPoolService.validate_pool_name(pool_name)
+        except ValueError as e:
+            results['available'] = False
+            results['error'] = str(e)
+            return results
+
         available = False
         for kind, flag, parser in (
             (TRIM, '-t', parse_trim_status),

@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import Annotated
 from config.templates import templates
 from services.zfs_pool import ZFSPoolService, parse_error_count
+from services.zfs_performance import ZFSPerformanceService
 from services.zfs_dataset import ZFSDatasetService
 from services.disk_utils import DiskUtilsService
 from services.diagnostics import collect_pool_diagnostics

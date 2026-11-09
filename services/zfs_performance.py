@@ -10,11 +10,10 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from config.settings import Settings
-<<<<<<< HEAD
-from services.utils import is_freebsd, is_netbsd
-from services.scan_status import parse_scan
-=======
 from services.utils import is_freebsd, is_netbsd, run_zfs_command
+from services.scan_status import parse_scan
+from services.zfs_capabilities import get_capabilities
+from services.zfs_pool import ZFSPoolService
 
 
 # ---------------------------------------------------------------------------
@@ -26,15 +25,17 @@ from services.utils import is_freebsd, is_netbsd, run_zfs_command
 #: Latency histogram bucket labels printed by ``zpool iostat -w``.
 _HISTOGRAM_BUCKET_RE = re.compile(r"^\d+(?:\.\d+)?(?:ns|us|ms|s)$")
 
-#: SI suffixes used by ``zfs_nicenum()`` for histogram counters.
+#: Suffixes printed by ``zfs_nicenum()`` for counters. Both the ``zpool
+#: iostat -w`` histogram cells and the ``zpool status -s`` SLOW column use
+#: ``ZFS_NICENUM_1024``, so every step is a factor of 1024, not 1000.
 _HISTOGRAM_SUFFIXES = {
     "": 1,
-    "K": 1000,
-    "M": 1000 ** 2,
-    "G": 1000 ** 3,
-    "T": 1000 ** 4,
-    "P": 1000 ** 5,
-    "E": 1000 ** 6,
+    "K": 1024,
+    "M": 1024 ** 2,
+    "G": 1024 ** 3,
+    "T": 1024 ** 4,
+    "P": 1024 ** 5,
+    "E": 1024 ** 6,
 }
 
 #: Lines in ``zpool status`` output that are not vdev rows.
@@ -92,13 +93,12 @@ def parse_slow_io_status(text: str) -> Dict[str, Any]:
         if not has_slow_column or len(parts) < 6:
             continue
 
-        # Columns are aligned with runs of spaces; split on 2+ spaces so a
-        # vdev name that itself contains a single space stays intact.
-        fields = re.split(r"\s{2,}", stripped)
-        if len(fields) < 6:
-            fields = parts
-        name, state = fields[0], fields[1]
-        slow = fields[5]
+        # NAME STATE READ WRITE CKSUM SLOW. The error columns are printed with
+        # " %5s", so a 5-character value such as "1.20K" is separated from its
+        # neighbour by a single space; split on any whitespace. Trailing
+        # annotations such as "(trimming)" come after the SLOW column.
+        name = parts[0]
+        slow = parts[5]
         if slow == "-":
             continue
         slow_io[name] = parse_histogram_value(slow)
@@ -121,10 +121,12 @@ def _histogram_columns(group_line: str, sub_line: str) -> List[str]:
     the text, so a sub-column is matched to the group whose label centre is
     nearest. This keeps working when a version adds or removes a column.
     """
-    groups = [
-        (m.group(), (m.start() + m.end()) / 2.0)
-        for m in re.finditer(r"\S+", group_line)
-    ]
+    groups = []
+    for index, match in enumerate(re.finditer(r"\S+", group_line)):
+        # The first token is the pool name, not a column group.
+        if index == 0:
+            continue
+        groups.append((match.group(), (match.start() + match.end()) / 2.0))
     columns: List[str] = []
     for match in re.finditer(r"\S+", sub_line):
         token = match.group()
@@ -157,14 +159,18 @@ def parse_latency_histogram(text: str) -> Dict[str, Any]:
         if set(stripped) <= {"-"}:
             continue
 
-        if "total_wait" in stripped and not stripped.startswith("latency"):
+        parts = stripped.split()
+
+        # Group header: "<pool>  total_wait  disk_wait  syncq_wait ...".
+        # Matched on the second token so a pool named "latency" still works.
+        if len(parts) >= 2 and parts[1] == "total_wait":
             group_line = raw_line.rstrip()
-            name = stripped.split()[0]
             current = {"columns": [], "buckets": []}
-            pools[name] = current
+            pools[parts[0]] = current
             continue
 
-        if stripped.startswith("latency"):
+        # Column header: "latency  read  write  read  write ...".
+        if parts[0] == "latency" and len(parts) >= 2 and parts[1] == "read":
             if current is not None and group_line:
                 current["columns"] = _histogram_columns(group_line, raw_line.rstrip())
             continue
@@ -172,7 +178,6 @@ def parse_latency_histogram(text: str) -> Dict[str, Any]:
         if current is None or not current["columns"]:
             continue
 
-        parts = stripped.split()
         if not _HISTOGRAM_BUCKET_RE.match(parts[0]):
             continue
 
@@ -185,7 +190,6 @@ def parse_latency_histogram(text: str) -> Dict[str, Any]:
         "available": any(pool["buckets"] for pool in pools.values()),
         "pools": pools,
     }
->>>>>>> f936a59 (add more info to observe)
 
 
 class ZFSPerformanceService:
@@ -1274,6 +1278,23 @@ class ZFSPerformanceService:
             ``timestamp``, or ``available=False`` with an ``error`` when the
             command fails or the ``SLOW`` column is not present.
         """
+        if not get_capabilities().slow_io_status:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'slow_io': {},
+                'error': 'Slow I/O counts are not supported on this platform'
+            }
+        try:
+            ZFSPoolService.validate_pool_name(pool_name)
+        except ValueError as e:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'slow_io': {},
+                'error': str(e)
+            }
+
         timeout = self.timeouts.get('status', self.timeouts['default'])
         try:
             result = run_zfs_command(
@@ -1317,9 +1338,26 @@ class ZFSPerformanceService:
             The parsed result of :func:`parse_latency_histogram` plus a
             ``timestamp``, or ``available=False`` with an ``error``.
         """
+        if not get_capabilities().latency_histogram:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'pools': {},
+                'error': 'Latency histograms are not supported on this platform'
+            }
+
         timeout = self.timeouts.get('iostat', self.timeouts['default'])
         cmd = ['zpool', 'iostat', '-w', '-y']
         if pool_name:
+            try:
+                ZFSPoolService.validate_pool_name(pool_name)
+            except ValueError as e:
+                return {
+                    'available': False,
+                    'pool': pool_name,
+                    'pools': {},
+                    'error': str(e)
+                }
             cmd.append(pool_name)
         cmd.extend(['1', '1'])
 

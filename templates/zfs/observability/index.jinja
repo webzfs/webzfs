@@ -409,8 +409,11 @@
 
         {# ============================================================== #}
         {# Row 5: ZIL, TXG History, TRIM/Initialize, Latency Histograms     #}
+        {# Each card is gated through the F1 capability helper so it is     #}
+        {# hidden on NetBSD and wherever the version probe fails.           #}
         {# ============================================================== #}
 
+        {% if caps.kstat_observability %}
         <a href="/zfs/observability/zil-stats" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
                 <div class="flex items-center">
@@ -442,7 +445,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if caps.vdev_activity_status %}
         <a href="/zfs/observability/vdev-activity" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
                 <div class="flex items-center">
@@ -458,7 +463,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if caps.latency_histogram %}
         <a href="/zfs/observability/latency-histogram" class="card hover:shadow-xl transition-all duration-200 hover:-translate-y-1">
             <div class="card-body">
                 <div class="flex items-center">
@@ -474,6 +481,7 @@
                 </div>
             </div>
         </a>
+        {% endif %}
     </div>
 
     <!-- Recent Pool History (loaded via HTMX for performance) -->

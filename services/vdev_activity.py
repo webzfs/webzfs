@@ -16,7 +16,9 @@ The exact wording is produced by ``print_status_trim()`` and
 ``(N% trimmed|initialized, started at …)``, ``(N% … suspended, started at …)``,
 ``(100% … completed at …)``, ``(untrimmed)``/``(uninitialized)``,
 ``(trim unsupported)`` and, for the non-verbose status output, the bare
-``(trimming)``/``(initializing)``.
+``(trimming)``/``(initializing)``. A suspended operation prints
+``(N% trimmed, suspended, started at …)``, so ``suspended_at`` is only set
+if a future release prints a separate suspension time.
 
 This module keeps that parsing out of the service so it can be unit-tested
 against captured command output.
@@ -200,10 +202,15 @@ def parse_vdev_activity(output: str, kind: str) -> List[VdevActivity]:
         if name == "NAME" or name.lower() in _SECTION_WORDS:
             continue
 
-        annotation_match = _ANNOTATION_RE.search(stripped)
-        if not annotation_match:
-            continue
-        parsed = _parse_annotation(annotation_match.group(0), kind)
+        # print_status_config() prints the initialize annotation and then the
+        # TRIM annotation on the same leaf line, and the non-verbose one is
+        # still printed (``(initializing)  (42% trimmed, ...)`` under -t), so
+        # every annotation on the line is tried, not only the first.
+        parsed = None
+        for annotation_match in _ANNOTATION_RE.finditer(stripped):
+            parsed = _parse_annotation(annotation_match.group(0), kind)
+            if parsed is not None:
+                break
         if parsed is None:
             continue
         devices.append(
