@@ -19,6 +19,28 @@ except ImportError:
     HAS_LIBZFS_CORE = False
 
 
+ERROR_COUNT_MULTIPLIERS = {'K': 1000, 'M': 1000 ** 2, 'G': 1000 ** 3, 'T': 1000 ** 4}
+
+
+def parse_error_count(value: str) -> int:
+    """
+    Convert a READ, WRITE or CKSUM column value from zpool status to an int.
+
+    zpool prints large counts in short form (for example '1.2K' or '15M'),
+    so a plain isdigit() check would report them as zero. Anything that is
+    not a count (a missing column, '-') returns 0.
+    """
+    if value.isdigit():
+        return int(value)
+    suffix = value[-1:].upper()
+    if suffix in ERROR_COUNT_MULTIPLIERS:
+        try:
+            return int(float(value[:-1]) * ERROR_COUNT_MULTIPLIERS[suffix])
+        except ValueError:
+            return 0
+    return 0
+
+
 class ZFSPoolService:
     """Service for managing ZFS pools using libzfs_core and shell commands"""
     
@@ -29,6 +51,12 @@ class ZFSPoolService:
     # `zpool set` refuses them, so they must never reach the command line.
     # `rdonly` is the documented alias of `readonly` (zpoolprops(7)).
     IMPORT_TIME_ONLY_PROPERTIES = frozenset({'readonly', 'rdonly', 'altroot'})
+
+    # Device identifiers accepted by zpool clear: absolute paths, by-id
+    # aliases, GUIDs. An optional leading '/' is allowed, but the name must
+    # otherwise start alphanumeric so an option such as -F or --power can
+    # never be smuggled in as a device name.
+    ZFS_DEVICE_PATTERN = re.compile(r'^/?[a-zA-Z0-9][a-zA-Z0-9_\-.:/@+]*$')
     
     def __init__(self):
         """Initialize the ZFS Pool Service with settings"""
@@ -58,6 +86,31 @@ class ZFSPoolService:
                 f"Invalid pool name '{pool_name}'. Pool names must start with an alphanumeric "
                 "character and contain only alphanumeric characters, underscores, hyphens, "
                 "periods, or colons."
+            )
+
+    @classmethod
+    def validate_device(cls, device: str) -> None:
+        """
+        Validate a device identifier before passing it to zpool.
+
+        Device names are forwarded to zpool as argv entries, so an empty value
+        or one starting with '-' (for example '-F' or '--power') must be
+        rejected here rather than reaching the command line.
+
+        Args:
+            device: The device identifier to validate
+
+        Raises:
+            ValueError: If the device identifier is invalid
+        """
+        if not device:
+            raise ValueError("Device cannot be empty")
+
+        if not cls.ZFS_DEVICE_PATTERN.fullmatch(device):
+            raise ValueError(
+                f"Invalid device '{device}'. Device names must be an absolute path or "
+                "start with an alphanumeric character and contain only alphanumeric "
+                "characters, underscores, hyphens, periods, colons, slashes, '@', or '+'."
             )
     
     @classmethod
@@ -1003,7 +1056,43 @@ class ZFSPoolService:
             )
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to offline device: {e.stderr}")
-    
+
+    def clear_errors(self, pool_name: str, device: Optional[str] = None) -> None:
+        """
+        Clear device error counters in a pool.
+
+        Runs `zpool clear <pool> [device]` with a list-form argv. Clearing only
+        resets the counters; it does not repair damage and does not recover a
+        pool. --power and -F are deliberately never passed.
+
+        Args:
+            pool_name: Name of the pool
+            device: Optional device whose errors are cleared; when omitted all
+                    device errors in the pool are cleared
+
+        Raises:
+            ValueError: If the pool name or device is invalid (before zpool runs)
+            Exception: If the clear operation fails
+        """
+        self.validate_pool_name(pool_name)
+        if device is not None:
+            device = device.strip()
+            self.validate_device(device)
+        timeout = self.timeouts.get('default', 60)
+
+        cmd = ['zpool', 'clear', pool_name]
+        if device is not None:
+            cmd.append(device)
+
+        try:
+            run_zfs_command(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"ZPool clear command timed out after {timeout} seconds."
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to clear pool errors: {e.stderr}")
+
     def get_pool_topology(self, pool_name: str) -> Dict[str, Any]:
         """
         Parse pool status into a structured topology tree.
@@ -1106,9 +1195,9 @@ class ZFSPoolService:
             
             name = parts[0]
             state = parts[1] if len(parts) > 1 else 'UNKNOWN'
-            read_err = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-            write_err = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-            cksum_err = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+            read_err = parse_error_count(parts[2]) if len(parts) > 2 else 0
+            write_err = parse_error_count(parts[3]) if len(parts) > 3 else 0
+            cksum_err = parse_error_count(parts[4]) if len(parts) > 4 else 0
             notes = ' '.join(parts[5:]) if len(parts) > 5 else ''
             
             # Determine pool root indent (first line is pool name)
