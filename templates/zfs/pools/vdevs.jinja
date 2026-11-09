@@ -809,6 +809,11 @@ function renderTopology(topology) {
     var container = document.getElementById('topology-container');
     var html = '';
 
+    // Slow I/O counts come from `zpool status -s` (M11). The column is only
+    // rendered when the command exposes the SLOW column.
+    var slowIo = (pageData && pageData.slow_io) || {};
+    var showSlow = !!(pageData && pageData.slow_io_available);
+
     var sections = [
         { key: 'data_vdevs', label: 'Data VDevs', color: 'primary' },
         { key: 'log_vdevs', label: 'Log (SLOG) VDevs', color: 'info' },
@@ -849,6 +854,9 @@ function renderTopology(topology) {
             html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Read</th>';
             html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Write</th>';
             html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Cksum</th>';
+            if (showSlow) {
+                html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs" title="Slow I/Os recorded (zpool status -s)">Slow</th>';
+            }
             html += '<th class="text-right py-1.5 px-2 text-text-tertiary font-medium text-xs">Actions</th>';
             html += '</tr></thead><tbody>';
 
@@ -862,6 +870,14 @@ function renderTopology(topology) {
                 html += '<td class="py-1.5 px-2 text-right font-mono text-xs ' + errClass(dev.read_errors) + '">' + dev.read_errors + '</td>';
                 html += '<td class="py-1.5 px-2 text-right font-mono text-xs ' + errClass(dev.write_errors) + '">' + dev.write_errors + '</td>';
                 html += '<td class="py-1.5 px-2 text-right font-mono text-xs ' + errClass(dev.cksum_errors) + '">' + dev.cksum_errors + '</td>';
+                if (showSlow) {
+                    var slowVal = (dev.name in slowIo) ? slowIo[dev.name] : null;
+                    if (slowVal === null || slowVal === undefined) {
+                        html += '<td class="py-1.5 px-2 text-right font-mono text-xs text-text-tertiary">&mdash;</td>';
+                    } else {
+                        html += '<td class="py-1.5 px-2 text-right font-mono text-xs ' + (slowVal > 0 ? 'text-warning-400' : 'text-text-tertiary') + '">' + slowVal + '</td>';
+                    }
+                }
                 html += '<td class="py-1.5 px-2 text-right"><div class="flex items-center justify-end gap-1">';
 
                 // Action buttons

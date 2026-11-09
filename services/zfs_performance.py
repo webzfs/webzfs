@@ -5,12 +5,191 @@ Handles performance metrics, I/O statistics, and process monitoring
 import subprocess
 import psutil
 import platform
+import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from config.settings import Settings
-from services.utils import is_freebsd, is_netbsd
+from services.utils import is_freebsd, is_netbsd, run_zfs_command
 from services.scan_status import parse_scan
+from services.zfs_capabilities import get_capabilities
+from services.zfs_pool import ZFSPoolService
+
+
+# ---------------------------------------------------------------------------
+# zpool output parsers
+# ---------------------------------------------------------------------------
+# The parsers below are pure functions so they can be unit-tested against
+# captured command output; the service methods only run the commands.
+
+#: Latency histogram bucket labels printed by ``zpool iostat -w``.
+_HISTOGRAM_BUCKET_RE = re.compile(r"^\d+(?:\.\d+)?(?:ns|us|ms|s)$")
+
+#: Suffixes printed by ``zfs_nicenum()`` for counters. Both the ``zpool
+#: iostat -w`` histogram cells and the ``zpool status -s`` SLOW column use
+#: ``ZFS_NICENUM_1024``, so every step is a factor of 1024, not 1000.
+_HISTOGRAM_SUFFIXES = {
+    "": 1,
+    "K": 1024,
+    "M": 1024 ** 2,
+    "G": 1024 ** 3,
+    "T": 1024 ** 4,
+    "P": 1024 ** 5,
+    "E": 1024 ** 6,
+}
+
+#: Lines in ``zpool status`` output that are not vdev rows.
+_STATUS_NON_VDEV_PREFIXES = (
+    "pool:", "state:", "status:", "action:", "see:", "scan:", "config:",
+    "errors:", "remove:", "checkpoint:",
+)
+
+
+def parse_histogram_value(text: str) -> int:
+    """Convert a ``zpool iostat -w`` counter such as ``4.82K`` to an int."""
+    value = text.strip()
+    if not value or value == "-":
+        return 0
+    suffix = ""
+    if value[-1] in _HISTOGRAM_SUFFIXES and value[-1] != "":
+        suffix = value[-1]
+        value = value[:-1]
+    try:
+        return int(round(float(value) * _HISTOGRAM_SUFFIXES[suffix]))
+    except (KeyError, ValueError):
+        return 0
+
+
+def parse_slow_io_status(text: str) -> Dict[str, Any]:
+    """Parse ``zpool status -s`` into per-vdev slow I/O counts.
+
+    ``-s`` appends a ``SLOW`` column that is populated for leaf vdevs only
+    (``cmd/zpool/zpool_main.c``: "Only leafs vdevs have slow IOs"); the pool
+    row carries ``-``. When the column is absent (zpool built without slow I/O
+    support) ``available`` is False.
+
+    Returns:
+        ``{'available': bool, 'pool': str|None, 'slow_io': {vdev: int},
+        'total_slow_ios': int}``
+    """
+    pool: Optional[str] = None
+    has_slow_column = False
+    slow_io: Dict[str, int] = {}
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("pool:"):
+            pool = stripped.split(":", 1)[1].strip()
+            continue
+        if stripped.startswith(_STATUS_NON_VDEV_PREFIXES):
+            continue
+
+        parts = stripped.split()
+        if "SLOW" in parts:
+            has_slow_column = True
+            continue
+        if not has_slow_column or len(parts) < 6:
+            continue
+
+        # NAME STATE READ WRITE CKSUM SLOW. The error columns are printed with
+        # " %5s", so a 5-character value such as "1.20K" is separated from its
+        # neighbour by a single space; split on any whitespace. Trailing
+        # annotations such as "(trimming)" come after the SLOW column.
+        name = parts[0]
+        slow = parts[5]
+        if slow == "-":
+            continue
+        slow_io[name] = parse_histogram_value(slow)
+
+    return {
+        "available": has_slow_column,
+        "pool": pool,
+        "slow_io": slow_io,
+        "total_slow_ios": sum(slow_io.values()),
+    }
+
+
+def _histogram_columns(group_line: str, sub_line: str) -> List[str]:
+    """Combine the two header rows of ``zpool iostat -w`` into column names.
+
+    The first row holds the group names (``total_wait``, ``disk_wait``,
+    ``syncq_wait``, ``asyncq_wait``) and the second the per-group columns
+    (``read``/``write`` plus standalone ``scrub``/``trim``/``rebuild``).
+    ``zpool`` centres each group label over its columns rather than aligning
+    the text, so a sub-column is matched to the group whose label centre is
+    nearest. This keeps working when a version adds or removes a column.
+    """
+    groups = []
+    for index, match in enumerate(re.finditer(r"\S+", group_line)):
+        # The first token is the pool name, not a column group.
+        if index == 0:
+            continue
+        groups.append((match.group(), (match.start() + match.end()) / 2.0))
+    columns: List[str] = []
+    for match in re.finditer(r"\S+", sub_line):
+        token = match.group()
+        if token.lower() == "latency":
+            continue
+        centre = (match.start() + match.end()) / 2.0
+        group = min(groups, key=lambda item: abs(item[1] - centre))[0] if groups else None
+        if group and token.lower() in ("read", "write"):
+            columns.append(f"{group}_{token.lower()}")
+        else:
+            columns.append(token.lower())
+    return columns
+
+
+def parse_latency_histogram(text: str) -> Dict[str, Any]:
+    """Parse ``zpool iostat -w`` output into per-pool latency histograms.
+
+    Returns:
+        ``{'available': bool, 'pools': {pool: {'columns': [...],
+        'buckets': [{'bucket': '1ns', <column>: <count>, ...}]}}}``
+    """
+    pools: Dict[str, Dict[str, Any]] = {}
+    current: Optional[Dict[str, Any]] = None
+    group_line = ""
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if set(stripped) <= {"-"}:
+            continue
+
+        parts = stripped.split()
+
+        # Group header: "<pool>  total_wait  disk_wait  syncq_wait ...".
+        # Matched on the second token so a pool named "latency" still works.
+        if len(parts) >= 2 and parts[1] == "total_wait":
+            group_line = raw_line.rstrip()
+            current = {"columns": [], "buckets": []}
+            pools[parts[0]] = current
+            continue
+
+        # Column header: "latency  read  write  read  write ...".
+        if parts[0] == "latency" and len(parts) >= 2 and parts[1] == "read":
+            if current is not None and group_line:
+                current["columns"] = _histogram_columns(group_line, raw_line.rstrip())
+            continue
+
+        if current is None or not current["columns"]:
+            continue
+
+        if not _HISTOGRAM_BUCKET_RE.match(parts[0]):
+            continue
+
+        row: Dict[str, Any] = {"bucket": parts[0]}
+        for column, value in zip(current["columns"], parts[1:]):
+            row[column] = parse_histogram_value(value)
+        current["buckets"].append(row)
+
+    return {
+        "available": any(pool["buckets"] for pool in pools.values()),
+        "pools": pools,
+    }
 
 
 class ZFSPerformanceService:
@@ -1087,3 +1266,127 @@ class ZFSPerformanceService:
                 'error': f'Failed to get raw ARC stats: {str(e)}',
                 'system': self.system
             }
+
+    def get_slow_io_counts(self, pool_name: str) -> Dict[str, Any]:
+        """Return per-vdev slow I/O counts for a pool (``zpool status -s``).
+
+        Args:
+            pool_name: Pool to query.
+
+        Returns:
+            The parsed result of :func:`parse_slow_io_status` plus a
+            ``timestamp``, or ``available=False`` with an ``error`` when the
+            command fails or the ``SLOW`` column is not present.
+        """
+        if not get_capabilities().slow_io_status:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'slow_io': {},
+                'error': 'Slow I/O counts are not supported on this platform'
+            }
+        try:
+            ZFSPoolService.validate_pool_name(pool_name)
+        except ValueError as e:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'slow_io': {},
+                'error': str(e)
+            }
+
+        timeout = self.timeouts.get('status', self.timeouts['default'])
+        try:
+            result = run_zfs_command(
+                ['zpool', 'status', '-s', pool_name],
+                check=False,
+                timeout=timeout
+            )
+        except Exception as e:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'error': f'Failed to run zpool status -s: {str(e)}'
+            }
+
+        if result.returncode != 0:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'error': (result.stderr or '').strip() or 'zpool status -s failed'
+            }
+
+        parsed = parse_slow_io_status(result.stdout)
+        parsed['pool'] = parsed.get('pool') or pool_name
+        parsed['timestamp'] = datetime.now().isoformat()
+        if not parsed['available']:
+            parsed['error'] = 'Slow I/O column not available from zpool status -s'
+        return parsed
+
+    def get_latency_histogram(self, pool_name: Optional[str] = None) -> Dict[str, Any]:
+        """Return per-pool latency histograms from ``zpool iostat -w``.
+
+        ``-w`` prints a histogram of I/O latency bucketed from nanoseconds to
+        seconds, grouped by ``total_wait``/``disk_wait``/``syncq_wait``/
+        ``asyncq_wait``. This is different from the ``-l`` latency averages
+        already shown on the pool iostat page.
+
+        Args:
+            pool_name: Optional pool to restrict the histogram to.
+
+        Returns:
+            The parsed result of :func:`parse_latency_histogram` plus a
+            ``timestamp``, or ``available=False`` with an ``error``.
+        """
+        if not get_capabilities().latency_histogram:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'pools': {},
+                'error': 'Latency histograms are not supported on this platform'
+            }
+
+        timeout = self.timeouts.get('iostat', self.timeouts['default'])
+        cmd = ['zpool', 'iostat', '-w', '-y']
+        if pool_name:
+            try:
+                ZFSPoolService.validate_pool_name(pool_name)
+            except ValueError as e:
+                return {
+                    'available': False,
+                    'pool': pool_name,
+                    'pools': {},
+                    'error': str(e)
+                }
+            cmd.append(pool_name)
+        cmd.extend(['1', '1'])
+
+        try:
+            result = run_zfs_command(cmd, check=False, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'error': f'zpool iostat -w timed out after {timeout} seconds'
+            }
+        except Exception as e:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'error': f'Failed to run zpool iostat -w: {str(e)}'
+            }
+
+        if result.returncode != 0:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'error': (result.stderr or '').strip() or 'zpool iostat -w failed'
+            }
+
+        parsed = parse_latency_histogram(result.stdout)
+        parsed['pool'] = pool_name
+        parsed['timestamp'] = datetime.now().isoformat()
+        parsed['raw_output'] = result.stdout
+        if not parsed['available']:
+            parsed['error'] = 'Latency histogram not available from zpool iostat -w'
+        return parsed

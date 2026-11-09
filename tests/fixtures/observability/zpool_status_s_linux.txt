@@ -1,0 +1,9 @@
+  pool: ai-hermes
+ state: ONLINE
+config:
+
+	NAME                                                                                     STATE     READ WRITE CKSUM  SLOW
+	ai-hermes                                                                                ONLINE       0     0     0     -
+	  nvme-nvme.1c5c-535342364e383237383131303037323238-5348505034312d31303030474d-00000001  ONLINE       0     0     0     0
+
+errors: No known data errors

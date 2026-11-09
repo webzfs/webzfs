@@ -816,3 +816,34 @@ async def dataset_stats_table(
         },
     )
 
+
+@router.get("/latency-histogram", response_class=HTMLResponse)
+async def latency_histogram_page(request: Request, pool: Optional[str] = None):
+    """Display I/O latency histograms from ``zpool iostat -w``.
+
+    Unlike the ``-l`` latency averages already shown on the pool iostat page,
+    ``-w`` buckets every I/O by latency (nanoseconds to seconds) per queue
+    type, which is what makes tail latency visible. The panel is hidden when
+    the command is unavailable.
+    """
+    try:
+        from services.zfs_pool import ZFSPoolService
+        pool_service = ZFSPoolService()
+        all_pools = [p.get("name") for p in pool_service.list_pools() if p.get("name")]
+    except Exception:
+        all_pools = []
+
+    selected_pool = pool or (all_pools[0] if all_pools else None)
+    histogram = performance_service.get_latency_histogram(selected_pool)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/latency_histogram.jinja",
+        context={
+            "histogram": histogram,
+            "pools": all_pools,
+            "selected_pool": selected_pool,
+            "page_title": "Latency Histograms"
+        }
+    )
+

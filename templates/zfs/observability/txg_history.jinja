@@ -1,0 +1,155 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container-page max-w-6xl">
+    <!-- Breadcrumb -->
+    <nav class="text-sm mb-6" aria-label="Breadcrumb">
+        <ol class="flex items-center space-x-2">
+            <li class="flex items-center">
+                <a href="/" class="text-primary-400 hover:text-primary-300 transition-colors">Home</a>
+                <svg class="w-4 h-4 mx-2 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li class="flex items-center">
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300 transition-colors">Observability</a>
+                <svg class="w-4 h-4 mx-2 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li>
+                <span class="text-text-primary font-medium">TXG History</span>
+            </li>
+        </ol>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary mb-2">Transaction Group History</h1>
+            <p class="text-text-secondary">Per-pool txg timing and throughput from the kernel txg history kstat</p>
+        </div>
+        {% if pools %}
+        <form method="get" action="/zfs/observability/txg-history" class="flex items-center gap-2">
+            <label for="pool-select" class="text-sm text-text-secondary">Pool</label>
+            <select id="pool-select" name="pool" class="form-select" onchange="this.form.submit()">
+                {% for name in pools %}
+                <option value="{{ name }}" {% if name == selected_pool %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn-secondary">Show</button></noscript>
+        </form>
+        {% endif %}
+    </div>
+
+    {% if not txg.available %}
+    <!-- Panel hidden when the history kstat is empty or absent -->
+    <div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded mb-6" role="alert">
+        <div class="flex items-start">
+            <svg class="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div>
+                <strong class="font-semibold">TXG history unavailable{% if selected_pool %} for {{ selected_pool }}{% endif %}:</strong>
+                {{ txg.error or 'the txgs kstat is not published' }}
+                <p class="text-xs text-text-tertiary mt-1">
+                    The history is only recorded while the <code class="font-mono">zfs_txg_history</code>
+                    module parameter is greater than zero.
+                </p>
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    <p class="text-sm text-text-tertiary mb-6">
+        Source: <code class="font-mono">{{ txg.source }}</code> &middot; platform: {{ txg.platform }}
+        &middot; {{ txg.summary.count }} txgs recorded
+    </p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="card">
+            <div class="card-body">
+                <p class="text-sm font-medium text-text-secondary">TXG Range</p>
+                <p class="text-lg font-semibold text-text-primary font-mono">{{ txg.summary.oldest_txg }} &ndash; {{ txg.summary.newest_txg }}</p>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <p class="text-sm font-medium text-text-secondary">Average Open Time</p>
+                <p class="text-2xl font-semibold text-text-primary">
+                    {% if txg.summary.avg_open_ms is not none %}{{ '%.2f'|format(txg.summary.avg_open_ms) }} ms{% else %}&mdash;{% endif %}
+                </p>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <p class="text-sm font-medium text-text-secondary">Average Sync Time</p>
+                <p class="text-2xl font-semibold text-text-primary">
+                    {% if txg.summary.avg_sync_ms is not none %}{{ '%.2f'|format(txg.summary.avg_sync_ms) }} ms{% else %}&mdash;{% endif %}
+                </p>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <p class="text-sm font-medium text-text-secondary">Bytes Written</p>
+                <p class="text-2xl font-semibold text-text-primary">{{ '%.2f'|format(txg.summary.total_written_bytes / 1048576) }} MiB</p>
+                <p class="text-xs text-text-tertiary">{{ txg.summary.total_writes }} writes</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <h2 class="text-xl font-semibold text-text-primary mb-1">Recent TXGs</h2>
+            <p class="text-xs text-text-tertiary mb-4">
+                Newest first. Times are shown in milliseconds; <code class="font-mono">otime</code> is the
+                time spent open, <code class="font-mono">qtime</code>/<code class="font-mono">wtime</code>
+                the quiesce and wait-for-sync phases and <code class="font-mono">stime</code> the sync phase.
+                State letters: B=birth, O=open, Q=quiesced, W=wait_for_sync, S=synced, C=committed.
+            </p>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-border-subtle">
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">TXG</th>
+                            <th class="text-center py-2 px-3 text-text-tertiary font-medium text-xs">State</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Dirty</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Read</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Written</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Reads</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Writes</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Open (ms)</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Quiesce (ms)</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Wait (ms)</th>
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs">Sync (ms)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in txg.entries[-50:]|reverse %}
+                        <tr class="border-b border-border-subtle">
+                            <td class="py-2 px-3 text-right font-mono text-text-primary">{{ entry.txg }}</td>
+                            <td class="py-2 px-3 text-center font-mono">
+                                <span title="{{ entry.state_name }}"
+                                      class="{% if entry.state == 'C' %}text-success-400{% elif entry.state in ('O', 'B') %}text-warning-400{% else %}text-text-secondary{% endif %}">{{ entry.state }}</span>
+                            </td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '{:,}'.format(entry.ndirty) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '{:,}'.format(entry.nread) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '{:,}'.format(entry.nwritten) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '{:,}'.format(entry.reads) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '{:,}'.format(entry.writes) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '%.2f'|format(entry.otime / 1000000) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '%.2f'|format(entry.qtime / 1000000) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '%.2f'|format(entry.wtime / 1000000) }}</td>
+                            <td class="py-2 px-3 text-right font-mono text-text-secondary">{{ '%.2f'|format(entry.stime / 1000000) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -8,7 +8,210 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from services.utils import is_freebsd, is_netbsd, run_zfs_command
+from services.zfs_capabilities import get_capabilities
+from services.zfs_pool import ZFSPoolService
 from config.settings import Settings
+
+
+# ---------------------------------------------------------------------------
+# Kstat parsers
+# ---------------------------------------------------------------------------
+# ZFS publishes kernel statistics through kstat. On Linux every kstat is a
+# file under /proc/spl/kstat/zfs/; on FreeBSD the same kstats are exposed
+# through the sysctl tree as ``kstat.zfs.<class>.<name>``. The parsers below
+# are pure functions so they can be unit-tested against captured output; the
+# service methods only take care of reading the source.
+
+#: Header line printed by the Linux kstat procfs layer, e.g.
+#: ``26 1 0x01 21 5712 9156795328 362210075545631``.
+_KSTAT_HEADER_RE = re.compile(r"^\d+\s+\d+\s+0x[0-9a-fA-F]+\s+\d+\s+\d+\s+\d+\s+\d+$")
+
+#: ``txg_state_t`` -> human readable name (include/sys/spa.h).
+TXG_STATE_NAMES = {
+    "B": "birth",
+    "O": "open",
+    "Q": "quiesced",
+    "W": "wait_for_sync",
+    "S": "synced",
+    "C": "committed",
+}
+
+
+def _coerce_number(value: str) -> Any:
+    """Return ``value`` as an int when possible, otherwise as a stripped string."""
+    text = value.strip()
+    try:
+        return int(text, 10)
+    except (TypeError, ValueError):
+        return text
+
+
+def parse_kstat_procfs(text: str) -> Dict[str, Any]:
+    """Parse a Linux ``/proc/spl/kstat/zfs/<name>`` file.
+
+    The file starts with a numeric kstat header line followed by a
+    ``name type data`` column header and one row per statistic::
+
+        26 1 0x01 21 5712 9156795328 362210075545631
+        name                            type data
+        zil_commit_count                4    935916
+
+    Returns a ``{statistic: value}`` mapping. Numeric values are converted to
+    ``int``; string-typed kstat entries are kept as text.
+    """
+    stats: Dict[str, Any] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or _KSTAT_HEADER_RE.match(line):
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        name, kstat_type, value = parts[0], parts[1], " ".join(parts[2:])
+        if name == "name" and kstat_type == "type" and value == "data":
+            continue
+        if not kstat_type.isdigit():
+            continue
+        stats[name] = _coerce_number(value)
+    return stats
+
+
+def parse_kstat_sysctl(text: str, prefix: str = "") -> Dict[str, Any]:
+    """Parse FreeBSD/NetBSD ``sysctl kstat.zfs...`` output.
+
+    Output lines look like ``kstat.zfs.misc.zil.zil_commit_count: 935916``
+    (FreeBSD) or ``kstat.zfs.misc.zil.zil_commit_count=935916`` (NetBSD).
+    ``prefix`` is stripped from the key when supplied; otherwise only the last
+    dotted component is kept.
+    """
+    stats: Dict[str, Any] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("kstat.") and line.endswith(":"):
+            # A raw kstat value is printed as ``kstat.zfs.<pool>.<name>:``
+            # followed by a multi-line payload; the payload is handled by the
+            # table parsers, not here.
+            continue
+        if ": " in line:
+            key, value = line.split(": ", 1)
+        elif "=" in line:
+            key, value = line.split("=", 1)
+        else:
+            continue
+        key = key.strip()
+        if prefix and key.startswith(prefix):
+            key = key[len(prefix):].lstrip(".")
+        elif "." in key:
+            key = key.rsplit(".", 1)[-1]
+        if not key:
+            continue
+        stats[key] = _coerce_number(value)
+    return stats
+
+
+def parse_txg_history(text: str) -> List[Dict[str, Any]]:
+    """Parse per-pool txg history (``/proc/spl/kstat/zfs/<pool>/txgs``).
+
+    The Linux ``procfs_list`` file and the FreeBSD sysctl value (the same
+    table preceded by a ``kstat.zfs.<pool>.txgs:`` line) share one layout::
+
+        txg      birth            state ndirty  nread  nwritten reads writes otime qtime wtime stime
+        390251   361698140699850  C     1671168 0      888832    0     63     5120961672 5797 31429 11715735
+
+    Column names are taken from the header row, so layouts with extra or
+    missing columns still parse. ``state`` is a single ``txg_state_t`` letter
+    (see :data:`TXG_STATE_NAMES`); the four time columns are nanoseconds.
+    """
+    columns: Optional[List[str]] = None
+    entries: List[Dict[str, Any]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("kstat."):
+            # sysctl label. Keep anything printed after "name: " on the same
+            # line so the table header is not lost if it starts there.
+            if ": " not in line:
+                continue
+            line = line.split(": ", 1)[1].strip()
+        if not line:
+            continue
+        parts = line.split()
+        if columns is None:
+            if parts[0].lower() == "txg":
+                columns = [part.lower() for part in parts]
+            continue
+        if len(parts) < len(columns):
+            continue
+        entry: Dict[str, Any] = {}
+        for name, value in zip(columns, parts):
+            if name == "state":
+                entry["state"] = value
+                entry["state_name"] = TXG_STATE_NAMES.get(value, "unknown")
+            else:
+                entry[name] = _coerce_number(value)
+        entries.append(entry)
+    return entries
+
+
+def summarize_txg_history(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Roll up txg history rows into the figures shown on the dashboard."""
+    if not entries:
+        return {}
+
+    def _ints(key: str) -> List[int]:
+        return [int(e[key]) for e in entries if isinstance(e.get(key), int)]
+
+    committed = [e for e in entries if e.get("state") == "C"]
+    open_times = [int(e["otime"]) for e in committed if isinstance(e.get("otime"), int)]
+    sync_times = [int(e["stime"]) for e in committed if isinstance(e.get("stime"), int)]
+    txgs = _ints("txg")
+
+    avg_open_ms = round(sum(open_times) / len(open_times) / 1e6, 3) if open_times else None
+    avg_sync_ms = round(sum(sync_times) / len(sync_times) / 1e6, 3) if sync_times else None
+
+    return {
+        "count": len(entries),
+        "committed": len(committed),
+        "oldest_txg": min(txgs) if txgs else None,
+        "newest_txg": max(txgs) if txgs else None,
+        "avg_open_ms": avg_open_ms,
+        "avg_sync_ms": avg_sync_ms,
+        "total_read_bytes": sum(_ints("nread")),
+        "total_written_bytes": sum(_ints("nwritten")),
+        "total_reads": sum(_ints("reads")),
+        "total_writes": sum(_ints("writes")),
+    }
+
+
+def summarize_zil_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """Derive the ZIL figures worth showing on the dashboard."""
+
+    def _int(key: str) -> int:
+        value = stats.get(key, 0)
+        return value if isinstance(value, int) else 0
+
+    commits = _int("zil_commit_count")
+    errors = _int("zil_commit_error_count")
+    itx = _int("zil_itx_count")
+    return {
+        "commit_count": commits,
+        "commit_writer_count": _int("zil_commit_writer_count"),
+        "commit_error_count": errors,
+        "commit_stall_count": _int("zil_commit_stall_count"),
+        "commit_suspend_count": _int("zil_commit_suspend_count"),
+        "commit_crash_count": _int("zil_commit_crash_count"),
+        "commit_error_rate": (errors / commits * 100.0) if commits else 0.0,
+        "itx_count": itx,
+        "itx_indirect_count": _int("zil_itx_indirect_count"),
+        "itx_indirect_bytes": _int("zil_itx_indirect_bytes"),
+        "itx_copied_count": _int("zil_itx_copied_count"),
+        "itx_copied_bytes": _int("zil_itx_copied_bytes"),
+        "itx_needcopy_count": _int("zil_itx_needcopy_count"),
+        "itx_needcopy_bytes": _int("zil_itx_needcopy_bytes"),
+        "itx_metaslab_normal_count": _int("zil_itx_metaslab_normal_count"),
+        "itx_metaslab_normal_bytes": _int("zil_itx_metaslab_normal_bytes"),
+        "itx_metaslab_slog_count": _int("zil_itx_metaslab_slog_count"),
+        "itx_metaslab_slog_bytes": _int("zil_itx_metaslab_slog_bytes"),
+    }
 
 
 class ZFSObservabilityService:
@@ -587,7 +790,275 @@ class ZFSObservabilityService:
             
         except Exception as e:
             return {'error': f'Failed to read module parameters: {str(e)}'}
-    
+
+    def get_zil_stats(self) -> Dict[str, Any]:
+        """Get ZIL (ZFS Intent Log) statistics.
+
+        Linux exposes the ``zil`` kstat as ``/proc/spl/kstat/zfs/zil``; FreeBSD
+        and NetBSD expose the same named kstat through the sysctl tree as
+        ``kstat.zfs.misc.zil`` (``kstat_create("zfs", 0, "zil", "misc", ...)``
+        in ``module/zfs/zil.c``).
+
+        Returns:
+            ``{'available': bool, 'platform': str, 'stats': {...},
+            'summary': {...}}`` on success, or ``available=False`` with an
+            ``error`` when the platform does not publish the kstat.
+        """
+        platform = self._platform_name()
+
+        if not get_capabilities().kstat_observability:
+            return {
+                'available': False,
+                'platform': platform,
+                'error': 'ZIL statistics are not supported on this platform'
+            }
+
+        if platform in ('FreeBSD', 'NetBSD'):
+            try:
+                result = subprocess.run(
+                    ['sysctl', 'kstat.zfs.misc.zil'],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+            except FileNotFoundError:
+                return {
+                    'available': False,
+                    'platform': platform,
+                    'error': 'sysctl command not found'
+                }
+            if result.returncode != 0:
+                return {
+                    'available': False,
+                    'platform': platform,
+                    'error': 'ZIL statistics not available via sysctl'
+                }
+            stats = parse_kstat_sysctl(result.stdout, prefix='kstat.zfs.misc.zil')
+            if not stats:
+                return {
+                    'available': False,
+                    'platform': platform,
+                    'error': 'ZIL statistics not available via sysctl'
+                }
+        else:
+            zil_path = Path('/proc/spl/kstat/zfs/zil')
+            if not zil_path.exists():
+                return {
+                    'available': False,
+                    'platform': platform,
+                    'error': 'ZIL statistics not available'
+                }
+            try:
+                stats = parse_kstat_procfs(zil_path.read_text())
+            except Exception as e:
+                return {
+                    'available': False,
+                    'platform': platform,
+                    'error': f'Failed to read ZIL statistics: {str(e)}'
+                }
+            if not stats:
+                return {
+                    'available': False,
+                    'platform': platform,
+                    'error': 'ZIL statistics not available'
+                }
+
+        return {
+            'available': True,
+            'platform': platform,
+            'source': ('sysctl kstat.zfs.misc.zil'
+                       if platform in ('FreeBSD', 'NetBSD')
+                       else '/proc/spl/kstat/zfs/zil'),
+            'stats': stats,
+            'summary': summarize_zil_stats(stats)
+        }
+
+    def get_txg_history(self, pool_name: str) -> Dict[str, Any]:
+        """Get the per-pool txg history kstat.
+
+        The history is maintained by ``spa_stats.c`` through
+        ``procfs_list_install("zfs", spa_name(spa), "txgs", ...)`` and is only
+        populated while the ``zfs_txg_history`` module parameter is non-zero.
+        On Linux it is ``/proc/spl/kstat/zfs/<pool>/txgs``; on FreeBSD the raw
+        kstat is ``kstat.zfs.<pool>.txgs``.
+
+        Args:
+            pool_name: Pool whose txg history should be read.
+
+        Returns:
+            ``{'available': bool, 'pool': str, 'platform': str,
+            'entries': [...], 'summary': {...}}``, with ``available=False`` and
+            an ``error`` when the history is not published.
+        """
+        platform = self._platform_name()
+        entries: List[Dict[str, Any]] = []
+
+        if not get_capabilities().kstat_observability:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'platform': platform,
+                'entries': [],
+                'error': 'txg history is not supported on this platform'
+            }
+
+        # The pool name becomes a sysctl OID component on FreeBSD and a path
+        # component under /proc/spl/kstat/zfs on Linux, so it must be a valid
+        # pool name (no "/", "..", or leading "-") before either is built.
+        try:
+            ZFSPoolService.validate_pool_name(pool_name)
+        except ValueError as e:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'platform': platform,
+                'entries': [],
+                'error': str(e)
+            }
+
+        if platform in ('FreeBSD', 'NetBSD'):
+            try:
+                result = subprocess.run(
+                    ['sysctl', f'kstat.zfs.{pool_name}.txgs'],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+            except FileNotFoundError:
+                return {
+                    'available': False,
+                    'pool': pool_name,
+                    'platform': platform,
+                    'entries': [],
+                    'error': 'sysctl command not found'
+                }
+            if result.returncode != 0:
+                return {
+                    'available': False,
+                    'pool': pool_name,
+                    'platform': platform,
+                    'entries': [],
+                    'error': 'txg history not available (is zfs_txg_history set?)'
+                }
+            entries = parse_txg_history(result.stdout)
+            source = f'sysctl kstat.zfs.{pool_name}.txgs'
+        else:
+            txgs_path = Path('/proc/spl/kstat/zfs') / pool_name / 'txgs'
+            if not txgs_path.exists():
+                return {
+                    'available': False,
+                    'pool': pool_name,
+                    'platform': platform,
+                    'entries': [],
+                    'error': 'txg history not available (is zfs_txg_history set?)'
+                }
+            try:
+                entries = parse_txg_history(txgs_path.read_text())
+            except Exception as e:
+                return {
+                    'available': False,
+                    'pool': pool_name,
+                    'platform': platform,
+                    'entries': [],
+                    'error': f'Failed to read txg history: {str(e)}'
+                }
+            source = str(txgs_path)
+
+        if not entries:
+            return {
+                'available': False,
+                'pool': pool_name,
+                'platform': platform,
+                'entries': [],
+                'source': source,
+                'error': 'txg history not available (is zfs_txg_history set?)'
+            }
+
+        return {
+            'available': True,
+            'pool': pool_name,
+            'platform': platform,
+            'source': source,
+            'entries': entries,
+            'summary': summarize_txg_history(entries)
+        }
+
+    def get_vdev_activity(self, pool_name: str) -> Dict[str, Any]:
+        """Get TRIM and initialize progress for a pool's leaf vdevs.
+
+        ``zpool status -t`` and ``zpool status -i`` annotate each leaf vdev
+        with its TRIM/initialize state. The parsing itself lives in
+        :mod:`services.vdev_activity`, shared with the vdev management page
+        (H8) so the two features do not parse the same output twice.
+
+        Args:
+            pool_name: Pool to query.
+
+        Returns:
+            ``{'available': bool, 'pool': str, 'trim': {...},
+            'initialize': {...}}``. ``available`` is False when the installed
+            ``zpool`` does not support the ``-t``/``-i`` flags.
+        """
+        from services.vdev_activity import (
+            INITIALIZE,
+            TRIM,
+            parse_initialize_status,
+            parse_trim_status,
+        )
+
+        results: Dict[str, Any] = {'pool': pool_name}
+        if not get_capabilities().vdev_activity_status:
+            results['available'] = False
+            results['error'] = ('TRIM/initialize status is not supported '
+                                'on this platform')
+            return results
+        try:
+            ZFSPoolService.validate_pool_name(pool_name)
+        except ValueError as e:
+            results['available'] = False
+            results['error'] = str(e)
+            return results
+
+        available = False
+        for kind, flag, parser in (
+            (TRIM, '-t', parse_trim_status),
+            (INITIALIZE, '-i', parse_initialize_status),
+        ):
+            try:
+                result = run_zfs_command(
+                    ['zpool', 'status', flag, pool_name],
+                    check=False,
+                    timeout=self.timeouts.get('status', self.timeouts['default'])
+                )
+            except Exception as e:
+                results[kind] = {'error': str(e)}
+                continue
+
+            if result.returncode != 0:
+                results[kind] = {
+                    'error': (result.stderr or '').strip()
+                    or f'zpool status {flag} failed'
+                }
+                continue
+
+            summary = parser(result.stdout)
+            results[kind] = summary.to_dict()
+            available = True
+
+        results['available'] = available
+        if not available:
+            results['error'] = ('TRIM/initialize status not available '
+                                '(zpool status -t/-i unsupported)')
+        return results
+
+    def _platform_name(self) -> str:
+        """Return the platform name used by the kstat readers."""
+        if is_freebsd():
+            return 'FreeBSD'
+        if is_netbsd():
+            return 'NetBSD'
+        return 'Linux'
+
     def search_logs(
         self,
         query: str,

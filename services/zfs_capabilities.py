@@ -94,6 +94,17 @@ _CAPABILITY_SPECS: Dict[str, _CapabilitySpec] = {
     "draid": _CapabilitySpec((2, 1, 0)),
     # zpool compatibility property, zfs-2.1.0.
     "compatibility_property": _CapabilitySpec((2, 1, 0)),
+    # M11 read-only observability panels. Every floor below predates the
+    # oldest release F1 can probe (2.0.0); the flags exist so the panels are
+    # hidden on NetBSD and on any host where the version probe fails.
+    # zpool status -s (per-vdev slow I/O column), zfs-0.8.0.
+    "slow_io_status": _CapabilitySpec((0, 8, 0)),
+    # zpool status -t / -i (per-vdev TRIM and initialize state), zfs-0.8.0.
+    "vdev_activity_status": _CapabilitySpec((0, 8, 0)),
+    # zpool iostat -w (latency histograms), zfs-0.7.0.
+    "latency_histogram": _CapabilitySpec((0, 7, 0)),
+    # zil and per-pool txgs kstats (Linux procfs, FreeBSD sysctl), zfs-0.7.0.
+    "kstat_observability": _CapabilitySpec((0, 7, 0)),
 }
 
 CAPABILITY_FLAGS: Tuple[str, ...] = tuple(_CAPABILITY_SPECS)
@@ -130,6 +141,10 @@ class ZfsCapabilities:
     zfs_zone: bool
     draid: bool
     compatibility_property: bool
+    slow_io_status: bool
+    vdev_activity_status: bool
+    latency_histogram: bool
+    kstat_observability: bool
 
     @property
     def effective_version(self) -> Optional[VersionTuple]:

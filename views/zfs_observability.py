@@ -1395,3 +1395,97 @@ Each file contains detailed information about various aspects of your ZFS system
             content=f"Error generating zip file: {str(e)}",
             status_code=500
         )
+
+
+@router.get("/zil-stats", response_class=HTMLResponse)
+async def zil_stats(request: Request):
+    """Display ZIL (ZFS Intent Log) statistics.
+
+    Reads the ``zil`` kstat, which Linux publishes as
+    ``/proc/spl/kstat/zfs/zil`` and FreeBSD/NetBSD as
+    ``kstat.zfs.misc.zil``. The panel is hidden when the kstat is absent.
+    """
+    try:
+        zil = observability_service.get_zil_stats()
+        return templates.TemplateResponse(
+            request,
+            name="zfs/observability/zil_stats.jinja",
+            context={
+                "zil": zil,
+                "page_title": "ZIL Statistics"
+            }
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request,
+            name="zfs/observability/zil_stats.jinja",
+            context={
+                "zil": {"available": False, "error": str(e)},
+                "error": str(e),
+                "page_title": "ZIL Statistics"
+            }
+        )
+
+
+@router.get("/txg-history", response_class=HTMLResponse)
+async def txg_history(request: Request, pool: Optional[str] = None):
+    """Display the per-pool txg history kstat.
+
+    The history is only populated while ``zfs_txg_history`` is non-zero; when
+    it is empty the page explains that instead of rendering an empty table.
+    """
+    from services.zfs_pool import ZFSPoolService
+
+    pool_service = ZFSPoolService()
+    try:
+        pools = [p.get("name") for p in pool_service.list_pools() if p.get("name")]
+    except Exception:
+        pools = []
+
+    selected_pool = pool or (pools[0] if pools else None)
+    txg = {"available": False, "pool": selected_pool, "entries": []}
+    if selected_pool:
+        txg = observability_service.get_txg_history(selected_pool)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/txg_history.jinja",
+        context={
+            "txg": txg,
+            "pools": pools,
+            "selected_pool": selected_pool,
+            "page_title": "TXG History"
+        }
+    )
+
+
+@router.get("/vdev-activity", response_class=HTMLResponse)
+async def vdev_activity(request: Request, pool: Optional[str] = None):
+    """Display TRIM and initialize progress for a pool's leaf vdevs.
+
+    Parsing is shared with the vdev management page (H8) through
+    :mod:`services.vdev_activity`.
+    """
+    from services.zfs_pool import ZFSPoolService
+
+    pool_service = ZFSPoolService()
+    try:
+        pools = [p.get("name") for p in pool_service.list_pools() if p.get("name")]
+    except Exception:
+        pools = []
+
+    selected_pool = pool or (pools[0] if pools else None)
+    activity = {"available": False, "pool": selected_pool}
+    if selected_pool:
+        activity = observability_service.get_vdev_activity(selected_pool)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/vdev_activity.jinja",
+        context={
+            "activity": activity,
+            "pools": pools,
+            "selected_pool": selected_pool,
+            "page_title": "TRIM / Initialize Status"
+        }
+    )

@@ -1,0 +1,105 @@
+{% extends "layout_main.jinja" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container-page max-w-6xl">
+    <!-- Breadcrumb -->
+    <nav class="text-sm mb-6" aria-label="Breadcrumb">
+        <ol class="flex items-center space-x-2">
+            <li class="flex items-center">
+                <a href="/" class="text-primary-400 hover:text-primary-300 transition-colors">Home</a>
+                <svg class="w-4 h-4 mx-2 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li class="flex items-center">
+                <a href="/zfs/observability" class="text-primary-400 hover:text-primary-300 transition-colors">Observability</a>
+                <svg class="w-4 h-4 mx-2 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </li>
+            <li>
+                <span class="text-text-primary font-medium">Latency Histograms</span>
+            </li>
+        </ol>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-text-primary mb-2">I/O Latency Histograms</h1>
+            <p class="text-text-secondary">Per-bucket I/O latency distribution from <code class="font-mono">zpool iostat -w</code></p>
+        </div>
+        {% if pools %}
+        <form method="get" action="/zfs/observability/latency-histogram" class="flex items-center gap-2">
+            <label for="pool-select" class="text-sm text-text-secondary">Pool</label>
+            <select id="pool-select" name="pool" class="form-select" onchange="this.form.submit()">
+                {% for name in pools %}
+                <option value="{{ name }}" {% if name == selected_pool %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn-secondary">Show</button></noscript>
+        </form>
+        {% endif %}
+    </div>
+
+    {% if not histogram.available %}
+    <!-- Panel hidden when zpool iostat -w is unavailable -->
+    <div class="bg-warning-900/30 border-l-4 border-warning-500 text-warning-400 px-4 py-3 rounded mb-6" role="alert">
+        <div class="flex items-start">
+            <svg class="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div>
+                <strong class="font-semibold">Latency histogram unavailable{% if selected_pool %} for {{ selected_pool }}{% endif %}:</strong>
+                {{ histogram.error or 'zpool iostat -w produced no histogram data' }}
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    <p class="text-sm text-text-tertiary mb-6">
+        Counts are I/Os observed during a one-second sample window
+        (<code class="font-mono">zpool iostat -w -y 1 1</code>).
+        <code class="font-mono">total_wait</code> is the time from I/O submission to completion,
+        <code class="font-mono">disk_wait</code> the time spent queued on the leaf vdev,
+        <code class="font-mono">syncq_wait</code>/<code class="font-mono">asyncq_wait</code> the time
+        spent in the sync and async issue queues.
+    </p>
+
+    {% for pool_name, data in histogram.pools.items() %}
+    <div class="card mb-8">
+        <div class="card-body">
+            <h2 class="text-xl font-semibold text-text-primary mb-1">{{ pool_name }}</h2>
+            <p class="text-xs text-text-tertiary mb-4">{{ data.buckets|length }} latency buckets</p>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-border-subtle">
+                            <th class="text-left py-2 px-3 text-text-tertiary font-medium text-xs">Latency</th>
+                            {% for column in data.columns %}
+                            <th class="text-right py-2 px-3 text-text-tertiary font-medium text-xs whitespace-nowrap">{{ column.replace('_', ' ') }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for bucket in data.buckets %}
+                        <tr class="border-b border-border-subtle">
+                            <td class="py-1.5 px-3 font-mono text-text-primary">{{ bucket.bucket }}</td>
+                            {% for column in data.columns %}
+                            <td class="py-1.5 px-3 text-right font-mono {% if bucket.get(column, 0) %}text-text-primary{% else %}text-text-tertiary{% endif %}">
+                                {% if bucket.get(column, 0) %}{{ '{:,}'.format(bucket.get(column, 0)) }}{% else %}&middot;{% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+{% endblock %}
