@@ -129,6 +129,7 @@ class FileStorageService:
         target_dataset: str,
         replication_type: str,
         command: Optional[str] = None,
+        receive_options: Optional[Dict[str, Any]] = None
         resumable: bool = False,
         remote_host: Optional[str] = None,
         remote_port: Optional[int] = None,
@@ -144,6 +145,9 @@ class FileStorageService:
             target_dataset: Target dataset path
             replication_type: Type of replication (local, push, pull)
             command: Full shell command string that was executed
+            receive_options: Structured receive options used for this run
+                (``-u``/``-o``/``-x``/``-d``/``-e``), stored so the
+                history shows exactly how the target was received.
             resumable: Whether the receive used -s (resumable receive)
             remote_host: Remote receive host, when the target is remote
             remote_port: SSH port for the remote receive host
@@ -171,6 +175,7 @@ class FileStorageService:
                 'bytes_transferred': 0,
                 'snapshot_name': None,
                 'command': command,
+                'receive_options': receive_options,
                 'error_message': None,
                 'log_output': None,
                 # Issue #7: resumable receive state. The token is the
@@ -550,7 +555,8 @@ class FileStorageService:
         large_blocks: bool = False,
         additional_flags: Optional[str] = None,
         ssh_connection_id: Optional[str] = None,
-        replication_type: str = 'local'
+        replication_type: str = 'local',
+        receive_options: Optional[Dict[str, Any]] = None
     ) -> int:
         """
         Create a new syncoid scheduled job
@@ -589,6 +595,7 @@ class FileStorageService:
                 'additional_flags': additional_flags or '',
                 'ssh_connection_id': ssh_connection_id,
                 'replication_type': replication_type,
+                'receive_options': receive_options,
                 'last_run': None,
                 'last_status': None,
                 'next_run': None,
@@ -652,7 +659,8 @@ class FileStorageService:
         large_blocks: Optional[bool] = None,
         additional_flags: Optional[str] = None,
         ssh_connection_id: Optional[str] = None,
-        replication_type: Optional[str] = None
+        replication_type: Optional[str] = None,
+        receive_options: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update an existing syncoid job"""
         with self._lock, self._interprocess_lock():
@@ -701,6 +709,8 @@ class FileStorageService:
                         job['ssh_connection_id'] = ssh_connection_id or None
                     if replication_type is not None:
                         job['replication_type'] = replication_type
+                    if receive_options is not None:
+                        job['receive_options'] = receive_options
                     
                     job['updated_at'] = datetime.now().isoformat()
                     

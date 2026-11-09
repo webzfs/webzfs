@@ -24,6 +24,10 @@ from services.schedule_utils import (
     preview_next_runs,
 )
 from services.utils import get_openzfs_man_page_section_url, get_os_type, get_zfs_version
+from core.receive_options import (
+    normalize_receive_options,
+    validate_receive_options,
+)
 from auth.dependencies import get_current_user
 
 
@@ -164,7 +168,11 @@ async def send_receive_execute(
     compression: Annotated[str, Form()] = "lz4",
     remote_host: Annotated[str, Form()] = "",
     remote_port: Annotated[int, Form()] = 22,
-    ssh_connection_id: Annotated[str, Form()] = ""
+    ssh_connection_id: Annotated[str, Form()] = "",
+    unmounted: Annotated[bool, Form()] = True,
+    receive_overrides: Annotated[str, Form()] = "",
+    receive_excludes: Annotated[str, Form()] = "",
+    receive_target_mode: Annotated[str, Form()] = "",
 ):
     """Execute a one-time ZFS send/receive operation.
     
@@ -194,7 +202,19 @@ async def send_receive_execute(
         rep_type = ReplicationType(replication_type)
         comp_method = CompressionMethod(compression)
         job_name = f"Manual: {source} → {target}"
-        
+
+        # Validate the receive-side options here, before the background
+        # thread starts: an invalid combination must surface as a form
+        # error, not vanish inside a thread (issue #23).
+        overrides, excludes = validate_receive_options(
+            receive_overrides,
+            receive_excludes,
+            raw=raw,
+            incremental=incremental,
+            discard_first_component=receive_target_mode == "discard",
+            only_last_component=receive_target_mode == "only_last",
+        )
+
         # Run replication in a background thread so user gets immediate feedback
         thread = threading.Thread(
             target=replication_service.execute_replication,
@@ -210,6 +230,11 @@ async def send_receive_execute(
                 'resumable': resumable,
                 'compression': comp_method,
                 'job_name': job_name,
+                'unmounted': unmounted,
+                'receive_overrides': overrides,
+                'receive_excludes': excludes,
+                'discard_first_component': receive_target_mode == "discard",
+                'only_last_component': receive_target_mode == "only_last",
                 'user': user,
                 **options
             },
@@ -1200,6 +1225,9 @@ async def syncoid_job_save(
     force_delete: Annotated[bool, Form()] = False,
     large_blocks: Annotated[bool, Form()] = False,
     additional_flags: Annotated[str, Form()] = "",
+    receive_unmounted: Annotated[str, Form()] = "true",
+    receive_overrides: Annotated[str, Form()] = "",
+    receive_excludes: Annotated[str, Form()] = "",
 ):
     """Create or update a scheduled Syncoid job and register it with
     the OS scheduler (systemd timer on Linux, root crontab on BSD)."""
@@ -1240,6 +1268,7 @@ async def syncoid_job_save(
         "force_delete": force_delete,
         "large_blocks": large_blocks,
         "additional_flags": additional_flags,
+        "receive_options": None,
     }
 
     try:
@@ -1247,6 +1276,26 @@ async def syncoid_job_save(
         is_valid, schedule_error = validate_cron_expression(schedule)
         if not is_valid:
             return _parse_job_form_error(request, schedule_error, form_job)
+
+        # Receive-side options saved with the job (issue #23). Scheduled
+        # jobs cannot know whether Syncoid will send a raw stream, so
+        # encryption overrides are rejected here (allow_encryption=False).
+        # Syncoid's --recvoptions only honours -u/-o/-x (it silently drops
+        # -d/-e), so the job form does not expose target naming.
+        receive_unmounted_bool = receive_unmounted.strip().lower() not in {
+            "false", "0", "off", "no", ""
+        }
+        overrides_map, excludes_list = validate_receive_options(
+            receive_overrides,
+            receive_excludes,
+            allow_encryption=False,
+        )
+        receive_options = normalize_receive_options(
+            unmounted=receive_unmounted_bool,
+            overrides=overrides_map,
+            excludes=excludes_list,
+        )
+        form_job["receive_options"] = receive_options
 
         if job_id and target_new_child:
             existing_job = storage_service.get_syncoid_job(int(job_id))
@@ -1309,6 +1358,7 @@ async def syncoid_job_save(
                 additional_flags=additional_flags,
                 ssh_connection_id=ssh_connection_id,
                 replication_type=replication_type,
+                receive_options=receive_options,
             )
             if not updated:
                 return _parse_job_form_error(
@@ -1334,6 +1384,7 @@ async def syncoid_job_save(
                 additional_flags=additional_flags or None,
                 ssh_connection_id=ssh_connection_id or None,
                 replication_type=replication_type,
+                receive_options=receive_options,
             )
             action = "created"
 

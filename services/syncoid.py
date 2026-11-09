@@ -16,6 +16,7 @@ from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 
 from services.utils import run_privileged_command, run_zfs_command
+from core.receive_options import recvoptions_string, validate_receive_options
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,7 @@ class SyncoidService:
         ssh_key: Optional[str] = None,
         ssh_options: Optional[List[str]] = None,
         send_options: Optional[str] = None,
+        recv_options: Optional[Dict[str, Any]] = None,
         additional_flags: Optional[str] = None,
         source_host: Optional[str] = None,
         target_host: Optional[str] = None,
@@ -248,6 +250,10 @@ class SyncoidService:
                           --sendoptions (e.g. 'L' for large-block send).
                           Validated against ALLOWED_SEND_OPTIONS; any
                           other value is rejected (issue #204).
+            recv_options: Structured receive options saved with the job
+                          (``-u``/``-o``/``-x``) rendered as Syncoid's
+                          --recvoptions value (issue #23). Syncoid does
+                          not honour ``-d``/``-e`` there.
             additional_flags: Shell-style additional Syncoid flags. The text
                               is parsed with shlex and appended as argv tokens
                               before the source and target. It is never passed
@@ -340,6 +346,19 @@ class SyncoidService:
                     }
                 cmd.append(f'--sendoptions={send_options}')
             
+            if recv_options:
+                # Validate before rendering so a job saved through the API
+                # with a bad property name or an encryption override fails
+                # with a readable error instead of a syncoid crash.
+                validate_receive_options(
+                    recv_options.get('overrides') or {},
+                    recv_options.get('excludes') or [],
+                    allow_encryption=False,
+                )
+                recv_string = recvoptions_string(recv_options)
+                if recv_string:
+                    cmd.append(f'--recvoptions={recv_string}')
+
             if debug:
                 cmd.append('--debug')
             
