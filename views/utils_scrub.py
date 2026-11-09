@@ -15,6 +15,7 @@ documentation links keep working.
 """
 
 import logging
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -106,6 +107,116 @@ def start_scrub_now(
         )
         return RedirectResponse(
             url=f"/utils/scrub?error={scrub_error}",
+            status_code=303,
+        )
+
+
+@router.post("/scrub/{pool_name}/pause", response_class=HTMLResponse)
+def pause_scrub_now(
+    request: Request, pool_name: str, current_user: str = Depends(get_current_user)
+):
+    """Pause a running scrub on one pool from the overview page."""
+    try:
+        pool_service.pause_scrub(pool_name)
+        audit_logger.log_pool_scrub(
+            user=current_user, pool_name=pool_name, action="pause"
+        )
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'message': f'Scrub paused on {pool_name}'})}",
+            status_code=303,
+        )
+    except Exception as pause_error:
+        audit_logger.log_pool_scrub(
+            user=current_user,
+            pool_name=pool_name,
+            action="pause",
+            success=False,
+            error=str(pause_error),
+        )
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'error': str(pause_error)})}",
+            status_code=303,
+        )
+
+
+@router.post("/scrub/{pool_name}/resume", response_class=HTMLResponse)
+def resume_scrub_now(
+    request: Request, pool_name: str, current_user: str = Depends(get_current_user)
+):
+    """Resume a paused scrub on one pool from the overview page."""
+    try:
+        pool_service.resume_scrub(pool_name)
+        audit_logger.log_pool_scrub(
+            user=current_user, pool_name=pool_name, action="resume"
+        )
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'message': f'Scrub resumed on {pool_name}'})}",
+            status_code=303,
+        )
+    except Exception as resume_error:
+        audit_logger.log_pool_scrub(
+            user=current_user,
+            pool_name=pool_name,
+            action="resume",
+            success=False,
+            error=str(resume_error),
+        )
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'error': str(resume_error)})}",
+            status_code=303,
+        )
+
+
+@router.post("/scrub/{pool_name}/error", response_class=HTMLResponse)
+def error_scrub_now(
+    request: Request, pool_name: str, current_user: str = Depends(get_current_user)
+):
+    """Start an error scrub (zpool scrub -e) on one pool from the overview page."""
+    try:
+        pool_service.error_scrub(pool_name)
+        audit_logger.log_pool_scrub(
+            user=current_user, pool_name=pool_name, action="error"
+        )
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'message': f'Error scrub started on {pool_name}'})}",
+            status_code=303,
+        )
+    except Exception as error_scrub_error:
+        audit_logger.log_pool_scrub(
+            user=current_user,
+            pool_name=pool_name,
+            action="error",
+            success=False,
+            error=str(error_scrub_error),
+        )
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'error': str(error_scrub_error)})}",
+            status_code=303,
+        )
+
+
+@router.post("/scrub/all", response_class=HTMLResponse)
+def scrub_all_pools_now(
+    request: Request, current_user: str = Depends(get_current_user)
+):
+    """Begin a scrub on every pool (zpool scrub -a, OpenZFS 2.4+)."""
+    try:
+        pool_service.scrub_all_pools()
+        audit_logger.log_pool_scrub(user=current_user, pool_name="*", action="start")
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'message': 'Scrub started on all pools'})}",
+            status_code=303,
+        )
+    except Exception as all_error:
+        audit_logger.log_pool_scrub(
+            user=current_user,
+            pool_name="*",
+            action="start",
+            success=False,
+            error=str(all_error),
+        )
+        return RedirectResponse(
+            url=f"/utils/scrub?{urlencode({'error': str(all_error)})}",
             status_code=303,
         )
 

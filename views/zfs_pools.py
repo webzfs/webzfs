@@ -15,6 +15,7 @@ from services.diagnostics import collect_pool_diagnostics
 from services.pool_usage import PoolUsageService
 from services.audit_logger import audit_logger
 from services.utils import is_netbsd, get_os_type
+from services.scan_status import errors_section_has_errors, parse_scan
 from services.zfs_capabilities import caps
 from services.zfs_key_options import (
     KEYFORMAT_PASSPHRASE,
@@ -248,12 +249,42 @@ def parse_pool_status(status_output: str) -> dict:
         'status_message': '',
         'action_message': '',
         'scan_info': '',
+        'scan_state': 'none',
+        'scan_paused': False,
+        'scan_in_progress': False,
+        'scrub_paused': False,
+        'scrub_in_progress': False,
+        'error_scrub': False,
+        'scan_progress': None,
+        'scan_errors': False,
         'errors_line': '',
         'vdevs': [],
         'total_read_errors': 0,
         'total_write_errors': 0,
         'total_cksum_errors': 0,
     }
+
+    # scan_in_progress / scan_paused cover any scan (a resilver included) and
+    # drive the status badge and the "nothing else may start" checks.
+    # scrub_in_progress / scrub_paused are true only for scrubs and drive the
+    # Pause and Resume buttons, because a resilver cannot be paused.
+    scan = parse_scan(status_output)
+    if scan.present:
+        result.update({
+            'scan_info': scan.raw,
+            'scan_state': scan.state,
+            'scan_paused': scan.paused,
+            'scan_in_progress': scan.in_progress,
+            'scrub_paused': scan.scrub_paused,
+            'scrub_in_progress': scan.scrub_in_progress,
+            'error_scrub': scan.error_scrub,
+            'scan_progress': scan.progress,
+        })
+
+    # Permanent data errors live in the separate ``errors:`` section and can
+    # coexist with ``scan: ... with 0 errors``; Error Scrub must still be
+    # offered in that case.
+    result['scan_errors'] = scan.has_errors or errors_section_has_errors(status_output)
 
     lines = status_output.split('\n')
     in_config = False
@@ -278,8 +309,10 @@ def parse_pool_status(status_output: str) -> dict:
                 msg += ' ' + lines[j].strip()
                 j += 1
             result['action_message'] = msg
-        elif stripped.startswith('scan:'):
-            result['scan_info'] = stripped.split(':', 1)[1].strip()
+        elif stripped.startswith('scan:') or stripped.startswith('scrub:'):
+            # Parsed above by the shared scan parser; the raw line and its
+            # continuation counters are exposed through result['scan_*'].
+            continue
         elif stripped.startswith('errors:'):
             result['errors_line'] = stripped.split(':', 1)[1].strip()
         elif stripped == '' and not in_config:
@@ -615,6 +648,92 @@ async def stop_scrub(request: Request, pool_name: str, current_user: str = Depen
         audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="stop", success=False, error=str(e))
         return RedirectResponse(
             url=f"/zfs/pools/{pool_name}?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/scrub/pause", response_class=HTMLResponse)
+async def pause_scrub(request: Request, pool_name: str, current_user: str = Depends(get_current_user)):
+    """Pause a running pool scrub (zpool scrub -p)."""
+    try:
+        pool_service.pause_scrub(pool_name)
+        audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="pause")
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'message': f'Scrub paused on {pool_name}'})}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="pause", success=False, error=str(e))
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'error': str(e)})}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/scrub/resume", response_class=HTMLResponse)
+async def resume_scrub(request: Request, pool_name: str, current_user: str = Depends(get_current_user)):
+    """Resume a paused pool scrub by issuing zpool scrub again."""
+    try:
+        pool_service.resume_scrub(pool_name)
+        audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="resume")
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'message': f'Scrub resumed on {pool_name}'})}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="resume", success=False, error=str(e))
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'error': str(e)})}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/scrub/error", response_class=HTMLResponse)
+async def error_scrub(request: Request, pool_name: str, current_user: str = Depends(get_current_user)):
+    """Start an error scrub (zpool scrub -e, OpenZFS 2.2+)."""
+    try:
+        pool_service.error_scrub(pool_name)
+        audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="error")
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'message': f'Error scrub started on {pool_name}'})}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="error", success=False, error=str(e))
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'error': str(e)})}",
+            status_code=303
+        )
+
+
+@router.post("/{pool_name}/scrub/time-range", response_class=HTMLResponse)
+async def time_range_scrub(
+    request: Request,
+    pool_name: str,
+    start_date: Annotated[str, Form()],
+    end_date: Annotated[str, Form()],
+    current_user: str = Depends(get_current_user),
+):
+    """Start a scrub limited to a YYYY-MM-DD HH:MM date range (OpenZFS 2.4+)."""
+    # Only validated dates reach the audit log. The log is plain key=value
+    # text, so raw form input could otherwise inject fake log lines.
+    try:
+        bounds = pool_service.scrub_time_range(pool_name, start_date, end_date)
+        audit_logger.log_zfs_operation(
+            user=current_user,
+            operation="scrub_time_range",
+            pool=pool_name,
+            start=bounds['start'],
+            end=bounds['end'],
+        )
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'message': f'Time-range scrub started on {pool_name}'})}",
+            status_code=303
+        )
+    except Exception as e:
+        audit_logger.log_pool_scrub(user=current_user, pool_name=pool_name, action="time_range", success=False, error=str(e))
+        return RedirectResponse(
+            url=f"/zfs/pools/{pool_name}?{urlencode({'error': str(e)})}",
             status_code=303
         )
 

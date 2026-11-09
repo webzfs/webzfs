@@ -19,7 +19,17 @@
                     <a href="/zfs/pools/{{ pool.name }}" class="text-primary-400 hover:text-primary-300 font-semibold">{{ pool.name }}</a>
                 </td>
                 <td class="py-2.5 px-4">
-                    {% if pool.scrub_in_progress %}
+                    {% if pool.scrub_paused|default(false) %}
+                    <span class="inline-flex items-center gap-1.5 text-warning-400">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Paused
+                        {% if pool.scrub_progress is not none %}
+                        <span class="text-text-secondary">({{ pool.scrub_progress }}%)</span>
+                        {% endif %}
+                    </span>
+                    {% elif pool.scrub_in_progress %}
                     <span class="inline-flex items-center gap-1.5 text-info-400">
                         <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -48,6 +58,8 @@
                 <td class="py-2.5 px-4">
                     {% if pool.scrub_in_progress %}
                     <span class="px-2 py-0.5 rounded text-xs font-medium bg-info-500/20 text-info-400">Running</span>
+                    {% elif pool.scrub_paused|default(false) %}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-warning-500/20 text-warning-400">Paused</span>
                     {% elif pool.scrub_within_30_days %}
                     <span class="px-2 py-0.5 rounded text-xs font-medium bg-success-500/20 text-success-400">Yes</span>
                     {% elif pool.last_scrub %}

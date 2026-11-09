@@ -69,6 +69,9 @@ _CAPABILITY_SPECS: Dict[str, _CapabilitySpec] = {
     "zfs_rewrite": _CapabilitySpec((2, 3, 4)),
     # zfs rewrite -P (preserve logical birth time), zfs-2.4.0.
     "rewrite_preserve_birth": _CapabilitySpec((2, 4, 0)),
+    # zpool scrub -p (pause), zfs-0.7.0. Every OpenZFS that F1 can probe has
+    # it; the flag exists so the control is hidden on NetBSD like the others.
+    "scrub_pause": _CapabilitySpec((0, 7, 0)),
     # zpool scrub -e (error scrub), zfs-2.2.0.
     "scrub_error": _CapabilitySpec((2, 2, 0)),
     # zpool scrub -S/-E date range, zfs-2.4.0.
@@ -116,6 +119,7 @@ class ZfsCapabilities:
     reguid_with_guid: bool
     zfs_rewrite: bool
     rewrite_preserve_birth: bool
+    scrub_pause: bool
     scrub_error: bool
     scrub_time_range: bool
     all_pools_flag: bool
