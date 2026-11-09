@@ -14,6 +14,7 @@ import humanize
 import psutil
 
 from services.utils import is_freebsd, is_netbsd, run_command, run_zfs_command
+from services.scan_status import errors_section_has_errors, parse_scan
 from services.zfs_pool import ZFSPoolService
 from services.zfs_performance import ZFSPerformanceService
 
@@ -653,62 +654,42 @@ def _check_scrub_cron() -> bool:
 
 
 def _parse_scrub_info(status_output: str) -> dict[str, Any]:
-    """Parse scrub information from ``zpool status`` output."""
+    """Parse scrub information from ``zpool status`` output.
+
+    The ``scan:`` block is delegated to :mod:`services.scan_status`, the single
+    parser shared with the pool, performance and health views, so paused scans
+    are reported consistently everywhere.
+    """
+    scan = parse_scan(status_output)
     info: dict[str, Any] = {
         'last_scrub': None,
         'last_scrub_human': None,
         'scrub_within_30_days': False,
         'scrub_in_progress': False,
-        'scrub_progress': None,
-        'scan_line': None,
+        'scrub_paused': False,
+        'scrub_state': scan.state,
+        'scrub_progress': scan.progress,
+        'scan_line': scan.raw or None,
+        'scan_errors': scan.has_errors or errors_section_has_errors(status_output),
     }
 
-    for line in status_output.split('\n'):
-        stripped = line.strip()
+    if scan.last_scrub is not None:
+        info['last_scrub'] = scan.last_scrub.isoformat()
+        days_ago = (datetime.now() - scan.last_scrub).days
+        info['scrub_within_30_days'] = days_ago <= 30
+        info['last_scrub_human'] = humanize.naturaltime(scan.last_scrub)
 
-        if 'scrub in progress' in stripped.lower():
-            info['scrub_in_progress'] = True
-            info['scan_line'] = stripped
-            pct_match = re.search(r'(\d+\.?\d*)%\s+done', stripped)
-            if pct_match:
-                info['scrub_progress'] = float(pct_match.group(1))
+    if scan.in_progress:
+        info['scrub_in_progress'] = True
+    elif scan.paused:
+        info['scrub_paused'] = True
 
-        if (
-            'scan:' in stripped.lower() or 'scrub' in stripped.lower()
-        ) and 'repaired' in stripped.lower():
-            info['scan_line'] = stripped
-
-            date_match = re.search(
-                r'on\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d{4})', stripped,
-            )
-            if date_match:
-                try:
-                    scrub_date = datetime.strptime(
-                        date_match.group(1), '%a %b %d %H:%M:%S %Y',
-                    )
-                    info['last_scrub'] = scrub_date.isoformat()
-                    days_ago = (datetime.now() - scrub_date).days
-                    info['scrub_within_30_days'] = days_ago <= 30
-                    info['last_scrub_human'] = humanize.naturaltime(scrub_date)
-                except ValueError:
-                    pass
-
-            iso_match = re.search(
-                r'(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})', stripped,
-            )
-            if iso_match and info['last_scrub'] is None:
-                try:
-                    date_str = iso_match.group(1).replace('T', ' ')
-                    scrub_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
-                    info['last_scrub'] = scrub_date.isoformat()
-                    days_ago = (datetime.now() - scrub_date).days
-                    info['scrub_within_30_days'] = days_ago <= 30
-                    info['last_scrub_human'] = humanize.naturaltime(scrub_date)
-                except ValueError:
-                    pass
-
-        if 'no scans' in stripped.lower() or 'none requested' in stripped.lower():
-            info['scan_line'] = stripped
+    if not scan.present:
+        for line in status_output.split('\n'):
+            stripped = line.strip()
+            if 'no scans' in stripped.lower() or 'none requested' in stripped.lower():
+                info['scan_line'] = stripped
+                break
 
     return info
 
@@ -739,13 +720,16 @@ def get_scrub_status_all() -> dict[str, Any]:
                 'last_scrub_human': None,
                 'scrub_within_30_days': False,
                 'scrub_in_progress': False,
+                'scrub_paused': False,
+                'scrub_state': 'none',
                 'scrub_progress': None,
                 'scan_line': None,
+                'scan_errors': False,
             }
 
             try:
                 res = run_zfs_command(
-                    ['zpool', 'status', pool_name],
+                    ['zpool', 'status', '-v', pool_name],
                     timeout=15, check=False,
                 )
                 if res.returncode == 0:

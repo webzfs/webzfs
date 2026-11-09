@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from config.settings import Settings
 from services.utils import is_freebsd, is_netbsd
+from services.scan_status import parse_scan
 
 
 class ZFSPerformanceService:
@@ -791,24 +792,27 @@ class ZFSPerformanceService:
             
             # Parse status output for scrub info
             status = result.stdout
-            
-            # Look for scan lines
-            for line in status.split('\n'):
-                line = line.strip()
-                if 'scan:' in line.lower():
-                    # Parse scrub/resilver information
-                    if 'in progress' in line.lower():
-                        # Extract progress percentage and estimate
-                        return {
-                            'status': 'in_progress',
-                            'info': line
-                        }
-                    elif 'completed' in line.lower():
-                        return {
-                            'status': 'completed',
-                            'info': line
-                        }
-            
+            scan = parse_scan(status)
+
+            if scan.present:
+                if scan.paused:
+                    return {
+                        'status': 'paused',
+                        'progress': scan.progress,
+                        'info': scan.raw,
+                    }
+                if scan.in_progress:
+                    return {
+                        'status': 'in_progress',
+                        'progress': scan.progress,
+                        'info': scan.raw,
+                    }
+                if scan.completed:
+                    return {
+                        'status': 'completed',
+                        'info': scan.raw,
+                    }
+
             return {
                 'status': 'none',
                 'info': 'No scrub in progress'

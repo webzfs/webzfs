@@ -19,6 +19,7 @@ from services.utils import (
     run_privileged_command,
     run_zfs_command,
 )
+from services.scan_status import errors_section_has_errors, parse_scan
 
 
 class HealthAnalysisService:
@@ -1446,46 +1447,30 @@ class HealthAnalysisService:
         return False
 
     def _parse_scrub_info(self, status_output: str) -> Dict[str, Any]:
-        """Parse scrub information from zpool status output."""
+        """Parse scrub information from zpool status output.
+
+        Delegates the ``scan:`` block to :mod:`services.scan_status` so paused
+        scrubs are reported the same way as in the pool and dashboard views.
+        """
+        scan = parse_scan(status_output)
         info: Dict[str, Any] = {
             "last_scrub": None,
             "scrub_within_30_days": False,
             "scrub_in_progress": False,
+            "scrub_paused": False,
+            "scrub_state": scan.state,
+            "scan_errors": scan.has_errors or errors_section_has_errors(status_output),
         }
 
-        for line in status_output.split("\n"):
-            stripped = line.strip()
+        if scan.last_scrub is not None:
+            info["last_scrub"] = scan.last_scrub.isoformat()
+            days_ago = (datetime.now() - scan.last_scrub).days
+            info["scrub_within_30_days"] = days_ago <= 30
 
-            if "scrub in progress" in stripped.lower():
-                info["scrub_in_progress"] = True
-
-            if "scan:" in stripped.lower() or "scrub" in stripped.lower():
-                # Look for "scrub repaired ... on Sun Mar  2 ..."
-                # or "scrub repaired ... on 2025-03-02T10:00:00"
-                date_match = re.search(
-                    r"on\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d{4})", stripped
-                )
-                if date_match:
-                    try:
-                        date_str = date_match.group(1)
-                        scrub_date = datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y")
-                        info["last_scrub"] = scrub_date.isoformat()
-                        days_ago = (datetime.now() - scrub_date).days
-                        info["scrub_within_30_days"] = days_ago <= 30
-                    except ValueError:
-                        pass
-
-                # ISO format dates
-                iso_match = re.search(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})", stripped)
-                if iso_match and info["last_scrub"] is None:
-                    try:
-                        date_str = iso_match.group(1).replace("T", " ")
-                        scrub_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                        info["last_scrub"] = scrub_date.isoformat()
-                        days_ago = (datetime.now() - scrub_date).days
-                        info["scrub_within_30_days"] = days_ago <= 30
-                    except ValueError:
-                        pass
+        if scan.in_progress:
+            info["scrub_in_progress"] = True
+        elif scan.paused:
+            info["scrub_paused"] = True
 
         return info
 

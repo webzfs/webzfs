@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from config.settings import Settings
 from services.utils import run_zfs_command, is_netbsd
+from services.scan_status import errors_section_has_errors, parse_scan, SCAN_NONE
+from services.zfs_capabilities import get_capabilities
 
 # Try to import libzfs_core, but fall back to shell commands if not available
 try:
@@ -15,6 +17,44 @@ try:
     HAS_LIBZFS_CORE = True
 except ImportError:
     HAS_LIBZFS_CORE = False
+
+
+#: Format required by ``zpool scrub -S/-E`` (zpool-scrub(8), OpenZFS 2.4+).
+SCRUB_DATE_FORMAT = '%Y-%m-%d %H:%M'
+_SCRUB_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$')
+
+
+class ScrubUnsupportedError(Exception):
+    """Raised when the running OpenZFS cannot honour a requested scrub option."""
+
+
+def _require_scrub_capability(flag: str, feature: str, minimum: str) -> None:
+    """Raise :class:`ScrubUnsupportedError` unless ``flag`` is supported.
+
+    The message carries the detected version and platform so the UI can show
+    the operator *why* a control is unavailable rather than silently hiding it.
+    """
+    caps = get_capabilities()
+    if getattr(caps, flag, False):
+        return
+    version = caps.effective_version
+    detected = '.'.join(str(part) for part in version) if version else 'unknown'
+    raise ScrubUnsupportedError(
+        f"{feature} requires OpenZFS {minimum} or newer on Linux or FreeBSD "
+        f"(detected {detected} on {caps.platform})."
+    )
+
+
+def _validate_scrub_date(value: str, label: str) -> str:
+    """Validate a ``YYYY-MM-DD HH:MM`` scrub bound and return it normalised."""
+    cleaned = (value or '').strip()
+    if not _SCRUB_DATE_RE.match(cleaned):
+        raise ValueError(f'{label} must use the format YYYY-MM-DD HH:MM.')
+    try:
+        datetime.strptime(cleaned, SCRUB_DATE_FORMAT)
+    except ValueError as date_error:
+        raise ValueError(f'{label} is not a valid date/time: {date_error}')
+    return cleaned
 
 
 class ZFSPoolService:
@@ -46,7 +86,7 @@ class ZFSPoolService:
         if not pool_name:
             raise ValueError("Pool name cannot be empty")
         
-        if not cls.ZFS_POOL_NAME_PATTERN.match(pool_name):
+        if not cls.ZFS_POOL_NAME_PATTERN.fullmatch(pool_name):
             raise ValueError(
                 f"Invalid pool name '{pool_name}'. Pool names must start with an alphanumeric "
                 "character and contain only alphanumeric characters, underscores, hyphens, "
@@ -256,9 +296,9 @@ class ZFSPoolService:
         self.validate_pool_name(pool_name)
         timeout = self.timeouts.get('status', self.timeouts['default'])
         try:
-            # Get detailed status
+            # Get detailed status (verbose so permanent-error file lists appear)
             result = run_zfs_command(
-                ['zpool', 'status', pool_name],
+                ['zpool', 'status', '-v', pool_name],
                 timeout=timeout
             )
             
@@ -357,6 +397,115 @@ class ZFSPoolService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to stop scrub: {e.stderr}")
     
+    def pause_scrub(self, pool_name: str) -> None:
+        """
+        Pause a running scrub on the specified pool
+
+        ``zpool scrub -p`` checkpoints the pause state and progress to disk, so
+        the scrub survives an export/import or a restart and stays paused.
+
+        Args:
+            pool_name: Name of the pool to pause
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('scrub', self.timeouts['default'])
+        try:
+            run_zfs_command(['zpool', 'scrub', '-p', pool_name], timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool pause scrub command timed out after {timeout} seconds. The system may be unresponsive.")
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to pause scrub: {e.stderr}")
+
+    def resume_scrub(self, pool_name: str) -> None:
+        """
+        Resume a paused scrub on the specified pool
+
+        Per zpool-scrub(8), resuming is done by issuing ``zpool scrub`` again on
+        the paused pool; the scrub picks up from its last checkpointed txg.
+
+        Args:
+            pool_name: Name of the pool to resume
+        """
+        self.validate_pool_name(pool_name)
+        timeout = self.timeouts.get('scrub', self.timeouts['default'])
+        try:
+            run_zfs_command(['zpool', 'scrub', pool_name], timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool resume scrub command timed out after {timeout} seconds. The system may be unresponsive.")
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to resume scrub: {e.stderr}")
+
+    def error_scrub(self, pool_name: str) -> None:
+        """
+        Start an error scrub (``zpool scrub -e``) on the specified pool
+
+        Only files with known data errors as reported by ``zpool status -v`` are
+        scrubbed. Requires OpenZFS 2.2+, the ``head_errlog`` pool feature and at
+        least one previous scrub with that feature enabled; it cannot run while
+        a regular scrub is running or paused.
+
+        Args:
+            pool_name: Name of the pool to error-scrub
+        """
+        self.validate_pool_name(pool_name)
+        _require_scrub_capability('scrub_error', 'Error scrub (-e)', '2.2')
+        timeout = self.timeouts.get('scrub', self.timeouts['default'])
+        try:
+            run_zfs_command(['zpool', 'scrub', '-e', pool_name], timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool error scrub command timed out after {timeout} seconds. The system may be unresponsive.")
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to start error scrub: {e.stderr}")
+
+    def scrub_time_range(
+        self, pool_name: str, start_date: str, end_date: str
+    ) -> None:
+        """
+        Start a scrub limited to blocks created inside a date range
+
+        ``zpool scrub -S <start> -E <end>`` takes ``YYYY-MM-DD HH:MM`` in machine
+        local time (OpenZFS 2.4+). Both bounds are required here so the operator
+        always states the window explicitly; the pool is passed last.
+
+        Args:
+            pool_name: Name of the pool to scrub
+            start_date: Inclusive start, ``YYYY-MM-DD HH:MM``
+            end_date: Inclusive end, ``YYYY-MM-DD HH:MM``
+        """
+        self.validate_pool_name(pool_name)
+        _require_scrub_capability('scrub_time_range', 'Time-range scrub (-S/-E)', '2.4')
+        start = _validate_scrub_date(start_date, 'Start date')
+        end = _validate_scrub_date(end_date, 'End date')
+        if datetime.strptime(end, SCRUB_DATE_FORMAT) <= datetime.strptime(start, SCRUB_DATE_FORMAT):
+            raise ValueError('End date must be later than the start date.')
+        timeout = self.timeouts.get('scrub', self.timeouts['default'])
+        try:
+            run_zfs_command(
+                ['zpool', 'scrub', '-S', start, '-E', end, pool_name],
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool time-range scrub command timed out after {timeout} seconds. The system may be unresponsive.")
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to start time-range scrub: {e.stderr}")
+
+    def scrub_all_pools(self) -> None:
+        """
+        Begin a scrub on every imported pool (``zpool scrub -a``)
+
+        OpenZFS 2.4+ only. ``-a`` applies the given action to all pools; starting
+        scrubs on several pools at once can cause considerable load and memory
+        pressure, so the UI warns about this before the operator confirms.
+        """
+        _require_scrub_capability('all_pools_flag', 'Scrub all pools (-a)', '2.4')
+        timeout = self.timeouts.get('scrub', self.timeouts['default'])
+        try:
+            run_zfs_command(['zpool', 'scrub', '-a'], timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(f"ZPool scrub all-pools command timed out after {timeout} seconds. The system may be unresponsive.")
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to start scrub on all pools: {e.stderr}")
+
     def export_pool(self, pool_name: str, force: bool = False) -> None:
         """
         Export a ZFS pool
@@ -924,7 +1073,7 @@ class ZFSPoolService:
         
         try:
             result = run_zfs_command(
-                ['zpool', 'status', pool_name],
+                ['zpool', 'status', '-v', pool_name],
                 timeout=timeout
             )
         except subprocess.TimeoutExpired:
@@ -942,16 +1091,34 @@ class ZFSPoolService:
             'special_vdevs': [],
             'dedup_vdevs': [],
             'scan_info': '',
+            'scan_state': SCAN_NONE,
+            'scan_paused': False,
+            'scan_in_progress': False,
+            'scan_progress': None,
+            'scan_errors': False,
         }
-        
+
+        scan = parse_scan(result.stdout)
+        if scan.present:
+            topology.update({
+                'scan_info': scan.raw,
+                'scan_state': scan.state,
+                'scan_paused': scan.paused,
+                'scan_in_progress': scan.in_progress,
+                'scan_progress': scan.progress,
+                'scan_errors': scan.has_errors or errors_section_has_errors(result.stdout),
+            })
+
         lines = result.stdout.split('\n')
         in_config = False
         config_lines = []
-        
+
         for i, line in enumerate(lines):
             stripped = line.strip()
             if stripped.startswith('scan:'):
-                topology['scan_info'] = stripped.split(':', 1)[1].strip()
+                # Parsed above by the shared parser; skip the raw line here so
+                # the topology loop does not double-handle continuation lines.
+                continue
             elif 'NAME' in stripped and 'STATE' in stripped and 'READ' in stripped:
                 in_config = True
                 continue

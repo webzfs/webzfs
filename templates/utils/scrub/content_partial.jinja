@@ -46,7 +46,24 @@
     <div class="card-body">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold text-text-primary">Pool Scrub Status</h2>
-            <button hx-get="/utils/scrub/content-partial"
+            <div class="flex items-center gap-3">
+                {% if caps.all_pools_flag %}
+                <form method="post" action="/utils/scrub/all" class="inline"
+                      onsubmit="return confirm('Start a scrub on ALL imported pools? This can put considerable load and memory pressure on the system.');">
+                    <button type="submit"
+                            class="text-xs px-2 py-1 rounded border border-border-subtle text-text-secondary hover:text-primary-400 hover:border-primary-400 transition-colors"
+                            title="zpool scrub -a: begin a scrub on every imported pool (OpenZFS 2.4+)">
+                        Scrub All Pools
+                    </button>
+                </form>
+                {% else %}
+                <button type="button" disabled
+                        class="text-xs px-2 py-1 rounded border border-border-subtle text-text-tertiary opacity-50 cursor-not-allowed"
+                        title="Scrub all pools requires OpenZFS 2.4 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).">
+                    Scrub All Pools
+                </button>
+                {% endif %}
+                <button hx-get="/utils/scrub/content-partial"
                     hx-target="#scrub-status-container"
                     hx-swap="innerHTML"
                     class="text-text-tertiary hover:text-primary-400 transition-colors"
@@ -55,6 +72,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
             </button>
+            </div>
         </div>
 
         <div class="overflow-x-auto">
@@ -78,7 +96,17 @@
                             <a href="/zfs/pools/{{ pool.name }}" class="text-primary-400 hover:text-primary-300 font-semibold">{{ pool.name }}</a>
                         </td>
                         <td class="py-2.5 px-4">
-                            {% if pool.scrub_in_progress %}
+                            {% if pool.scrub_paused %}
+                            <span class="inline-flex items-center gap-1.5 text-warning-400">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                Paused
+                                {% if pool.scrub_progress is not none %}
+                                <span class="text-text-secondary">({{ pool.scrub_progress }}%)</span>
+                                {% endif %}
+                            </span>
+                            {% elif pool.scrub_in_progress %}
                             <span class="inline-flex items-center gap-1.5 text-info-400">
                                 <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -107,6 +135,8 @@
                         <td class="py-2.5 px-4">
                             {% if pool.scrub_in_progress %}
                             <span class="px-2 py-0.5 rounded text-xs font-medium bg-info-500/20 text-info-400">Running</span>
+                            {% elif pool.scrub_paused %}
+                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-warning-500/20 text-warning-400">Paused</span>
                             {% elif pool.scrub_within_30_days %}
                             <span class="px-2 py-0.5 rounded text-xs font-medium bg-success-500/20 text-success-400">Yes</span>
                             {% elif pool.last_scrub %}
@@ -141,7 +171,41 @@
                             {{ pool.scan_line|default('--') }}
                         </td>
                         <td class="py-2.5 pl-4 text-right">
-                            {% if not pool.scrub_in_progress %}
+                            <div class="inline-flex items-center gap-2">
+                            {% if pool.scrub_in_progress %}
+                            <form method="post" action="/utils/scrub/{{ pool.name }}/pause" class="inline">
+                                <button type="submit"
+                                        class="text-warning-400 hover:text-warning-300"
+                                        title="Pause scrub on {{ pool.name }} (progress is checkpointed to disk)">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </button>
+                            </form>
+                            <a href="/zfs/pools/{{ pool.name }}" class="text-info-400 hover:text-info-300" title="View scrub progress">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                            </a>
+                            {% elif pool.scrub_paused|default(false) %}
+                            <form method="post" action="/utils/scrub/{{ pool.name }}/resume" class="inline">
+                                <button type="submit"
+                                        class="text-success-400 hover:text-success-300"
+                                        title="Resume the paused scrub on {{ pool.name }}">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </button>
+                            </form>
+                            <a href="/zfs/pools/{{ pool.name }}" class="text-info-400 hover:text-info-300" title="View paused scrub details">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                            </a>
+                            {% else %}
                             <form method="post" action="/utils/scrub/{{ pool.name }}/start" class="inline">
                                 <button type="submit"
                                         class="text-success-400 hover:text-success-300"
@@ -152,14 +216,29 @@
                                     </svg>
                                 </button>
                             </form>
-                            {% else %}
-                            <a href="/zfs/pools/{{ pool.name }}" class="text-info-400 hover:text-info-300" title="View scrub progress">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                </svg>
-                            </a>
                             {% endif %}
+                            {% if pool.scan_errors|default(false) %}
+                            {% if caps.scrub_error and not pool.scrub_in_progress and not (pool.scrub_paused|default(false)) %}
+                            <form method="post" action="/utils/scrub/{{ pool.name }}/error" class="inline">
+                                <button type="submit"
+                                        class="text-danger-400 hover:text-danger-300"
+                                        title="Error scrub on {{ pool.name }} (zpool scrub -e): only files with known data errors">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                    </svg>
+                                </button>
+                            </form>
+                            {% else %}
+                            <button type="button" disabled
+                                    class="text-text-tertiary opacity-50 cursor-not-allowed"
+                                    title="{% if not caps.scrub_error %}Error scrub requires OpenZFS 2.2 or newer (detected {% if caps.effective_version %}{{ caps.effective_version|join('.') }}{% else %}unknown{% endif %} on {{ caps.platform }}).{% else %}Error scrub cannot run while a regular scrub is running or paused.{% endif %}">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                            </button>
+                            {% endif %}
+                            {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
