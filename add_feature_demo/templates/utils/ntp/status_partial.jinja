@@ -1,41 +1,41 @@
-<h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Service Status</h2>
+<h3 class="text-lg font-semibold text-text-primary mb-4">Service Status</h3>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <!-- Service Status -->
     <div>
         <div class="flex items-center mb-2">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Service:</span>
-            <span class="ml-2 text-sm text-gray-900 dark:text-white">{{ status.service_name }}</span>
+            <span class="text-sm font-medium text-text-secondary">Service:</span>
+            <span class="ml-2 text-sm font-mono text-text-primary">{{ status.service_name }}</span>
         </div>
         <div class="flex items-center mb-2">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Status:</span>
+            <span class="text-sm font-medium text-text-secondary">Status:</span>
             {% if status.running %}
-            <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
+            <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-success-900/30 text-success-400 border border-success-500/50">
                 Running
             </span>
             {% else %}
-            <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100">
+            <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-danger-900/30 text-danger-400 border border-danger-500/50">
                 Stopped
             </span>
             {% endif %}
         </div>
         <div class="flex items-center">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">OS:</span>
-            <span class="ml-2 text-sm text-gray-900 dark:text-white">{{ status.os_type }}</span>
+            <span class="text-sm font-medium text-text-secondary">OS:</span>
+            <span class="ml-2 text-sm text-text-primary">{{ status.os_type }}</span>
         </div>
     </div>
-    
+
     <!-- Time Information -->
     <div>
         <div class="mb-2">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">System Time:</span>
-            <p class="text-sm text-gray-900 dark:text-white mt-1">{{ time_info.system_time }}</p>
+            <span class="text-sm font-medium text-text-secondary">System Time:</span>
+            <p class="text-sm font-mono text-text-primary mt-1">{{ time_info.system_time }}</p>
         </div>
     </div>
 </div>
 
 <!-- Sync Status Details -->
 <div class="mt-4">
-    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sync Status:</h3>
-    <pre class="bg-gray-100 dark:bg-gray-900 rounded p-3 text-xs text-gray-800 dark:text-gray-200 overflow-x-auto">{{ time_info.sync_status }}</pre>
+    <h4 class="text-sm font-medium text-text-secondary mb-2">Sync Status:</h4>
+    <pre class="bg-bg-base border border-border-subtle rounded p-3 text-xs text-text-secondary overflow-x-auto">{{ time_info.sync_status }}</pre>
 </div>

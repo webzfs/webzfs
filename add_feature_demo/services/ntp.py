@@ -1,201 +1,243 @@
+"""NTP Configuration Service
+Handles NTP (Network Time Protocol) configuration for Linux, FreeBSD, and NetBSD.
+
+This is a teaching example. It uses the shared helpers in services.utils and
+services.file so the same code runs on every platform WebZFS supports.
 """
-NTP Configuration Service
-Handles NTP (Network Time Protocol) configuration for both Linux and FreeBSD
-"""
-import subprocess
-import platform
+
+import logging
+import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List
+
+from services.file import read_file, save_file
+from services.utils import (
+    is_freebsd,
+    is_linux,
+    is_netbsd,
+    needs_sudo_for_privileged,
+    run_privileged_command,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class NTPService:
-    """Service for managing NTP configuration across Linux and FreeBSD"""
-    
-    def __init__(self):
+    """Service for managing NTP configuration across Linux, FreeBSD, and NetBSD."""
+
+    def __init__(self) -> None:
         self.os_type = self._detect_os()
         self.config_path = self._get_config_path()
         self.service_name = self._get_service_name()
-    
+
     def _detect_os(self) -> str:
-        """Detect the operating system"""
-        system = platform.system().lower()
-        if 'freebsd' in system:
-            return 'freebsd'
-        else:
-            # Default to Linux - handles all Linux distributions
-            return 'linux'
-    
+        """Detect the operating system using the shared platform helpers."""
+        if is_linux():
+            return "linux"
+        if is_freebsd():
+            return "freebsd"
+        if is_netbsd():
+            return "netbsd"
+        return "unknown"
+
     def _get_config_path(self) -> Path:
-        """Get NTP configuration file path based on OS"""
-        if self.os_type == 'freebsd':
-            return Path('/etc/ntp.conf')
-        else:
-            # Linux default
-            return Path('/etc/ntp.conf')
-    
+        """Get the NTP configuration file path for this platform."""
+        return Path("/etc/ntp.conf")
+
     def _get_service_name(self) -> str:
-        """Get NTP service name"""
-        # Both Linux and FreeBSD use ntpd
-        return 'ntpd'
-    
-    def get_status(self) -> Dict[str, any]:
-        """Get NTP service status"""
+        """Get the NTP service name. Linux, FreeBSD, and NetBSD all use ntpd."""
+        return "ntpd"
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get NTP service status."""
+        if self.os_type not in ("linux", "freebsd", "netbsd"):
+            return {
+                "running": False,
+                "service_name": self.service_name,
+                "output": f"Unsupported operating system: {self.os_type}",
+                "os_type": self.os_type,
+            }
+
+        if self.os_type == "linux":
+            command = ["systemctl", "status", self.service_name]
+        else:
+            command = ["service", self.service_name, "status"]
+
         try:
-            if self.os_type == 'linux':
-                result = subprocess.run(
-                    ['sudo', 'systemctl', 'status', self.service_name],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
+            result = run_privileged_command(command, check=False, timeout=5)
+            output = result.stdout or result.stderr
+            if self.os_type == "linux":
                 is_running = result.returncode == 0
-                output = result.stdout
-            elif self.os_type == 'freebsd':
-                result = subprocess.run(
-                    ['sudo', 'service', self.service_name, 'status'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                is_running = 'is running' in result.stdout.lower()
-                output = result.stdout
             else:
-                is_running = False
-                output = "Unsupported operating system"
-            
+                is_running = "is running" in output.lower()
             return {
-                'running': is_running,
-                'service_name': self.service_name,
-                'output': output,
-                'os_type': self.os_type
+                "running": is_running,
+                "service_name": self.service_name,
+                "output": output,
+                "os_type": self.os_type,
             }
-        except Exception as e:
+        except Exception as status_error:
+            logger.warning("Could not read NTP status: %s", status_error)
             return {
-                'running': False,
-                'service_name': self.service_name,
-                'output': f"Error: {str(e)}",
-                'os_type': self.os_type
+                "running": False,
+                "service_name": self.service_name,
+                "output": f"Error: {status_error}",
+                "os_type": self.os_type,
             }
-    
+
     def get_config(self) -> str:
-        """Read current NTP configuration"""
-        try:
-            with open(self.config_path, 'r') as f:
-                return f.read()
-        except Exception as e:
-            return f"Error reading configuration: {str(e)}"
-    
+        """Read the current NTP configuration.
+
+        Raises:
+            OSError: If the configuration file cannot be read.
+        """
+        return read_file(str(self.config_path), use_sudo=needs_sudo_for_privileged())
+
     def get_servers(self) -> List[str]:
-        """Extract NTP servers from configuration"""
-        servers = []
+        """Extract NTP server and pool entries from the configuration."""
+        servers: List[str] = []
         try:
             config = self.get_config()
-            for line in config.split('\n'):
-                line = line.strip()
-                if line.startswith('server ') or line.startswith('pool '):
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        servers.append(parts[1])
-        except Exception:
-            pass
+        except OSError as read_error:
+            logger.warning("Could not read NTP configuration: %s", read_error)
+            return servers
+
+        for line in config.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("server ") or stripped.startswith("pool "):
+                parts = stripped.split()
+                if len(parts) >= 2:
+                    servers.append(parts[1])
         return servers
-    
+
     def update_config(self, config_content: str) -> bool:
-        """Update NTP configuration file"""
+        """Replace the NTP configuration file.
+
+        The content is validated before it touches the live file. The write
+        uses services.file.save_file, which writes through a secure temporary
+        file and falls back to sudo tee on Linux when the file is root-owned.
+        """
+        if not config_content or not config_content.strip():
+            raise ValueError("NTP configuration cannot be empty")
+        if len(config_content) > 100000:
+            raise ValueError("NTP configuration is too large")
+
         try:
-            # Write to temporary file first
-            temp_path = Path('/tmp/ntp.conf.tmp')
-            with open(temp_path, 'w') as f:
-                f.write(config_content)
-            
-            # Copy to actual location with sudo
-            result = subprocess.run(
-                ['sudo', 'cp', str(temp_path), str(self.config_path)],
-                capture_output=True,
-                timeout=5
+            save_file(
+                str(self.config_path),
+                config_content,
+                use_sudo=needs_sudo_for_privileged(),
             )
-            
-            # Clean up temp file
-            temp_path.unlink()
-            
-            return result.returncode == 0
-        except Exception as e:
-            print(f"Error updating config: {e}")
+            return True
+        except Exception as write_error:
+            logger.error("Error updating NTP configuration: %s", write_error)
             return False
-    
+
     def restart_service(self) -> bool:
-        """Restart NTP service"""
-        try:
-            if self.os_type == 'linux':
-                result = subprocess.run(
-                    ['sudo', 'systemctl', 'restart', self.service_name],
-                    capture_output=True,
-                    timeout=10
-                )
-            elif self.os_type == 'freebsd':
-                result = subprocess.run(
-                    ['sudo', 'service', self.service_name, 'restart'],
-                    capture_output=True,
-                    timeout=10
-                )
-            else:
-                return False
-            
-            return result.returncode == 0
-        except Exception as e:
-            print(f"Error restarting service: {e}")
+        """Restart the NTP service."""
+        if self.os_type == "linux":
+            command = ["systemctl", "restart", self.service_name]
+        elif self.os_type in ("freebsd", "netbsd"):
+            command = ["service", self.service_name, "restart"]
+        else:
             return False
-    
+
+        try:
+            result = run_privileged_command(command, check=False, timeout=10)
+            return result.returncode == 0
+        except Exception as restart_error:
+            logger.error("Error restarting NTP service: %s", restart_error)
+            return False
+
     def enable_service(self) -> bool:
-        """Enable NTP service to start on boot"""
-        try:
-            if self.os_type == 'linux':
-                result = subprocess.run(
-                    ['sudo', 'systemctl', 'enable', self.service_name],
-                    capture_output=True,
-                    timeout=5
-                )
-            elif self.os_type == 'freebsd':
-                result = subprocess.run(
-                    ['sudo', 'sysrc', f'{self.service_name}_enable=YES'],
-                    capture_output=True,
-                    timeout=5
-                )
-            else:
-                return False
-            
-            return result.returncode == 0
-        except Exception as e:
-            print(f"Error enabling service: {e}")
+        """Enable the NTP service to start at boot."""
+        if self.os_type == "linux":
+            command = ["systemctl", "enable", self.service_name]
+        elif self.os_type == "freebsd":
+            command = ["sysrc", f"{self.service_name}_enable=YES"]
+        elif self.os_type == "netbsd":
+            return self._enable_netbsd_service()
+        else:
             return False
-    
-    def get_time_info(self) -> Dict[str, str]:
-        """Get current system time information"""
+
         try:
-            # Get system time
-            result = subprocess.run(
-                ['date', '+%Y-%m-%d %H:%M:%S %Z'],
-                capture_output=True,
-                text=True,
-                timeout=2
+            result = run_privileged_command(command, check=False, timeout=5)
+            return result.returncode == 0
+        except Exception as enable_error:
+            logger.error("Error enabling NTP service: %s", enable_error)
+            return False
+
+    def _enable_netbsd_service(self) -> bool:
+        """Enable ntpd on NetBSD by setting ntpd=YES in /etc/rc.conf.
+
+        NetBSD's service(8) has no enable action and sysrc is FreeBSD-only,
+        so the rc.conf variable is edited through the shared file helpers.
+        WebZFS runs as root on NetBSD, so the helpers do not need sudo.
+        """
+        rc_conf = Path("/etc/rc.conf")
+        variable = f"{self.service_name}=YES"
+        try:
+            content = read_file(str(rc_conf), use_sudo=needs_sudo_for_privileged())
+        except FileNotFoundError:
+            content = ""
+        except OSError as read_error:
+            logger.error("Error reading /etc/rc.conf: %s", read_error)
+            return False
+
+        updated_lines: List[str] = []
+        replaced = False
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(f"{self.service_name}=") or stripped.startswith(
+                f"{self.service_name}_enable="
+            ):
+                updated_lines.append(variable)
+                replaced = True
+            else:
+                updated_lines.append(line)
+        if not replaced:
+            updated_lines.append(variable)
+
+        try:
+            save_file(
+                str(rc_conf),
+                "\n".join(updated_lines) + "\n",
+                use_sudo=needs_sudo_for_privileged(),
             )
-            system_time = result.stdout.strip() if result.returncode == 0 else "Unknown"
-            
-            # Get NTP sync status using ntpq
-            result = subprocess.run(
-                ['ntpq', '-p'],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            sync_status = result.stdout if result.returncode == 0 else "Not available"
-            
-            return {
-                'system_time': system_time,
-                'sync_status': sync_status
-            }
-        except Exception as e:
-            return {
-                'system_time': "Error",
-                'sync_status': f"Error: {str(e)}"
-            }
+            return True
+        except Exception as write_error:
+            logger.error("Error enabling ntpd in /etc/rc.conf: %s", write_error)
+            return False
+
+    def get_time_info(self) -> Dict[str, str]:
+        """Get the current system time and NTP synchronization status."""
+        system_time = "Unknown"
+        sync_status = "Not available"
+
+        try:
+            date_command = shutil.which("date")
+            if date_command:
+                result = run_privileged_command(
+                    [date_command, "+%Y-%m-%d %H:%M:%S %Z"],
+                    check=False,
+                    timeout=2,
+                    use_sudo=False,
+                )
+                if result.returncode == 0:
+                    system_time = result.stdout.strip()
+
+            ntpq_command = shutil.which("ntpq")
+            if ntpq_command:
+                result = run_privileged_command(
+                    [ntpq_command, "-p"],
+                    check=False,
+                    timeout=2,
+                    use_sudo=False,
+                )
+                if result.returncode == 0:
+                    sync_status = result.stdout.strip()
+        except Exception as time_error:
+            logger.warning("Error reading NTP time information: %s", time_error)
+            sync_status = f"Error: {time_error}"
+
+        return {"system_time": system_time, "sync_status": sync_status}

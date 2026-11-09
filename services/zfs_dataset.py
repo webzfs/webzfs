@@ -62,6 +62,30 @@ def get_catalog_context() -> CatalogContext:
         capabilities.platform,
         read_max_recordsize(),
     )
+class VolumeResizeError(Exception):
+    """Raised when a zvol resize request cannot be applied."""
+
+
+class ShrinkConfirmationRequired(VolumeResizeError):
+    """
+    Raised when a zvol shrink is requested without explicit confirmation.
+
+    Shrinking a zvol discards everything beyond the new size. Callers must
+    surface the data-loss warning and re-submit with confirm_shrink=True.
+    """
+
+    def __init__(self, dataset_name: str, current_size: str, new_size: str,
+                 current_size_bytes: int, new_size_bytes: int):
+        self.dataset_name = dataset_name
+        self.current_size = current_size
+        self.new_size = new_size
+        self.current_size_bytes = current_size_bytes
+        self.new_size_bytes = new_size_bytes
+        super().__init__(
+            f"Shrinking {dataset_name} from {current_size} to {new_size} will "
+            "destroy all data beyond the new size. Shrink the guest filesystem "
+            "first, then confirm that the data beyond the new size will be lost."
+        )
 
 
 class ZFSDatasetService:
@@ -76,6 +100,55 @@ class ZFSDatasetService:
     ZFS_DATASET_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*(/[a-zA-Z0-9][a-zA-Z0-9_\-.:]*)*$')
     # Full snapshot name pattern (dataset@snapshot)
     ZFS_SNAPSHOT_FULL_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-.:]*(/[a-zA-Z0-9][a-zA-Z0-9_\-.:]*)*@[a-zA-Z0-9][a-zA-Z0-9_\-.:]*$')
+    # Property names: native properties (compression) and user properties
+    # (com.example:foo) start with an alphanumeric character and use
+    # alphanumerics, '_', '.', ':' or '-'. A leading '-' is never accepted, so
+    # the name cannot be read as a command option.
+    ZFS_PROPERTY_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.:\-]*$')
+
+    # Read-only and create-time-only properties. `zfs inherit` refuses them
+    # with or without -S.
+    READ_ONLY_PROPERTIES = frozenset({
+        'available', 'used', 'usedbysnapshots', 'usedbydataset',
+        'usedbychildren', 'usedbyrefreservation', 'referenced',
+        'compressratio', 'refcompressratio', 'creation', 'createtxg',
+        'guid', 'objsetid', 'name', 'mounted', 'origin', 'written',
+        'logicalused', 'logicalreferenced', 'receive_resume_token',
+        'encryption', 'encryptionroot', 'keyformat', 'keystatus',
+        'pbkdf2iters', 'filesystem_count', 'snapshot_count', 'type',
+        'clones', 'defer_destroy', 'userrefs', 'volblocksize',
+        'casesensitivity', 'normalization', 'utf8only',
+    })
+
+    # Settable properties that are not inheritable (PROP_DEFAULT in
+    # zfs_prop.c). Plain `zfs inherit` refuses them. `zfs inherit -S`
+    # accepts them and reverts to the received value, or to the default.
+    NON_INHERITABLE_PROPERTIES = frozenset({
+        'quota', 'refquota', 'reservation', 'refreservation',
+        'canmount', 'keylocation', 'filesystem_limit', 'snapshot_limit',
+        'volsize', 'version',
+    })
+
+    # Properties that `zfs inherit -S` refuses to revert to a received value.
+    NO_RECEIVED_REVERT_PROPERTIES = frozenset({'volsize', 'version'})
+
+    # zvol options (issue #21). zfsprops(7): volblocksize must be a power of
+    # two between 512 B and 128 KiB (up to 16 MiB only with large_blocks).
+    # The default is 16 KiB on OpenZFS 2.2 and later, 8 KiB before that, so
+    # an empty value is left to zfs rather than hard coded here.
+    VOLBLOCKSIZE_MIN_BYTES = 512
+    VOLBLOCKSIZE_MAX_BYTES = 128 * 1024
+    VOLMODE_VALUES = ("default", "full", "geom", "dev", "none")
+
+    # Size suffixes accepted by zfs(8), mapped to byte multipliers.
+    _SIZE_SUFFIXES = {
+        "": 1, "B": 1,
+        "K": 1024, "KB": 1024, "KIB": 1024,
+        "M": 1024 ** 2, "MB": 1024 ** 2, "MIB": 1024 ** 2,
+        "G": 1024 ** 3, "GB": 1024 ** 3, "GIB": 1024 ** 3,
+        "T": 1024 ** 4, "TB": 1024 ** 4, "TIB": 1024 ** 4,
+        "P": 1024 ** 5, "PB": 1024 ** 5, "PIB": 1024 ** 5,
+    }
 
     @classmethod
     def validate_passphrase(cls, passphrase: str) -> None:
@@ -110,13 +183,49 @@ class ZFSDatasetService:
         if not dataset_name:
             raise ValueError("Dataset name cannot be empty")
         
-        if not cls.ZFS_DATASET_NAME_PATTERN.match(dataset_name):
+        # fullmatch, not match: a trailing '$' still matches immediately
+        # before a final newline, so match() accepts "pool/data\n" and lets
+        # a trailing newline reach the zfs argv.
+        if not cls.ZFS_DATASET_NAME_PATTERN.fullmatch(dataset_name):
             raise ValueError(
                 f"Invalid dataset name '{dataset_name}'. Dataset names must start with an alphanumeric "
                 "character and contain only alphanumeric characters, underscores, hyphens, "
                 "periods, colons, or forward slashes."
             )
     
+    @classmethod
+    def validate_property_name(cls, property_name: str) -> None:
+        """Validate a ZFS property name before it reaches the command argv."""
+        if not property_name:
+            raise ValueError("Property name cannot be empty")
+        # fullmatch, not match: a trailing '$' still matches before a final
+        # newline, so match() would let "compression\n" reach the zfs argv.
+        if not cls.ZFS_PROPERTY_NAME_PATTERN.fullmatch(property_name):
+            raise ValueError(
+                f"Invalid property name '{property_name}'. Property names must start "
+                "with an alphanumeric character and contain only alphanumeric "
+                "characters, underscores, hyphens, periods, or colons."
+            )
+
+    @classmethod
+    def validate_inheritable_property(cls, property_name: str,
+                                      received: bool = False) -> None:
+        """Reject properties that `zfs inherit` (or `zfs inherit -S`) refuses."""
+        cls.validate_property_name(property_name)
+        if property_name in cls.READ_ONLY_PROPERTIES:
+            raise ValueError(f"Property '{property_name}' is read-only.")
+        if received:
+            if property_name in cls.NO_RECEIVED_REVERT_PROPERTIES:
+                raise ValueError(
+                    f"Property '{property_name}' cannot be reverted to a received value."
+                )
+        elif property_name in cls.NON_INHERITABLE_PROPERTIES:
+            raise ValueError(
+                f"Property '{property_name}' cannot be inherited. Set an explicit "
+                "value instead (quota, reservation and limit properties are "
+                "cleared with 'none')."
+            )
+
     @classmethod
     def validate_snapshot_name(cls, snapshot_name: str) -> None:
         """
@@ -136,12 +245,93 @@ class ZFSDatasetService:
                 f"Invalid snapshot name format '{snapshot_name}'. Expected format: dataset@snapshot"
             )
         
-        if not cls.ZFS_SNAPSHOT_FULL_PATTERN.match(snapshot_name):
+        # fullmatch, not match: see validate_dataset_name.
+        if not cls.ZFS_SNAPSHOT_FULL_PATTERN.fullmatch(snapshot_name):
             raise ValueError(
                 f"Invalid snapshot name '{snapshot_name}'. Snapshot names must follow ZFS naming rules: "
                 "alphanumeric characters, underscores, hyphens, periods, colons, or forward slashes."
             )
-    
+
+    @classmethod
+    def parse_size(cls, size: str) -> int:
+        """
+        Parse a ZFS size string (e.g. "10G", "512M", "10737418240") to bytes.
+
+        Args:
+            size: Size as accepted by zfs(8): a number with an optional
+                K/M/G/T/P (or KB/MB/... KiB/MiB/...) suffix.
+
+        Returns:
+            Size in bytes
+
+        Raises:
+            ValueError: If the size is not a positive number with a known unit
+        """
+        text = str(size or "").strip()
+        if not text:
+            raise ValueError("Size cannot be empty")
+
+        match = re.fullmatch(r'(\d+(?:\.\d+)?)\s*([A-Za-z]*)', text)
+        if not match:
+            raise ValueError(
+                f"Invalid size '{size}'. Use a number with an optional unit, "
+                "for example 512M, 10G or 1T."
+            )
+
+        suffix = match.group(2).upper()
+        if suffix not in cls._SIZE_SUFFIXES:
+            raise ValueError(
+                f"Invalid size unit in '{size}'. Supported units are K, M, G, T and P."
+            )
+
+        size_bytes = int(float(match.group(1)) * cls._SIZE_SUFFIXES[suffix])
+        if size_bytes <= 0:
+            raise ValueError(f"Size '{size}' must be greater than zero")
+        return size_bytes
+
+    @classmethod
+    def format_size(cls, size_bytes: int) -> str:
+        """Render a byte count using the largest exact ZFS size unit."""
+        for suffix, factor in (("T", 1024 ** 4), ("G", 1024 ** 3),
+                               ("M", 1024 ** 2), ("K", 1024)):
+            if size_bytes >= factor and size_bytes % factor == 0:
+                return f"{size_bytes // factor}{suffix}"
+        return str(size_bytes)
+
+    @classmethod
+    def validate_volblocksize(cls, volblocksize: str) -> int:
+        """
+        Validate a volblocksize value against OpenZFS zfsprops(7) rules.
+
+        Args:
+            volblocksize: Block size string such as "16K"
+
+        Returns:
+            Block size in bytes
+
+        Raises:
+            ValueError: If the value is not a power of two between 512 B and
+                128 KiB
+        """
+        size_bytes = cls.parse_size(volblocksize)
+        if size_bytes < cls.VOLBLOCKSIZE_MIN_BYTES or size_bytes > cls.VOLBLOCKSIZE_MAX_BYTES:
+            raise ValueError(
+                f"volblocksize must be between 512B and 128KiB, got '{volblocksize}'"
+            )
+        if size_bytes & (size_bytes - 1):
+            raise ValueError(
+                f"volblocksize must be a power of two, got '{volblocksize}'"
+            )
+        return size_bytes
+
+    @classmethod
+    def zvol_device_path(cls, dataset_name: str) -> str:
+        """Return the block device path exported for a zvol."""
+        # NetBSD keeps the Solaris layout with dsk/rdsk subdirectories.
+        if is_netbsd():
+            return f"/dev/zvol/dsk/{dataset_name}"
+        return f"/dev/zvol/{dataset_name}"
+
     def list_datasets(self, pool_name: Optional[str] = None, 
                      dataset_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -288,9 +478,53 @@ class ZFSDatasetService:
         except Exception as e:
             raise Exception(f"Failed to get dataset: {str(e)}")
     
+    def _apply_volume_options(self, cmd: List[str], props: Dict[str, str],
+                              sparse: bool, volblocksize: Optional[str]) -> Dict[str, str]:
+        """
+        Append zvol creation options to a ``zfs create`` command.
+
+        Adds ``-s`` for a sparse (thin provisioned) volume, ``-b`` for an
+        explicit volblocksize and ``-V`` for the volume size. Returns a copy
+        of ``props`` with the options that were consumed removed.
+
+        Args:
+            cmd: Command list being assembled
+            props: Properties to be passed as -o property=value
+            sparse: Create a sparse volume (refreservation=none)
+            volblocksize: Optional volblocksize such as "16K"
+
+        Returns:
+            Remaining properties to pass with -o
+
+        Raises:
+            ValueError: If volblocksize is invalid or supplied twice
+        """
+        remaining = dict(props)
+
+        if 'volblocksize' in remaining:
+            if volblocksize:
+                raise ValueError(
+                    "volblocksize must be supplied either with -b or as a "
+                    "property, not both"
+                )
+            volblocksize = remaining.pop('volblocksize')
+
+        if volblocksize:
+            # Pass the validated byte count so zfs never sees a unit
+            # spelling that only our parser accepts (e.g. "16KiB").
+            block_bytes = self.validate_volblocksize(volblocksize)
+            cmd.extend(['-b', str(block_bytes)])
+        if sparse:
+            cmd.append('-s')
+
+        cmd.extend(['-V', remaining.pop('volsize')])
+        return remaining
+
     def create_dataset(self, dataset_name: str, dataset_type: str = "filesystem",
                       properties: Optional[Dict[str, str]] = None,
-                      create_parents: bool = False) -> None:
+                      create_parents: bool = False,
+                      sparse: bool = False,
+                      volblocksize: Optional[str] = None) -> None:
         """
         Create a new dataset
         
@@ -299,6 +533,9 @@ class ZFSDatasetService:
             dataset_type: Type of dataset ('filesystem' or 'volume')
             properties: Optional dictionary of properties to set
             create_parents: Create parent datasets if they don't exist
+            sparse: Create a sparse volume (thin provisioned,
+                refreservation=none). Only valid for volumes.
+            volblocksize: Optional block size for volumes, e.g. "16K"
         """
         self.validate_dataset_name(dataset_name)
         try:
@@ -314,11 +551,11 @@ class ZFSDatasetService:
             if dataset_type == "volume":
                 if 'volsize' not in props:
                     raise Exception("volsize property is required for volume creation")
-                cmd.extend(['-V', props['volsize']])
-                # Remove volsize from props as it's already handled
-                props = {k: v for k, v in props.items() if k != 'volsize'}
+                props = self._apply_volume_options(cmd, props, sparse, volblocksize)
             elif dataset_type != "filesystem":
                 raise Exception(f"Invalid dataset type: {dataset_type}")
+            elif sparse or volblocksize:
+                raise Exception("Sparse volumes and volblocksize only apply to volumes")
             
             # Add properties
             for key, value in props.items():
@@ -338,7 +575,9 @@ class ZFSDatasetService:
     def create_dataset_with_encryption(self, dataset_name: str, passphrase: str,
                                       dataset_type: str = "filesystem",
                                       properties: Optional[Dict[str, str]] = None,
-                                      create_parents: bool = False) -> None:
+                                      create_parents: bool = False,
+                                      sparse: bool = False,
+                                      volblocksize: Optional[str] = None) -> None:
         """
         Create a new encrypted dataset with passphrase
         
@@ -348,6 +587,9 @@ class ZFSDatasetService:
             dataset_type: Type of dataset ('filesystem' or 'volume')
             properties: Optional dictionary of properties to set
             create_parents: Create parent datasets if they don't exist
+            sparse: Create a sparse volume (thin provisioned,
+                refreservation=none). Only valid for volumes.
+            volblocksize: Optional block size for volumes, e.g. "16K"
         """
         self.validate_dataset_name(dataset_name)
         self.validate_passphrase(passphrase)
@@ -372,9 +614,9 @@ class ZFSDatasetService:
             if dataset_type == "volume":
                 if 'volsize' not in props:
                     raise Exception("volsize property is required for volume creation")
-                cmd.extend(['-V', props['volsize']])
-                # Remove volsize from props as it's already handled
-                props = {k: v for k, v in props.items() if k != 'volsize'}
+                props = self._apply_volume_options(cmd, props, sparse, volblocksize)
+            elif sparse or volblocksize:
+                raise Exception("Sparse volumes and volblocksize only apply to volumes")
             
             # Add properties
             for key, value in props.items():
@@ -482,27 +724,60 @@ class ZFSDatasetService:
             dataset_name: Name of the dataset
             
         Returns:
-            Dictionary of properties with values and sources
+            Dictionary of properties with value, received value and source.
+            'received' is '-' when there is no received value, and always '-'
+            on NetBSD.
         """
         self.validate_dataset_name(dataset_name)
         try:
-            result = run_zfs_command(['zfs', 'get', '-H', 'all', dataset_name])
-            
+            # NetBSD ships an older ZFS without the 'received' column, so it
+            # keeps the default name/property/value/source output.
+            if is_netbsd():
+                cmd = ['zfs', 'get', '-H', 'all', dataset_name]
+            else:
+                cmd = [
+                    'zfs', 'get', '-H', '-o', 'name,property,value,received,source',
+                    'all', dataset_name
+                ]
+            result = run_zfs_command(cmd)
+
             properties = {}
             for line in result.stdout.strip().split('\n'):
                 if not line:
                     continue
                 parts = line.split('\t')
-                if len(parts) >= 4:
+                if is_netbsd() and len(parts) >= 4:
                     properties[parts[1]] = {
                         'value': parts[2],
+                        'received': '-',
                         'source': parts[3]
                     }
-            
+                elif len(parts) >= 5:
+                    properties[parts[1]] = {
+                        'value': parts[2],
+                        'received': parts[3],
+                        'source': parts[4]
+                    }
+
             return properties
-            
+
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to get properties: {e.stderr}")
+
+    def count_descendants(self, dataset_name: str) -> int:
+        """Count child datasets affected by a recursive operation."""
+        self.validate_dataset_name(dataset_name)
+        try:
+            # -t filesystem,volume: with the pool's listsnapshots=on, a plain
+            # `zfs list -r` also lists snapshots and inflates the count.
+            result = run_zfs_command(
+                ['zfs', 'list', '-H', '-o', 'name', '-t', 'filesystem,volume',
+                 '-r', dataset_name]
+            )
+            names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            return sum(1 for name in names if name != dataset_name)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to list child datasets: {e.stderr}")
     
     def set_property(self, dataset_name: str, property_name: str,
                     property_value: str) -> None:
@@ -514,6 +789,10 @@ class ZFSDatasetService:
             property_name: Name of the property to set
             property_value: Value to set
         """
+        if (property_name or '').strip().lower() == 'volsize':
+            # Shrinking a zvol destroys data; only resize_volume applies the
+            # shrink confirmation and free-space checks.
+            raise ValueError("Use Resize Volume on the dataset page to change volsize")
         self.validate_dataset_name(dataset_name)
         property_name = (property_name or "").strip()
         dataset_type = self._dataset_type(dataset_name)
@@ -525,6 +804,7 @@ class ZFSDatasetService:
             # Reject read-only, deferred, unsupported or invalid values before
             # shelling out to zfs.
             raise ValueError(str(error)) from error
+        self.validate_property_name(property_name)
         try:
             run_zfs_command(['zfs', 'set', f'{property_name}={property_value}', dataset_name])
             
@@ -543,28 +823,277 @@ class ZFSDatasetService:
         return None
     
     def inherit_property(self, dataset_name: str, property_name: str,
-                        recursive: bool = False) -> None:
+                        recursive: bool = False, received: bool = False) -> None:
         """
-        Inherit a property from parent dataset
+        Inherit a property from parent dataset, or revert to default/received
         
         Args:
             dataset_name: Name of the dataset
             property_name: Name of the property to inherit
-            recursive: Apply to all descendants
+            recursive: Apply to all descendants (-r)
+            received: Revert to the received value (-S, for `zfs receive` targets).
+                Not available on NetBSD.
         """
         self.validate_dataset_name(dataset_name)
+        if received and is_netbsd():
+            raise ValueError(
+                "Reverting to a received value (zfs inherit -S) is not supported on NetBSD."
+            )
+        self.validate_inheritable_property(property_name, received=received)
         try:
             cmd = ['zfs', 'inherit']
-            
+
             if recursive:
                 cmd.append('-r')
-            
+            if received:
+                cmd.append('-S')
+
             cmd.extend([property_name, dataset_name])
-            
+
             run_zfs_command(cmd)
             
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to inherit property: {e.stderr}")
+
+    def get_pool_available_bytes(self, pool_name: str) -> int:
+        """
+        Return the free space available in a pool, in bytes.
+
+        Args:
+            pool_name: Name of the pool (the root dataset)
+
+        Returns:
+            Available bytes reported by the pool root dataset
+        """
+        self.validate_dataset_name(pool_name)
+        result = run_zfs_command(
+            ['zfs', 'get', '-H', '-p', '-o', 'value', 'available', pool_name]
+        )
+        return int(result.stdout.strip())
+
+    def get_zvol_info(self, dataset_name: str,
+                      properties: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Describe a zvol: sizes, provisioning mode, volmode and device path.
+
+        Sizes are always read with ``zfs get -p`` so they are exact byte
+        counts. The human-readable output of ``zfs get`` is rounded to three
+        significant digits (a 100.3G volume reads as "100G"), which is not
+        safe for deciding whether a resize grows or shrinks the volume.
+
+        Args:
+            dataset_name: Name of the dataset
+            properties: Already-fetched properties (from get_dataset). Only
+                used to skip non-volumes without a second ``zfs get`` call.
+
+        Returns:
+            Dict of zvol details, or None when the dataset is not a volume
+        """
+        self.validate_dataset_name(dataset_name)
+        if properties is not None:
+            type_entry = properties.get('type') or {}
+            if type_entry.get('value') != 'volume':
+                return None
+
+        try:
+            result = run_zfs_command(
+                ['zfs', 'get', '-H', '-p', '-o', 'property,value', 'all', dataset_name]
+            )
+        except subprocess.CalledProcessError as e:
+            raise VolumeResizeError(f"Failed to read volume properties: {e.stderr}")
+
+        props = {}
+        for line in result.stdout.strip().split('\n'):
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                props[parts[0]] = parts[1]
+
+        def value(prop_name: str) -> Optional[str]:
+            return props.get(prop_name)
+
+        if value('type') != 'volume':
+            return None
+
+        def to_int(raw: Optional[str]) -> Optional[int]:
+            """Convert an exact ``zfs get -p`` value to int, or None."""
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return None
+
+        volsize_raw = value('volsize')
+        volblocksize_raw = value('volblocksize')
+        refreservation_raw = value('refreservation')
+
+        volsize_bytes = to_int(volsize_raw)
+        volblocksize_bytes = to_int(volblocksize_raw)
+        refreservation_bytes = to_int(refreservation_raw)
+
+        # zfsprops(7): a volume is sparse when refreservation is smaller than
+        # the volume size plus its metadata, or when refreservation is none.
+        if refreservation_raw in ('none', '0'):
+            sparse = True
+        elif refreservation_bytes is not None and volsize_bytes is not None:
+            sparse = refreservation_bytes < volsize_bytes
+        else:
+            sparse = False
+
+        # NetBSD's older ZFS port has no volmode property.
+        volmode_supported = value('volmode') is not None
+        volmode = value('volmode') or 'default'
+
+        if refreservation_bytes:
+            refreservation_human = self.format_size(refreservation_bytes)
+        else:
+            refreservation_human = 'none'
+
+        return {
+            'name': dataset_name,
+            'volsize': volsize_raw,
+            'volsize_bytes': volsize_bytes,
+            'volsize_human': self.format_size(volsize_bytes) if volsize_bytes else volsize_raw,
+            'volblocksize': volblocksize_raw,
+            'volblocksize_bytes': volblocksize_bytes,
+            'volblocksize_human': (
+                self.format_size(volblocksize_bytes) if volblocksize_bytes else volblocksize_raw
+            ),
+            'refreservation': refreservation_raw,
+            'refreservation_human': refreservation_human,
+            'sparse': sparse,
+            'provisioning': 'sparse' if sparse else 'thick',
+            'volmode': volmode,
+            'volmode_supported': volmode_supported,
+            'volmode_exposed': volmode != 'none',
+            'device_path': self.zvol_device_path(dataset_name),
+        }
+
+    def resize_volume(self, dataset_name: str, new_size: str,
+                      confirm_shrink: bool = False) -> Dict[str, Any]:
+        """
+        Resize a zvol through the volsize property.
+
+        Growing a thick (non-sparse) volume first checks that the pool has
+        enough free space for the additional reservation. Shrinking requires
+        explicit confirmation because everything beyond the new size is lost.
+
+        Args:
+            dataset_name: Name of the volume
+            new_size: New size, e.g. "20G"
+            confirm_shrink: Acknowledge data loss when shrinking
+
+        Returns:
+            Dict describing the applied resize
+
+        Raises:
+            ShrinkConfirmationRequired: If shrinking without confirmation
+            VolumeResizeError: If the resize cannot be performed
+        """
+        self.validate_dataset_name(dataset_name)
+
+        info = self.get_zvol_info(dataset_name)
+        if info is None:
+            raise VolumeResizeError(
+                f"{dataset_name} is not a volume; only zvols can be resized"
+            )
+
+        current_bytes = info['volsize_bytes']
+        if current_bytes is None:
+            raise VolumeResizeError(
+                f"Could not read the current volsize of {dataset_name}"
+            )
+
+        block_bytes = info['volblocksize_bytes'] or self.VOLBLOCKSIZE_MIN_BYTES
+        new_bytes = self.parse_size(new_size)
+
+        if new_bytes % block_bytes:
+            lower = (new_bytes // block_bytes) * block_bytes
+            upper = lower + block_bytes
+            raise VolumeResizeError(
+                f"Volume size must be a multiple of volblocksize "
+                f"({info['volblocksize_human']}). Use {self.format_size(lower)} or "
+                f"{self.format_size(upper)}."
+            )
+
+        if new_bytes == current_bytes:
+            raise VolumeResizeError(
+                f"{dataset_name} is already {info['volsize_human']}"
+            )
+
+        current_human = info['volsize_human'] or str(current_bytes)
+        new_human = self.format_size(new_bytes)
+        shrinking = new_bytes < current_bytes
+
+        if shrinking and not confirm_shrink:
+            raise ShrinkConfirmationRequired(
+                dataset_name, current_human, new_human, current_bytes, new_bytes
+            )
+
+        if not shrinking and not info['sparse']:
+            pool_name = dataset_name.split('/')[0]
+            growth_bytes = new_bytes - current_bytes
+            available_bytes = self.get_pool_available_bytes(pool_name)
+            if growth_bytes > available_bytes:
+                raise VolumeResizeError(
+                    f"Not enough free space to grow {dataset_name} from "
+                    f"{current_human} to {new_human}: {pool_name} has "
+                    f"{self.format_size(available_bytes)} available and the "
+                    f"thick-provisioned volume needs "
+                    f"{self.format_size(growth_bytes)} more. Make the volume "
+                    f"sparse (refreservation=none) to grow it without a "
+                    f"reservation."
+                )
+
+        try:
+            run_zfs_command(['zfs', 'set', f'volsize={new_bytes}', dataset_name])
+        except subprocess.CalledProcessError as e:
+            raise VolumeResizeError(f"Failed to resize volume: {e.stderr}")
+
+        return {
+            'dataset': dataset_name,
+            'old_size': current_human,
+            'old_size_bytes': current_bytes,
+            'new_size': new_human,
+            'new_size_bytes': new_bytes,
+            'direction': 'shrink' if shrinking else 'grow',
+            'sparse': info['sparse'],
+            'device_path': info['device_path'],
+        }
+
+    def set_volmode(self, dataset_name: str, volmode: str) -> None:
+        """
+        Set the volmode property of a zvol.
+
+        Args:
+            dataset_name: Name of the volume
+            volmode: One of default, full, geom, dev, none
+
+        Raises:
+            ValueError: If the value or the dataset type is not valid
+        """
+        self.validate_dataset_name(dataset_name)
+
+        value = (volmode or '').strip().lower()
+        if value not in self.VOLMODE_VALUES:
+            raise ValueError(
+                f"Invalid volmode '{volmode}'. Valid values are: "
+                f"{', '.join(self.VOLMODE_VALUES)}"
+            )
+
+        info = self.get_zvol_info(dataset_name)
+        if info is None:
+            raise ValueError(
+                f"{dataset_name} is not a volume; volmode only applies to zvols"
+            )
+        if not info['volmode_supported']:
+            raise ValueError("This ZFS version does not support the volmode property")
+
+        # Run zfs directly rather than through set_property: the M6 property
+        # catalog marks volmode as not editable through the generic editor,
+        # which would refuse this dedicated, validated path.
+        try:
+            run_zfs_command(['zfs', 'set', f'volmode={value}', dataset_name])
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to set volmode: {e.stderr}")
     
     def mount_dataset(self, dataset_name: str) -> None:
         """

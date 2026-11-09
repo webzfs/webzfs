@@ -104,7 +104,18 @@
                     </svg>
                     <div class="text-sm">
                         <p class="font-medium text-text-primary mb-2">SSH Key Information</p>
-                        <p class="text-text-secondary mb-2">Fingerprint: <span class="font-mono text-xs">{{ connection.fingerprint }}</span></p>
+                        <p class="text-text-secondary mb-2">Local key fingerprint: <span class="font-mono text-xs">{{ connection.fingerprint }}</span></p>
+                        {# The pinned REMOTE host key, recorded when the
+                           connection was created. Distinct from the local
+                           key pair fingerprint above. #}
+                        {% if connection.host_key_fingerprints %}
+                        <p class="text-text-secondary mb-1">Pinned host key:</p>
+                        <ul class="mb-2 space-y-1">
+                            {% for fp in connection.host_key_fingerprints %}
+                            <li class="font-mono text-xs text-text-primary break-all">{{ fp }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
                         <p class="text-text-secondary text-xs">To change SSH keys, delete this connection and create a new one.</p>
                     </div>
                 </div>
