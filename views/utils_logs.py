@@ -4,6 +4,7 @@ Provides web interface to view and download audit logs
 """
 
 import base64
+from html import escape
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.background import BackgroundTask
@@ -365,7 +366,7 @@ async def get_log_entries_partial(
         valid_categories = [c.value for c in LogCategory]
         if category not in valid_categories:
             return HTMLResponse(
-                content=f'<div class="text-danger-400">Invalid log category: {category}</div>',
+                content=f'<div class="text-danger-400">Invalid log category: {escape(str(category))}</div>',
                 status_code=400,
             )
 
@@ -380,7 +381,7 @@ async def get_log_entries_partial(
 
     except Exception as e:
         return HTMLResponse(
-            content=f'<div class="text-danger-400">Error loading entries: {str(e)}</div>',
+            content=f'<div class="text-danger-400">Error loading entries: {escape(str(e))}</div>',
             status_code=500,
         )
 

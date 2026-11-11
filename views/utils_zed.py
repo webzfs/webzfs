@@ -7,6 +7,7 @@ in the background.
 """
 
 import logging
+from html import escape
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -52,7 +53,7 @@ async def zed_content_partial(request: Request):
             content=(
                 '<div class="bg-danger-900/30 border-2 '
                 'border-danger-500/50 text-danger-400 px-4 py-3 rounded">'
-                f"<strong>Error:</strong> {e}</div>"
+                f"<strong>Error:</strong> {escape(str(e))}</div>"
             ),
             status_code=200,
         )
@@ -135,7 +136,7 @@ async def edit_zedlet(request: Request, name: str):
         )
     except Exception as e:
         return HTMLResponse(
-            content=f'<div class="text-danger-400 p-4">{e}</div>',
+            content=f'<div class="text-danger-400 p-4">{escape(str(e))}</div>',
             status_code=200,
         )
 
@@ -292,7 +293,7 @@ async def get_zed_rc(request: Request):
         )
     except Exception as exc:
         return HTMLResponse(
-            content=f'<div class="text-danger-400 p-4">{exc}</div>',
+            content=f'<div class="text-danger-400 p-4">{escape(str(exc))}</div>',
             status_code=200,
         )
 

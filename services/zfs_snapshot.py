@@ -608,14 +608,16 @@ class ZFSSnapshotService:
             full_cmd = build_zfs_command(cmd)
             
             if output_file:
-                full_cmd_str = ' '.join(full_cmd) + f' > {output_file}'
-                subprocess.run(
-                    full_cmd_str,
-                    shell=True,
-                    capture_output=True,
-                    text=False,
-                    check=True
-                )
+                # The stream goes to the file through a file handle, never
+                # through a shell string, so the path cannot be interpreted.
+                with open(output_file, 'wb') as output_handle:
+                    subprocess.run(
+                        full_cmd,
+                        stdout=output_handle,
+                        stderr=subprocess.PIPE,
+                        text=False,
+                        check=True
+                    )
                 return b''
             else:
                 result = subprocess.run(
@@ -655,14 +657,16 @@ class ZFSSnapshotService:
             full_cmd = build_zfs_command(cmd)
             
             if input_file:
-                full_cmd_str = ' '.join(full_cmd) + f' < {input_file}'
-                subprocess.run(
-                    full_cmd_str,
-                    shell=True,
-                    capture_output=True,
-                    text=False,
-                    check=True
-                )
+                # The stream is read from the file through a file handle,
+                # never through a shell string.
+                with open(input_file, 'rb') as input_handle:
+                    subprocess.run(
+                        full_cmd,
+                        stdin=input_handle,
+                        capture_output=True,
+                        text=False,
+                        check=True
+                    )
             elif snapshot_data:
                 subprocess.run(
                     full_cmd,

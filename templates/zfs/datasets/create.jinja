@@ -65,7 +65,7 @@
                      if (this.keyFormat === 'hex') return !/^[0-9a-fA-F]{64}$/.test(this.keyString.trim());
                      return bytes < 8 || bytes > 512;
                  },
-                parentDataset: '{{ parent if parent else (pool if pool else '') }}',
+                parentDataset: {{ (parent or pool or '')|tojson|forceescape }},
                 datasetSuffix: '',
                 get fullDatasetName() {
                     if (!this.parentDataset || !this.datasetSuffix) return '';
@@ -148,7 +148,7 @@
                             <input 
                                 type="text" 
                                 x-model="datasetSuffix"
-                                x-init="parentDataset = '{{ pool }}'"
+                                x-init="parentDataset = {{ pool|tojson|forceescape }}"
                                 :class="datasetSuffix && datasetSuffix.includes('/') ? 'form-input border-danger-500 ring-1 ring-danger-500' : 'form-input'"
                                 placeholder="new_dataset_name"
                             >

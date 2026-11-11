@@ -29,6 +29,8 @@ from services.ssh_connection import (
     host_key_error_message,
     is_host_key_error,
     normalize_known_hosts_host,
+    validate_ssh_destination,
+    validate_ssh_port,
 )
 
 
@@ -86,7 +88,13 @@ class ZFSReplicationService:
         
         Raises:
             HostKeyVerificationError: If the host key is not pinned.
+            ValueError: If host is not a valid 'user@host' destination or the
+                port is out of range. Every ssh command in this service calls
+                this method first, so an option-like destination such as
+                '-oProxyCommand=...' never reaches an ssh command line.
         """
+        validate_ssh_destination(host)
+        validate_ssh_port(port)
         ssh_service = self._get_ssh_service()
         # The replication UI supplies ``user@host``; known_hosts is keyed by
         # the bare host, so normalise before the pin lookup.
@@ -635,7 +643,7 @@ class ZFSReplicationService:
                 cmd.extend(['-i', ssh_key])
             for option in self._host_key_options_for(remote_host, remote_port):
                 cmd.extend(['-o', option])
-            cmd.extend([remote_host, 'echo "Connection successful"'])
+            cmd.extend(['--', remote_host, 'echo "Connection successful"'])
             
             result = subprocess.run(
                 cmd,
@@ -935,6 +943,7 @@ class ZFSReplicationService:
             ssh_cmd.extend([
                 '-o', 'BatchMode=yes',
                 '-o', 'ConnectTimeout=10',
+                '--',
                 remote_host,
                 'zfs', 'list', '-H', '-t', 'snapshot',
                 '-o', 'name,guid,createtxg', '-s', 'createtxg'
@@ -1310,7 +1319,7 @@ class ZFSReplicationService:
             ssh_parts.extend(['-i', ssh_key])
         for option in self._host_key_options_for(remote_host, remote_port):
             ssh_parts.extend(['-o', option])
-        ssh_parts.append(remote_host)
+        ssh_parts.extend(['--', remote_host])
         ssh_parts.extend(receive_cmd)
         return ' '.join(send_cmd) + ' | ' + ' '.join(ssh_parts)
     
@@ -1620,7 +1629,7 @@ class ZFSReplicationService:
         for option in self._host_key_options_for(remote_host, remote_port):
             ssh_cmd.extend(['-o', option])
         ssh_cmd.extend(['-o', 'BatchMode=yes'])
-        ssh_cmd.append(remote_host)
+        ssh_cmd.extend(['--', remote_host])
         ssh_cmd.extend(remote_cmd)
         return ssh_cmd
 

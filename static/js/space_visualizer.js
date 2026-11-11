@@ -136,6 +136,16 @@
         return idx === -1 ? fullName : fullName.substring(idx + 1);
     }
 
+    // Escape text before it is placed into an HTML string.
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
     function findNode(tree, name) {
         if (!tree) return null;
         if (tree.name === name) return tree;
@@ -220,7 +230,7 @@
             if (viewStack.length === 0) return;
             var parts = viewStack.map(function(name, idx) {
                 var label = idx === 0 ? name : shortName(name);
-                return '<button type="button" class="hover:text-text-primary underline-offset-2 hover:underline" data-stack-index="' + idx + '">' + label + '</button>';
+                return '<button type="button" class="hover:text-text-primary underline-offset-2 hover:underline" data-stack-index="' + idx + '">' + escapeHtml(label) + '</button>';
             });
             breadcrumb.innerHTML = "Viewing: " + parts.join(' <span class="text-text-tertiary">/</span> ');
             var buttons = breadcrumb.querySelectorAll("button[data-stack-index]");
@@ -236,7 +246,7 @@
         function showTooltip(node, event) {
             if (!tooltip) return;
             var lines = [];
-            lines.push('<div class="font-semibold text-text-primary mb-1">' + node.name + "</div>");
+            lines.push('<div class="font-semibold text-text-primary mb-1">' + escapeHtml(node.name) + "</div>");
             lines.push('<div class="grid grid-cols-2 gap-x-3 gap-y-0.5">');
             lines.push('<span class="text-text-tertiary">Used:</span><span>' + formatBytes(node.used) + "</span>");
             lines.push('<span class="text-text-tertiary">Referenced:</span><span>' + formatBytes(node.referenced) + "</span>");
@@ -246,7 +256,7 @@
             lines.push('<span class="text-text-tertiary">By dataset:</span><span>' + formatBytes(node.used_by_dataset) + "</span>");
             lines.push('<span class="text-text-tertiary">By snapshots:</span><span>' + formatBytes(node.used_by_snapshots) + "</span>");
             lines.push('<span class="text-text-tertiary">By children:</span><span>' + formatBytes(node.used_by_children) + "</span>");
-            lines.push('<span class="text-text-tertiary">Compress:</span><span>' + (node.compressratio || "-") + "</span>");
+            lines.push('<span class="text-text-tertiary">Compress:</span><span>' + escapeHtml(node.compressratio || "-") + "</span>");
             lines.push('<span class="text-text-tertiary">Snapshots:</span><span>' + (node.snapshot_count || 0) + "</span>");
             lines.push("</div>");
             tooltip.innerHTML = lines.join("");

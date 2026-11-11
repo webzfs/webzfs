@@ -33,7 +33,9 @@
     </p>
 
     <ul class="space-y-2 mb-3">
-      {% for key in preview.keys %}
+      {# preview['keys'], not preview.keys: on a dict, .keys is the dict
+         method, not the "keys" entry. #}
+      {% for key in preview['keys'] %}
         <li class="flex items-center gap-3 font-mono text-xs text-text-primary bg-bg-elevated-2 rounded px-3 py-2">
           <span class="badge badge-info flex-shrink-0">{{ key.type }}</span>
           <span class="break-all">{{ key.fingerprint }}</span>

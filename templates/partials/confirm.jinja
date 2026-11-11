@@ -62,9 +62,11 @@
           {{ title|default('Confirm Action') }}
         </h3>
 
-        {# Message #}
+        {# Message: autoescaped. A caller that needs markup must build the
+           message with a block set (set message ... endset) so
+           every variable inside it is escaped. Never add |safe here. #}
         <div class="text-text-secondary text-center mb-6">
-          {{ message|safe }}
+          {{ message }}
         </div>
 
         {# Actions #}
@@ -132,4 +134,4 @@
 </script>
 
 {# Note: This component requires Alpine.js #}
-{# Add to base template: <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script> #}
+{# Alpine.js is served locally from static/vendor/ by base.jinja. Never load it from a CDN. #}

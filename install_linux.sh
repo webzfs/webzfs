@@ -273,6 +273,13 @@ chgrp shadow /etc/shadow
 chmod 640 /etc/shadow
 echo -e "${GREEN}✓${NC} PAM authentication configured"
 
+# Create the empty webzfs-admin group used by the optional login restriction
+# (RESTRICT_LOGIN in .env). No accounts are added to it.
+if ! getent group webzfs-admin &>/dev/null; then
+    groupadd webzfs-admin
+    echo -e "${GREEN}✓${NC} Created empty 'webzfs-admin' group (see RESTRICT_LOGIN in .env)"
+fi
+
 # Create installation directory if it doesn't exist
 if [ ! -d "$INSTALL_DIR" ]; then
     echo "Creating installation directory: $INSTALL_DIR"

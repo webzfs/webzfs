@@ -16,6 +16,7 @@ from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 
 from services.utils import run_privileged_command, run_zfs_command
+from services.ssh_connection import validate_ssh_destination
 from core.receive_options import recvoptions_string, validate_receive_options
 
 logger = logging.getLogger(__name__)
@@ -367,20 +368,25 @@ class SyncoidService:
 
             cmd.extend(self.parse_additional_flags(additional_flags))
             
-            # Build source string
+            # Build source string. Hosts are validated because syncoid passes
+            # them to ssh through a shell; an option-like host such as
+            # '-oProxyCommand=...' would run a local command.
             if source_host:
+                validate_ssh_destination(source_host)
                 source_str = f"{source_host}:{source}"
             else:
                 source_str = source
-            
+
             # Build target string
             if target_host:
+                validate_ssh_destination(target_host)
                 target_str = f"{target_host}:{target}"
             else:
                 target_str = target
-            
-            # Add source and target
-            cmd.extend([source_str, target_str])
+
+            # Add source and target after '--' so neither can be parsed as
+            # a syncoid option (Getopt::Long ends option parsing at '--').
+            cmd.extend(['--', source_str, target_str])
             
             # Execute through a single seam so the privilege model can be
             # changed in one place (planned least-privilege work will run
@@ -618,6 +624,7 @@ class SyncoidService:
         Returns:
             List of '-o' option values, possibly empty
         """
+        validate_ssh_destination(host_string)
         host = host_string.rsplit('@', 1)[-1]
         try:
             from services.ssh_connection import SSHConnectionService
@@ -651,7 +658,7 @@ class SyncoidService:
             if source_host:
                 for option in self._pinned_ssh_options(source_host):
                     ssh_options.extend(['-o', option])
-                list_cmd = ['ssh'] + ssh_options + [source_host, 'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
+                list_cmd = ['ssh'] + ssh_options + ['--', source_host, 'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
             else:
                 list_cmd = ['zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
             
@@ -671,7 +678,7 @@ class SyncoidService:
             
             # Use zfs send with dry-run to estimate size
             if source_host:
-                send_cmd = ['ssh'] + ssh_options + [source_host, 'zfs', 'send', '-nv', latest_snapshot]
+                send_cmd = ['ssh'] + ssh_options + ['--', source_host, 'zfs', 'send', '-nv', latest_snapshot]
             else:
                 send_cmd = ['zfs', 'send', '-nv', latest_snapshot]
             

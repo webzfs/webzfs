@@ -706,7 +706,7 @@
                                 {% for disk in hdds %}
                                 <div id="avail-{{ disk.name }}" 
                                      draggable="{% if disk.is_system_disk %}false{% else %}true{% endif %}" 
-                                     ondragstart="dragStart(event, '{{ disk.device_path }}', '{{ disk.name }}', '{{ disk.size }}', '{{ disk.type }}')"
+                                     ondragstart="dragStart(event, this.dataset.device, this.dataset.name, this.dataset.size, this.dataset.type)"
                                      ondragend="dragEnd(event)"
                                      class="disk-card group relative bg-bg-elevated border-2 border-border-default rounded-lg p-3 transition-all {% if disk.in_use or disk.is_system_disk %}opacity-50 cursor-not-allowed{% else %}cursor-grab active:cursor-grabbing hover:border-primary-400 hover:shadow-lg{% endif %}"
                                      data-device="{{ disk.device_path }}"
@@ -775,7 +775,7 @@
                                 {% for disk in ssds %}
                                 <div id="avail-{{ disk.name }}" 
                                      draggable="{% if disk.is_system_disk %}false{% else %}true{% endif %}" 
-                                     ondragstart="dragStart(event, '{{ disk.device_path }}', '{{ disk.name }}', '{{ disk.size }}', '{{ disk.type }}')"
+                                     ondragstart="dragStart(event, this.dataset.device, this.dataset.name, this.dataset.size, this.dataset.type)"
                                      ondragend="dragEnd(event)"
                                      class="disk-card group relative bg-bg-elevated border-2 border-border-default rounded-lg p-4 transition-all {% if disk.in_use or disk.is_system_disk %}opacity-50 cursor-not-allowed{% else %}cursor-grab active:cursor-grabbing hover:border-primary-400 hover:shadow-lg{% endif %}"
                                      data-device="{{ disk.device_path }}"
@@ -1361,8 +1361,8 @@ function renderMetadataMirrors() {
                         }
                     </div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-xs font-mono text-text-primary font-semibold">${disk.name}</div>
-                        <div class="text-xs text-purple-400 font-mono">${disk.size}</div>
+                        <div class="text-xs font-mono text-text-primary font-semibold">${escapeHtml(disk.name)}</div>
+                        <div class="text-xs text-purple-400 font-mono">${escapeHtml(disk.size)}</div>
                     </div>
                 </div>
             </div>
@@ -1512,8 +1512,8 @@ function renderVdevs() {
                         }
                     </div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-xs font-mono text-text-primary font-semibold">${disk.name}</div>
-                        <div class="text-xs text-primary-400 font-mono">${disk.size}</div>
+                        <div class="text-xs font-mono text-text-primary font-semibold">${escapeHtml(disk.name)}</div>
+                        <div class="text-xs text-primary-400 font-mono">${escapeHtml(disk.size)}</div>
                     </div>
                 </div>
             </div>
@@ -1591,6 +1591,18 @@ function calculateVdevCapacity(vdev) {
 }
 
 // Drag and drop handlers
+// Escape text before it is placed into an HTML string. Disk names, sizes
+// and device paths come from device metadata, and command preview values
+// are typed by the user, so neither may be inserted into innerHTML raw.
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function dragStart(event, device, name, size, type) {
     // Check if the disk is a system disk
     const diskCard = event.target;
@@ -1733,8 +1745,8 @@ function renderTopology() {
                             }
                         </div>
                         <div class="flex-1 min-w-0">
-                            <div class="text-xs font-mono text-text-primary font-semibold">${disk.name}</div>
-                            <div class="text-xs text-primary-400 font-mono">${disk.size}</div>
+                            <div class="text-xs font-mono text-text-primary font-semibold">${escapeHtml(disk.name)}</div>
+                            <div class="text-xs text-primary-400 font-mono">${escapeHtml(disk.size)}</div>
                         </div>
                     </div>
                 </div>
@@ -1958,8 +1970,8 @@ function formatCommand(cmdArray) {
     const baseIndent = '  ';
     
     for (let i = 0; i < cmdArray.length; i++) {
-        const part = cmdArray[i];
-        
+        const part = escapeHtml(cmdArray[i]);
+
         // Check if this is a vdev type keyword
         const vdevTypes = ['mirror', 'raidz', 'raidz2', 'raidz3', 'spare', 'cache', 'log', 'special', 'dedup'];
         const isVdevType = vdevTypes.includes(part);

@@ -96,6 +96,40 @@ class AuditLogger:
 
         return logger
 
+    @staticmethod
+    def _escape_value(value: Any) -> str:
+        """
+        Make one value safe for a single log line.
+
+        Values can come from a request (an attempted username, a file path, a
+        dataset name). A newline in such a value would end the current entry
+        and start a forged one, so every control character is written as an
+        escape sequence, backslashes and double quotes are escaped, and the
+        value is quoted when it contains a space or a quote. The log viewer
+        splits entries on whitespace and strips the surrounding quotes, so the
+        escaped form stays readable there.
+        """
+        escaped = []
+        for char in str(value):
+            if char == "\\":
+                escaped.append("\\\\")
+            elif char == '"':
+                escaped.append('\\"')
+            elif char == "\n":
+                escaped.append("\\n")
+            elif char == "\r":
+                escaped.append("\\r")
+            elif char == "\t":
+                escaped.append("\\t")
+            elif ord(char) < 32 or ord(char) == 127:
+                escaped.append(f"\\x{ord(char):02x}")
+            else:
+                escaped.append(char)
+        text = "".join(escaped)
+        if text == "" or " " in text or '"' in text:
+            return f'"{text}"'
+        return text
+
     def _format_details(self, details: Dict[str, Any]) -> str:
         """
         Format details dictionary into a log string.
@@ -104,16 +138,12 @@ class AuditLogger:
             details: Dictionary of key-value pairs
 
         Returns:
-            Formatted string like "key1=value1 key2=value2"
+            Formatted string like "key1=value1 key2=value2", one line
         """
         parts = []
         for key, value in details.items():
             if value is not None:
-                # Escape spaces in values
-                str_value = str(value)
-                if " " in str_value:
-                    str_value = f'"{str_value}"'
-                parts.append(f"{key}={str_value}")
+                parts.append(f"{key}={self._escape_value(value)}")
         return " ".join(parts)
 
     # ==================== Authentication Logging ====================

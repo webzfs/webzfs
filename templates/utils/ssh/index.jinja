@@ -27,6 +27,18 @@
         </a>
     </div>
 
+    {% if request.query_params.get('success') %}
+      {% with message=request.query_params.get('success') %}
+        {% include "partials/success.jinja" %}
+      {% endwith %}
+    {% endif %}
+    {# success.jinja reads `message`; error.jinja reads `error`. #}
+    {% if request.query_params.get('error') %}
+      {% with error=request.query_params.get('error') %}
+        {% include "partials/error.jinja" %}
+      {% endwith %}
+    {% endif %}
+
     <!-- Info Banner -->
     <div class="card-nested bg-info-500/10 border-info-500/30 mb-6">
         <div class="flex gap-3">
@@ -114,7 +126,25 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div class="flex items-center justify-end gap-2">
-                                <button 
+                                {# Host key status. Unpinned connections are refused until
+                                   the key is reviewed and confirmed on this page. #}
+                                {% if conn.host_key_pinned %}
+                                <a href="/utils/ssh/{{ conn.id }}/trust-host-key"
+                                   class="btn-sm btn-secondary inline-flex items-center"
+                                   title="Host key is pinned. Click to review it against the server.">
+                                    <svg class="w-3.5 h-3.5 mr-1 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                    Host key
+                                </a>
+                                {% else %}
+                                <a href="/utils/ssh/{{ conn.id }}/trust-host-key"
+                                   class="btn-sm btn-warning inline-flex items-center"
+                                   title="No host key is pinned for this connection. Review and trust it.">
+                                    Trust host key
+                                </a>
+                                {% endif %}
+                                <button
                                     hx-post="/utils/ssh/{{ conn.id }}/test"
                                     hx-target="#toast-container"
                                     hx-swap="innerHTML"

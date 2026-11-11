@@ -166,8 +166,6 @@ async def send_receive_execute(
     include_intermediate: Annotated[bool, Form()] = False,
     resumable: Annotated[bool, Form()] = False,
     compression: Annotated[str, Form()] = "lz4",
-    remote_host: Annotated[str, Form()] = "",
-    remote_port: Annotated[int, Form()] = 22,
     ssh_connection_id: Annotated[str, Form()] = "",
     unmounted: Annotated[bool, Form()] = True,
     receive_overrides: Annotated[str, Form()] = "",
@@ -181,25 +179,22 @@ async def send_receive_execute(
     the active transfer instead of waiting for the request to complete.
     """
     try:
-        options = {}
-        if remote_host:
-            options['remote_host'] = remote_host
-            options['remote_port'] = remote_port
-
-        # Look up the SSH connection to get the private key path.
-        # Without this, the SSH command would not include -i <key>
-        # and would fail with "Permission denied".
-        if ssh_connection_id:
-            connection = ssh_service.get_connection(ssh_connection_id)
-            if connection:
-                options['ssh_key'] = connection['private_key_path']
-                # If remote_host was not set from the hidden field,
-                # build it from the connection record
-                if not remote_host:
-                    options['remote_host'] = f"{connection['username']}@{connection['host']}"
-                    options['remote_port'] = connection['port']
-        
         rep_type = ReplicationType(replication_type)
+
+        # Remote replication always takes its SSH destination, port and key
+        # from the stored SSH connection record. The form's remote_host and
+        # remote_port hidden fields are display copies and are not read:
+        # accepting them let a crafted value such as '-oProxyCommand=...'
+        # reach the ssh command line and run a local command.
+        options = {}
+        if rep_type != ReplicationType.LOCAL:
+            if not ssh_connection_id:
+                raise ValueError("Select an SSH connection for remote replication.")
+            connection = ssh_service.require_active_connection(ssh_connection_id)
+            options['remote_host'] = f"{connection['username']}@{connection['host']}"
+            options['remote_port'] = connection['port']
+            options['ssh_key'] = connection['private_key_path']
+
         comp_method = CompressionMethod(compression)
         job_name = f"Manual: {source} → {target}"
 
@@ -339,7 +334,9 @@ async def syncoid_index(request: Request):
 
 
 @router.post("/api/test-remote-connection")
-async def test_remote_connection(data: Dict = Body(...)):
+def test_remote_connection(data: Dict = Body(...)):
+    # Plain def: runs ssh with a 30 second timeout, so it must not run on
+    # the event loop (FastAPI runs plain def handlers in its thread pool).
     """API endpoint to test remote SSH connection and fetch datasets using SSH connection ID"""
     try:
         import subprocess
@@ -352,19 +349,23 @@ async def test_remote_connection(data: Dict = Body(...)):
                 "error": "SSH connection is required"
             })
         
-        # Get the SSH connection
-        connection = ssh_service.get_connection(ssh_connection_id)
-        if not connection:
+        # Get the SSH connection; require_active_connection also validates
+        # the stored host, username, port and key path.
+        try:
+            connection = ssh_service.require_active_connection(ssh_connection_id)
+        except Exception as error:
             return JSONResponse({
                 "success": False,
-                "error": "SSH connection not found"
+                "error": str(error)
             })
-        
+
         # Get list of datasets from remote using key-based authentication
         try:
             # Build the SSH command using the stored key and the
             # WebZFS-owned known_hosts database for strict verification
-            ssh_service.ensure_host_key_trusted(connection['host'], connection['port'])
+            ssh_service.ensure_host_key_trusted(
+                connection['host'], connection['port'], connection.get('host_key_fingerprints')
+            )
             ssh_cmd = [
                 'ssh',
                 '-i', connection['private_key_path'],
@@ -374,6 +375,7 @@ async def test_remote_connection(data: Dict = Body(...)):
             for ssh_option in ssh_service.get_host_key_options():
                 ssh_cmd.extend(['-o', ssh_option])
             ssh_cmd.extend([
+                '--',
                 f"{connection['username']}@{connection['host']}",
                 'zfs', 'list', '-H', '-o', 'name'
             ])
@@ -439,7 +441,8 @@ async def get_ssh_connections():
 
 
 @router.post("/api/check-large-blocks")
-async def check_large_blocks(data: Dict = Body(...)):
+def check_large_blocks(data: Dict = Body(...)):
+    # Plain def: may run ssh with a 30 second timeout (see above).
     """API endpoint that reports whether a dataset needs zfs send -L.
 
     Checks recordsize (filesystems) and volblocksize (volumes). Values
@@ -465,15 +468,18 @@ async def check_large_blocks(data: Dict = Body(...)):
 
         ssh_connection_id = data.get('ssh_connection_id')
         if ssh_connection_id:
-            connection = ssh_service.get_connection(ssh_connection_id)
-            if not connection:
+            try:
+                connection = ssh_service.require_active_connection(ssh_connection_id)
+            except Exception as error:
                 return JSONResponse({
                     "success": False,
-                    "error": "SSH connection not found"
+                    "error": str(error)
                 })
             # Validate the name locally before it is sent to a shell
             dataset_service.validate_dataset_name(dataset)
-            ssh_service.ensure_host_key_trusted(connection['host'], connection['port'])
+            ssh_service.ensure_host_key_trusted(
+                connection['host'], connection['port'], connection.get('host_key_fingerprints')
+            )
             ssh_cmd = [
                 'ssh',
                 '-i', connection['private_key_path'],
@@ -484,6 +490,7 @@ async def check_large_blocks(data: Dict = Body(...)):
             for ssh_option in ssh_service.get_host_key_options():
                 ssh_cmd.extend(['-o', ssh_option])
             ssh_cmd.extend([
+                '--',
                 f"{connection['username']}@{connection['host']}",
                 'zfs', 'get', '-H', '-p', '-o', 'property,value',
                 'recordsize,volblocksize', dataset
@@ -778,7 +785,7 @@ async def resume_execution(
 
 
 @router.post("/history/{execution_id}/discard", response_class=HTMLResponse)
-async def discard_execution_resume_state(
+def discard_execution_resume_state(
     request: Request,
     execution_id: int,
     user: Annotated[str, Depends(get_current_user)]
