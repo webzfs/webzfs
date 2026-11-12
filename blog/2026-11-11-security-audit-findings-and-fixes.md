@@ -135,7 +135,6 @@ This was the design from day 1, and it's fine for personal systems or home labs,
 I'm keeping it off for now because the project is still shaking out how people deploy it, and a restriction that locks the only administrator out of a new install would be worse than a loud warning. 
 
 The 1.0 release will ship with the restriction enabled by default and the installers will ask for the first administrator. Until then, please do not run WebZFS on a multi-user system, or on anything reachable beyond localhost, without turning it on. It's your system so you can do what you want... but that's on you.
-!()[images/onyourhead.gif]
 
 Setting `RESTRICT_LOGIN=yes` in `.env` limits access to the accounts in `LOGIN_ALLOWED_USERS` (default `root`) and members of the groups in `LOGIN_ALLOWED_GROUPS` (default `wheel,webzfs-admin`). The installers now create an empty `webzfs-admin` group; add your administrators to it with your system's normal tools. `wheel` is included because it is the traditional admin group on FreeBSD and NetBSD, but it does not exist on every Linux distribution, which is why there is a WebZFS-specific group as well.
 
