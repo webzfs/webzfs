@@ -27,7 +27,7 @@
 
     <!-- Error Messages -->
     {% set import_error = request.query_params.get('error') %}
-    {% set failed_pool = request.query_params.get('failed_pool') %}
+    {# failed_pool is validated by the view (views/zfs_pools.py import_pools_list). #}
     {% set force_attempted = request.query_params.get('force_attempted') == 'true' %}
     {% set readonly_attempted = request.query_params.get('readonly_attempted') == 'true' %}
     {% set import_error_lower = (import_error or '')|lower %}
@@ -82,7 +82,7 @@
                         </div>
                     </div>
                     <div class="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                        <form method="post" action="/zfs/pools/import/{{ pool.name }}" id="form-import-{{ loop.index }}" style="display: inline;">
+                        <form method="post" action="/zfs/pools/import/{{ pool.name }}" id="form-import-{{ loop.index }}" data-pool-name="{{ pool.name }}" style="display: inline;">
                             <button type="button"
                                     class="btn-success w-full inline-flex items-center justify-center gap-2"
                                     onclick="showConfirm('confirm-import-{{ loop.index }}')">
@@ -92,7 +92,7 @@
                                 Import
                             </button>
                         </form>
-                        <form method="post" action="/zfs/pools/import/{{ pool.name }}" id="form-force-import-{{ loop.index }}" style="display: inline;">
+                        <form method="post" action="/zfs/pools/import/{{ pool.name }}" id="form-force-import-{{ loop.index }}" data-pool-name="{{ pool.name }}" style="display: inline;">
                             <input type="hidden" name="force" value="true">
                             <button type="button"
                                     class="btn-warning w-full inline-flex items-center justify-center gap-2"
@@ -103,7 +103,7 @@
                                 Force Import
                             </button>
                         </form>
-                        <form method="post" action="/zfs/pools/import/{{ pool.name }}" id="form-readonly-import-{{ loop.index }}" style="display: inline;">
+                        <form method="post" action="/zfs/pools/import/{{ pool.name }}" id="form-readonly-import-{{ loop.index }}" data-pool-name="{{ pool.name }}" style="display: inline;">
                             <input type="hidden" name="readonly" value="true">
                             <button type="button"
                                     class="btn-secondary w-full inline-flex items-center justify-center gap-2"
@@ -147,7 +147,7 @@
         {% set message = 'Import pool ' ~ pool.name ~ '? This will mount all its datasets automatically.' %}
         {% set confirm_text = 'Import Pool' %}
         {% set confirm_class = 'success' %}
-        {% set confirm_action = 'submitImportForm("form-import-' ~ loop.index ~ '", "' ~ pool.name ~ '")' %}
+        {% set confirm_action = 'submitImportForm("form-import-' ~ loop.index ~ '")' %}
         {% include 'partials/confirm.jinja' %}
         
         {% set id = 'confirm-force-import-' ~ loop.index %}
@@ -155,7 +155,7 @@
         {% set message = 'Force import pool ' ~ pool.name ~ '? This may be necessary if the pool was not properly exported. Use with caution as this can cause data corruption if the pool is currently in use elsewhere.' %}
         {% set confirm_text = 'Force Import' %}
         {% set confirm_class = 'warning' %}
-        {% set confirm_action = 'submitImportForm("form-force-import-' ~ loop.index ~ '", "' ~ pool.name ~ '")' %}
+        {% set confirm_action = 'submitImportForm("form-force-import-' ~ loop.index ~ '")' %}
         {% include 'partials/confirm.jinja' %}
 
         {% set id = 'confirm-readonly-import-' ~ loop.index %}
@@ -163,7 +163,7 @@
         {% set message = 'Import pool ' ~ pool.name ~ ' in read-only mode? All of its datasets will be imported read-only and cannot be written to until the pool is exported and re-imported read-write.' %}
         {% set confirm_text = 'Import Read-only' %}
         {% set confirm_class = 'primary' %}
-        {% set confirm_action = 'submitImportForm("form-readonly-import-' ~ loop.index ~ '", "' ~ pool.name ~ '", true)' %}
+        {% set confirm_action = 'submitImportForm("form-readonly-import-' ~ loop.index ~ '", true)' %}
         {% include 'partials/confirm.jinja' %}
         {% endfor %}
     {% endif %}
@@ -175,14 +175,17 @@
     // running and the UI is not frozen, then submit the matching import form.
     // `readOnly` reflects the form that was submitted so the overlay never
     // claims datasets are mounted read-write when read-only was chosen.
-    window.submitImportForm = function(formId, poolName, readOnly) {
+    // The pool name is read from the form's data-pool-name attribute rather
+    // than passed as a JavaScript argument, so it is never placed inside
+    // inline script text.
+    window.submitImportForm = function(formId, readOnly) {
         const form = document.getElementById(formId);
         if (!form) { return; }
         const overlay = document.getElementById('import-progress-overlay');
         if (overlay) {
             const nameEl = document.getElementById('import-progress-pool-name');
             if (nameEl) {
-                nameEl.textContent = poolName;
+                nameEl.textContent = form.dataset.poolName || '';
             }
             const detailEl = document.getElementById('import-progress-detail');
             if (detailEl) {
@@ -305,7 +308,7 @@
                         proceed if you are sure no other system is using this pool.
                     </p>
                 </div>
-                <form method="post" action="/zfs/pools/import/{{ failed_pool }}" id="form-modal-force-import" style="display: none;">
+                <form method="post" action="/zfs/pools/import/{{ failed_pool }}" id="form-modal-force-import" data-pool-name="{{ failed_pool }}" style="display: none;">
                     <input type="hidden" name="force" value="true">
                 </form>
                 <div class="flex flex-col sm:flex-row gap-3">
@@ -314,7 +317,7 @@
                     </button>
                     <button type="button"
                             class="btn-warning flex-1 inline-flex items-center justify-center gap-2"
-                            onclick="closeImportErrorModal(); submitImportForm('form-modal-force-import', '{{ failed_pool }}');">
+                            onclick="closeImportErrorModal(); submitImportForm('form-modal-force-import');">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                         </svg>

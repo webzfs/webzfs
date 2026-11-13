@@ -2,6 +2,7 @@
 ZFS Snapshot Management Views
 Provides web interface for ZFS snapshot operations
 """
+from html import escape
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from typing import Annotated, Dict, List, Optional
@@ -448,7 +449,7 @@ async def snapshot_detail_data(
         )
     except Exception as e:
         return HTMLResponse(
-            content=f'<div class="card"><div class="p-6"><div class="text-danger-400 font-semibold">Error loading snapshot data</div><p class="text-text-secondary mt-2">{str(e)}</p></div></div>',
+            content=f'<div class="card"><div class="p-6"><div class="text-danger-400 font-semibold">Error loading snapshot data</div><p class="text-text-secondary mt-2">{escape(str(e))}</p></div></div>',
             status_code=200
         )
 
@@ -866,7 +867,7 @@ async def diff_snapshots_htmx(
         )
     except Exception as e:
         return HTMLResponse(
-            content=f'<div class="card"><div class="p-6"><div class="text-danger-400 font-semibold">Error computing diff</div><p class="text-text-secondary mt-2">{str(e)}</p></div></div>',
+            content=f'<div class="card"><div class="p-6"><div class="text-danger-400 font-semibold">Error computing diff</div><p class="text-text-secondary mt-2">{escape(str(e))}</p></div></div>',
             status_code=200
         )
 

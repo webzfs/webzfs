@@ -612,7 +612,9 @@ testConnectionBtn.addEventListener('click', async function() {
                 targetSelect.appendChild(option);
             });
         } else {
-            connectionStatus.innerHTML = `<span class="text-danger-400 flex items-center"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> ${data.error}</span>`;
+            connectionStatus.innerHTML = `<span class="text-danger-400 flex items-center"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> <span data-error-text></span></span>`;
+            // The error comes from SSH output; insert it as text, never as HTML.
+            connectionStatus.querySelector('[data-error-text]').textContent = data.error || 'Connection failed';
             targetSelect.innerHTML = '<option value="">-- Connection failed --</option>';
         }
     } catch (error) {

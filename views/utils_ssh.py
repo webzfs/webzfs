@@ -5,6 +5,7 @@ HTTP routes for managing SSH connections
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Annotated
+from urllib.parse import urlencode
 from auth.dependencies import get_current_user
 from config.templates import templates
 from services.ssh_connection import SSHConnectionService
@@ -19,12 +20,42 @@ from services.ssh_connection import SSHConnectionService
 router = APIRouter(dependencies=[Depends(get_current_user)])
 ssh_service = SSHConnectionService()
 
+# Every handler here is a plain def, not async def: they run ssh-keyscan,
+# ssh-keygen, ssh-copy-id and paramiko connections that can take many
+# seconds. FastAPI runs plain def handlers in its thread pool; an async def
+# handler doing this would freeze every other request on the worker.
+
+
+def delete_and_redirect(connection_id: str, remove_from_remote: str) -> RedirectResponse:
+    """Delete a connection and return to the list with the outcome shown."""
+    connection = ssh_service.get_connection(connection_id)
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        remote_error = ssh_service.delete_connection(
+            connection_id, remove_from_remote=remove_from_remote.lower() == "true"
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url="/utils/ssh?" + urlencode({"error": f"Failed to delete connection: {e}"}),
+            status_code=303,
+        )
+    if remote_error:
+        message = {"error": f"Connection '{connection['name']}' deleted locally. {remote_error}"}
+    else:
+        message = {"success": f"Connection '{connection['name']}' deleted."}
+    return RedirectResponse(url="/utils/ssh?" + urlencode(message), status_code=303)
+
 
 @router.get("/", response_class=HTMLResponse)
-async def ssh_index(request: Request):
+def ssh_index(request: Request):
     """SSH connection management page"""
     try:
-        connections = ssh_service.list_connections()
+        connections = []
+        for conn in ssh_service.list_connections():
+            conn = dict(conn)
+            conn["host_key_pinned"] = ssh_service.is_host_key_pinned(conn["host"], conn["port"])
+            connections.append(conn)
         return templates.TemplateResponse(
             request,
             name="utils/ssh/index.jinja",
@@ -42,8 +73,64 @@ async def ssh_index(request: Request):
         )
 
 
+@router.get("/{connection_id}/trust-host-key", response_class=HTMLResponse)
+def ssh_trust_host_key_form(request: Request, connection_id: str):
+    """
+    Step 1 of the show-and-confirm host key trust flow for a connection.
+
+    Scans the host key without pinning anything and shows the fingerprints
+    so the administrator can verify them out of band. Used when the pin is
+    missing (for example after restoring a backup on a new machine, if the
+    host now presents different keys) or when the host key changed.
+    """
+    connection = ssh_service.get_connection(connection_id)
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        preview = ssh_service.preview_host_key(connection["host"], connection["port"])
+    except Exception as e:
+        return RedirectResponse(
+            url="/utils/ssh?" + urlencode({"error": f"Host key scan failed: {e}"}),
+            status_code=303,
+        )
+    return templates.TemplateResponse(
+        request,
+        name="utils/ssh/trust_host_key.jinja",
+        context={"connection": connection, "preview": preview},
+    )
+
+
+@router.post("/{connection_id}/trust-host-key")
+def ssh_trust_host_key(
+    connection_id: str,
+    fingerprint: Annotated[list[str], Form()] = [],
+):
+    """
+    Step 2: pin the host key only if the host still presents exactly the
+    fingerprints shown in step 1, and record them on the connection so a
+    later lost pin is restored to these keys only.
+    """
+    connection = ssh_service.get_connection(connection_id)
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        fingerprints = ssh_service.confirm_host_key(
+            connection["host"], connection["port"], fingerprint
+        )
+        ssh_service.set_host_key_fingerprints(connection_id, fingerprints)
+    except Exception as e:
+        return RedirectResponse(
+            url="/utils/ssh?" + urlencode({"error": str(e)}), status_code=303
+        )
+    message = (
+        f"Host key pinned for {connection['host']}:{connection['port']} "
+        f"({', '.join(fingerprints)})"
+    )
+    return RedirectResponse(url="/utils/ssh?" + urlencode({"success": message}), status_code=303)
+
+
 @router.get("/add", response_class=HTMLResponse)
-async def ssh_add_form(request: Request):
+def ssh_add_form(request: Request):
     """Add SSH connection form"""
     return templates.TemplateResponse(
         request, name="utils/ssh/add.jinja"
@@ -51,7 +138,7 @@ async def ssh_add_form(request: Request):
 
 
 @router.post("/scan-host-key", response_class=HTMLResponse)
-async def ssh_scan_host_key(
+def ssh_scan_host_key(
     request: Request,
     host: Annotated[str, Form()],
     port: Annotated[int, Form()] = 22
@@ -81,7 +168,7 @@ async def ssh_scan_host_key(
 
 
 @router.post("/add")
-async def ssh_add_submit(
+def ssh_add_submit(
     request: Request,
     name: Annotated[str, Form()],
     host: Annotated[str, Form()],
@@ -121,57 +208,27 @@ async def ssh_add_submit(
 
 
 @router.post("/{connection_id}/delete")
-async def ssh_delete(
+def ssh_delete(
     request: Request,
     connection_id: str,
     remove_from_remote: Annotated[str, Form()] = "false"
 ):
     """Delete SSH connection (URL parameter version)"""
-    try:
-        connection = ssh_service.get_connection(connection_id)
-        if not connection:
-            raise HTTPException(status_code=404, detail="Connection not found")
-        
-        remove_remote = remove_from_remote.lower() == "true"
-        ssh_service.delete_connection(connection_id, remove_from_remote=remove_remote)
-        
-        # Redirect back to the main page
-        return RedirectResponse(url="/utils/ssh", status_code=303)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        # For now, redirect back - could implement flash messages later
-        return RedirectResponse(url="/utils/ssh", status_code=303)
+    return delete_and_redirect(connection_id, remove_from_remote)
 
 
 @router.post("/delete")
-async def ssh_delete_form(
+def ssh_delete_form(
     request: Request,
     connection_id: Annotated[str, Form()],
     remove_from_remote: Annotated[str, Form()] = "false"
 ):
     """Delete SSH connection (form data version)"""
-    try:
-        connection = ssh_service.get_connection(connection_id)
-        if not connection:
-            raise HTTPException(status_code=404, detail="Connection not found")
-        
-        remove_remote = remove_from_remote.lower() == "true"
-        ssh_service.delete_connection(connection_id, remove_from_remote=remove_remote)
-        
-        # Redirect back to the main page
-        return RedirectResponse(url="/utils/ssh", status_code=303)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        # For now, redirect back - could implement flash messages later
-        return RedirectResponse(url="/utils/ssh", status_code=303)
+    return delete_and_redirect(connection_id, remove_from_remote)
 
 
 @router.post("/{connection_id}/test", response_class=HTMLResponse)
-async def ssh_test(request: Request, connection_id: str):
+def ssh_test(request: Request, connection_id: str):
     """Test SSH connection"""
     try:
         result = ssh_service.test_connection(connection_id)

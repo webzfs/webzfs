@@ -2,9 +2,12 @@
 SSH Connection Management Service
 Centralized SSH connection management for Fleet Monitoring and ZFS Replication
 """
+import ipaddress
 import json
 import os
+import re
 import uuid
+from contextlib import contextmanager
 import subprocess
 import shutil
 from typing import List, Dict, Any, Optional, Tuple
@@ -13,11 +16,166 @@ from pathlib import Path
 import paramiko
 import logging
 
+from services.json_state import (
+    StateFileError,
+    file_lock,
+    read_json,
+    write_json_atomic,
+    write_text_atomic,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class HostKeyVerificationError(Exception):
     """Raised when a remote SSH host key is unknown, unpinned, or changed."""
+
+
+# SSH destination validation.
+#
+# Usernames and hosts end up as command line arguments to ssh, ssh-keyscan,
+# ssh-copy-id and syncoid (which passes them through a shell). A value that
+# starts with '-' is parsed by ssh as an option, for example
+# '-oProxyCommand=<command>', which runs a local command. Only plain
+# usernames, DNS hostnames and IP addresses are accepted.
+SSH_USERNAME_PATTERN = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}')
+SSH_HOSTNAME_LABEL_PATTERN = re.compile(r'[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?')
+
+
+def validate_ssh_username(username: str) -> str:
+    """Return username if it is a plain account name, else raise ValueError."""
+    if not isinstance(username, str) or not SSH_USERNAME_PATTERN.fullmatch(username):
+        raise ValueError(
+            "Invalid SSH username. Use letters, digits, '.', '_' or '-' "
+            "(up to 32 characters, not starting with '-' or '.')."
+        )
+    return username
+
+
+def validate_ssh_host(host: str) -> str:
+    """Return host if it is an IP address or DNS hostname, else raise ValueError."""
+    if not isinstance(host, str) or not host:
+        raise ValueError("SSH host is required.")
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    labels = host.rstrip('.').split('.')
+    if (
+        len(host) > 253
+        or not all(SSH_HOSTNAME_LABEL_PATTERN.fullmatch(label) for label in labels)
+    ):
+        raise ValueError(
+            "Invalid SSH host. Use an IP address or a hostname made of letters, "
+            "digits, '-' and '.'."
+        )
+    return host
+
+
+def validate_ssh_port(port) -> int:
+    """Return port as an int if it is 1 to 65535, else raise ValueError."""
+    try:
+        port_number = int(port)
+    except (TypeError, ValueError):
+        raise ValueError("SSH port must be a number.")
+    if not 1 <= port_number <= 65535:
+        raise ValueError("SSH port must be between 1 and 65535.")
+    return port_number
+
+
+MAX_CONNECTION_NAME_LENGTH = 100
+MAX_CONNECTION_NOTES_LENGTH = 2000
+
+
+def validate_connection_text(name: str, notes: str = "") -> None:
+    """Check the free-text name and notes of a connection.
+
+    Both are only displayed (autoescaped) and never placed on a command
+    line; this bounds their size and keeps control characters out.
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Connection name is required.")
+    if len(name) > MAX_CONNECTION_NAME_LENGTH:
+        raise ValueError(f"Connection name is limited to {MAX_CONNECTION_NAME_LENGTH} characters.")
+    if any(ord(char) < 32 for char in name):
+        raise ValueError("Connection name must not contain control characters.")
+    if len(notes or "") > MAX_CONNECTION_NOTES_LENGTH:
+        raise ValueError(f"Notes are limited to {MAX_CONNECTION_NOTES_LENGTH} characters.")
+
+
+def validate_ssh_destination(destination: str) -> str:
+    """Validate 'user@host' or a bare 'host'; return it unchanged."""
+    if not isinstance(destination, str) or not destination:
+        raise ValueError("SSH destination is required.")
+    if '@' in destination:
+        username, host = destination.rsplit('@', 1)
+        validate_ssh_username(username)
+    else:
+        host = destination
+    validate_ssh_host(host)
+    return destination
+
+
+# Remote authorized_keys maintenance.
+#
+# Both commands are run through the remote user's login shell, which may be
+# sh, bash, zsh, csh or tcsh (FreeBSD root used csh before 14.0). They are
+# therefore wrapped as /bin/sh -c '<script>': a single-quoted string means
+# the same thing in all of those shells, and the script itself is POSIX sh
+# that works with BSD and GNU tools (no sed -i, which differs between them).
+# Neither script contains a single quote.
+
+# Appends the public key read from stdin. Nothing user-supplied is placed in
+# the command. If the file does not end with a newline, one is added first so
+# the new key does not get joined onto the last existing line.
+INSTALL_KEY_SCRIPT = (
+    'umask 077; '
+    'mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh" || exit 1; '
+    'f="$HOME/.ssh/authorized_keys"; '
+    'if [ -s "$f" ] && [ -n "$(tail -c 1 "$f")" ]; then echo >> "$f" || exit 1; fi; '
+    'cat >> "$f" && chmod 600 "$f"'
+)
+
+# Removes every line containing the key material (the base64 field, so the
+# comment does not matter), then confirms it is gone. Exit status 0 only when
+# the key is no longer present. KEY_BODY is replaced with a value checked
+# against PUBLIC_KEY_BODY_PATTERN.
+REMOVE_KEY_SCRIPT = (
+    'umask 077; '
+    'f="$HOME/.ssh/authorized_keys"; '
+    '[ -f "$f" ] || exit 0; '
+    't="$f.webzfs-tmp.$$"; '
+    'grep -v -F -e "KEY_BODY" "$f" > "$t"; '
+    'if [ $? -gt 1 ]; then rm -f "$t"; exit 2; fi; '
+    'mv "$t" "$f" && chmod 600 "$f" || exit 2; '
+    'if grep -q -F -e "KEY_BODY" "$f"; then exit 3; fi; '
+    'exit 0'
+)
+
+PUBLIC_KEY_BODY_PATTERN = re.compile(r'[A-Za-z0-9+/]{16,}={0,3}')
+
+
+def remote_shell_command(script: str) -> str:
+    """Wrap a POSIX sh script so any remote login shell runs it unchanged."""
+    if "'" in script:
+        raise ValueError("Remote script must not contain a single quote.")
+    return f"/bin/sh -c '{script}'"
+
+
+def public_key_body(public_key_line: str) -> str:
+    """Return the base64 key material of an OpenSSH public key line."""
+    fields = public_key_line.split()
+    if len(fields) < 2 or not PUBLIC_KEY_BODY_PATTERN.fullmatch(fields[1]):
+        raise ValueError("Not a valid OpenSSH public key line.")
+    return fields[1]
+
+
+def remove_key_command(public_key_line: str) -> str:
+    """Remote command that removes this public key from authorized_keys."""
+    return remote_shell_command(
+        REMOVE_KEY_SCRIPT.replace("KEY_BODY", public_key_body(public_key_line))
+    )
 
 
 # Substrings that OpenSSH and paramiko use when host key verification fails.
@@ -73,9 +231,11 @@ class SSHConnectionService:
         self.config_dir = Path.home() / ".config" / "webzfs"
         self.config_dir.mkdir(parents=True, exist_ok=True)
         
-        # Set up connections file
+        # Set up connections file. Every change to it holds the lock file
+        # so Gunicorn workers cannot overwrite each other's changes.
         self.connections_file = self.config_dir / "ssh_connections.json"
-        
+        self.connections_lock_file = self.config_dir / "ssh_connections.lock"
+
         # Set up SSH keys directory.
         # Paths are resolved to absolute paths so they remain valid when
         # commands are executed under sudo where HOME may differ.
@@ -86,7 +246,8 @@ class SSHConnectionService:
         # service use this file with strict host key checking instead of
         # disabling host key verification.
         self.known_hosts_file = (Path.home() / ".ssh" / "webzfs_known_hosts").resolve()
-        
+        self.known_hosts_lock_file = self.known_hosts_file.with_name("webzfs_known_hosts.lock")
+
         # Load connections from disk
         self.connections_data = self._load_connections()
     
@@ -150,10 +311,11 @@ class SSHConnectionService:
             port: SSH port (default 22)
             notes: Optional notes about the connection
             confirmed_fingerprints: Host key fingerprints the administrator
-                reviewed and approved before submitting. When supplied, the
-                host key is pinned only if the remote key still matches, so
-                the password is never sent to a host whose key was not
-                confirmed. When omitted the host is pinned on first use.
+                reviewed and approved before submitting (required). The host
+                key is pinned only if the remote key still matches, so the
+                password is never sent to a host whose key was not
+                confirmed. They are stored on the record and used to restore
+                a lost pin (see ensure_host_key_trusted).
             
         Returns:
             connection_id: UUID of created connection
@@ -161,33 +323,39 @@ class SSHConnectionService:
         Raises:
             Exception: If key generation, distribution, or testing fails
         """
+        # Validate before any key is generated or any network call is made.
+        validate_connection_text(name, notes)
+        validate_ssh_host(host)
+        validate_ssh_username(username)
+        port = validate_ssh_port(port)
+        if not confirmed_fingerprints:
+            # No pinning on first use: the password must only go to a host
+            # whose key the administrator has seen and approved.
+            raise ValueError(
+                "Use 'Check host key' and verify the fingerprint before creating "
+                "the connection. The password is only sent to a host whose key "
+                "you approved."
+            )
+
         connection_id = str(uuid.uuid4())
-        
-        # Reload from disk to get latest connections before adding
-        self.connections_data = self._load_connections()
-        
+
         try:
             # Generate SSH key pair
             private_key_path, public_key_path = self._generate_ssh_key(
                 connection_id,
-                f"uvicorn-zfs-{name}"
+                # Fixed comment (no user-supplied text), so the key line is
+                # safe in any remote command and identifies its connection.
+                f"webzfs-{connection_id}"
             )
             
             # Pin and verify the remote host key BEFORE any password is
-            # sent. When the administrator reviewed the fingerprint on the
-            # add form, the pin is bound to that exact approved value and
-            # a key that changed in between aborts without sending the
-            # password. Without a confirmation this falls back to pinning
-            # on first use; either way a changed key on an already pinned
-            # host raises HostKeyVerificationError rather than being
-            # silently accepted.
-            if confirmed_fingerprints:
-                host_key_fingerprints = self.confirm_host_key(
-                    host, port, confirmed_fingerprints
-                )
-            else:
-                host_key_fingerprints = self._trust_host_key(host, port)
-            
+            # sent. The pin is bound to the exact fingerprints the
+            # administrator reviewed on the add form; a key that changed in
+            # between aborts without sending the password.
+            host_key_fingerprints = self.confirm_host_key(
+                host, port, confirmed_fingerprints
+            )
+
             # Copy public key to remote server (now against a pinned host)
             success = self._copy_key_to_remote(host, port, username, password, public_key_path)
             if not success:
@@ -219,14 +387,11 @@ class SSHConnectionService:
                 "notes": notes
             }
             
-            # Add to connections list
-            if "connections" not in self.connections_data:
-                self.connections_data["connections"] = []
-            self.connections_data["connections"].append(connection)
-            
-            # Save to disk
-            self._save_connections()
-            
+            # Add to the connections file under the lock. The slow network
+            # steps above run outside the lock.
+            with self._locked_connections() as data:
+                data["connections"].append(connection)
+
             logger.info(f"Created SSH connection: {name} ({connection_id})")
             return connection_id
             
@@ -269,65 +434,89 @@ class SSHConnectionService:
         Raises:
             Exception: If connection not found
         """
-        # Reload from disk to get latest connections before modifying
-        self.connections_data = self._load_connections()
-        for conn in self.connections_data.get("connections", []):
-            if conn["id"] == connection_id:
-                if name is not None:
-                    conn["name"] = name
-                if host is not None:
-                    conn["host"] = host
-                if username is not None:
-                    conn["username"] = username
-                if port is not None:
-                    conn["port"] = port
-                if notes is not None:
-                    conn["notes"] = notes
-                
-                self._save_connections()
-                logger.info(f"Updated SSH connection: {connection_id}")
-                return
-        
-        raise Exception(f"Connection {connection_id} not found")
+        if name is not None or notes is not None:
+            validate_connection_text(name if name is not None else "unchanged", notes or "")
+        if host is not None:
+            validate_ssh_host(host)
+        if username is not None:
+            validate_ssh_username(username)
+        if port is not None:
+            port = validate_ssh_port(port)
+
+        found = False
+        with self._locked_connections() as data:
+            for conn in data["connections"]:
+                if conn["id"] == connection_id:
+                    if name is not None:
+                        conn["name"] = name
+                    if host is not None:
+                        conn["host"] = host
+                    if username is not None:
+                        conn["username"] = username
+                    if port is not None:
+                        conn["port"] = port
+                    if notes is not None:
+                        conn["notes"] = notes
+                    found = True
+                    break
+
+        if not found:
+            raise Exception(f"Connection {connection_id} not found")
+        logger.info(f"Updated SSH connection: {connection_id}")
     
-    def delete_connection(self, connection_id: str, remove_from_remote: bool = False) -> None:
+    def delete_connection(self, connection_id: str, remove_from_remote: bool = False) -> Optional[str]:
         """
         Delete an SSH connection
-        
+
         Args:
             connection_id: Connection UUID
             remove_from_remote: Whether to remove key from remote server
-            
+
+        Returns:
+            None on success. When remove_from_remote was requested but the
+            key could not be confirmed removed, a message telling the user
+            which authorized_keys line to remove by hand. The local record
+            and key files are deleted either way.
+
         Raises:
             Exception: If connection not found
         """
-        # Reload from disk to get latest connections before modifying
-        self.connections_data = self._load_connections()
-        connections = self.connections_data.get("connections", [])
-        
-        for i, conn in enumerate(connections):
-            if conn["id"] == connection_id:
-                # Optionally remove key from remote server
-                if remove_from_remote:
-                    try:
-                        self._remove_key_from_remote(conn)
-                    except Exception as e:
-                        logger.warning(f"Failed to remove key from remote: {e}")
-                
-                # Delete local key files
-                try:
-                    Path(conn["private_key_path"]).unlink(missing_ok=True)
-                    Path(conn["public_key_path"]).unlink(missing_ok=True)
-                except Exception as e:
-                    logger.warning(f"Failed to delete key files: {e}")
-                
-                # Remove from list
-                del connections[i]
-                self._save_connections()
-                logger.info(f"Deleted SSH connection: {connection_id}")
-                return
-        
-        raise Exception(f"Connection {connection_id} not found")
+        conn = self.get_connection(connection_id)
+        if not conn:
+            raise Exception(f"Connection {connection_id} not found")
+
+        # Optionally remove the key from the remote server first; it needs
+        # the private key, and it is slow, so it runs outside the lock.
+        remote_error = None
+        if remove_from_remote and not self._remove_key_from_remote(conn):
+            try:
+                key_comment = Path(conn["public_key_path"]).read_text().split()[-1]
+            except Exception:
+                key_comment = conn.get("fingerprint", "this connection's key")
+            remote_error = (
+                f"The key could not be removed from {conn['username']}@{conn['host']}. "
+                f"It is still authorized there: remove the line ending in "
+                f"'{key_comment}' from ~/.ssh/authorized_keys on that host."
+            )
+
+        # Remove the record under the lock.
+        with self._locked_connections() as data:
+            data["connections"] = [
+                item for item in data["connections"] if item["id"] != connection_id
+            ]
+
+        # Delete local key files only after the record is gone, so a
+        # failure never leaves a record pointing at missing keys.
+        try:
+            Path(conn["private_key_path"]).unlink(missing_ok=True)
+            Path(conn["public_key_path"]).unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Failed to delete key files: {e}")
+
+        logger.info(f"Deleted SSH connection: {connection_id}")
+        if remote_error:
+            logger.warning(remote_error)
+        return remote_error
     
     def test_connection(self, connection_id: str) -> Dict[str, Any]:
         """
@@ -347,30 +536,31 @@ class SSHConnectionService:
                     "message": f"Connection {connection_id} not found"
                 }
             
-            # Test connection with key
-            if self._test_key_auth(
+            # Test connection with key (network, outside the lock)
+            succeeded = self._test_key_auth(
                 conn["host"],
                 conn["port"],
                 conn["username"],
                 conn["private_key_path"]
-            ):
-                # Update last tested time
-                conn["last_tested"] = datetime.now().isoformat()
-                conn["status"] = "active"
-                self._save_connections()
-                
+            )
+
+            # Record the result on the current version of the record.
+            with self._locked_connections() as data:
+                for item in data["connections"]:
+                    if item["id"] == connection_id:
+                        item["status"] = "active" if succeeded else "error"
+                        if succeeded:
+                            item["last_tested"] = datetime.now().isoformat()
+
+            if succeeded:
                 return {
                     "status": "success",
                     "message": f"Successfully connected to {conn['host']}"
                 }
-            else:
-                conn["status"] = "error"
-                self._save_connections()
-                
-                return {
-                    "status": "error",
-                    "message": f"Failed to connect to {conn['host']}"
-                }
+            return {
+                "status": "error",
+                "message": f"Failed to connect to {conn['host']}"
+            }
                 
         except Exception as e:
             logger.error(f"Connection test failed: {e}")
@@ -388,12 +578,13 @@ class SSHConnectionService:
             feature: Feature name (e.g., 'fleet', 'replication')
         """
         conn = self.get_connection(connection_id)
-        if conn and feature not in conn.get("used_by", []):
-            if "used_by" not in conn:
-                conn["used_by"] = []
-            conn["used_by"].append(feature)
-            conn["last_used"] = datetime.now().isoformat()
-            self._save_connections()
+        if not conn or feature in conn.get("used_by", []):
+            return
+        with self._locked_connections() as data:
+            for item in data["connections"]:
+                if item["id"] == connection_id and feature not in item.get("used_by", []):
+                    item.setdefault("used_by", []).append(feature)
+                    item["last_used"] = datetime.now().isoformat()
     
     # SSH Key Management Methods
     
@@ -471,29 +662,42 @@ class SSHConnectionService:
         """
         public_key = public_key_path.read_text().strip()
         
-        # Never send the password to an unverified host. Pin/verify the
-        # host key first; a changed key raises HostKeyVerificationError.
+        # Never send the password to an unverified host. The key must
+        # already be pinned (create_connection pins the confirmed key
+        # first); a key that changed since raises HostKeyVerificationError.
+        if not self.is_host_key_pinned(host, port):
+            raise HostKeyVerificationError(
+                host_key_error_message(host, port, "host key has not been confirmed")
+            )
         self._trust_host_key(host, port)
         host_key_options = self.get_host_key_options()
         
         # Method 1: Try ssh-copy-id with sshpass
         if shutil.which('sshpass') and shutil.which('ssh-copy-id'):
             try:
+                # The password is passed in the SSHPASS environment variable
+                # (sshpass -e), never on the command line. Command lines are
+                # readable by every local user (ps, /proc/<pid>/cmdline) and
+                # appear in TimeoutExpired messages that get logged; a
+                # process environment is readable only by its owner and root.
                 cmd = [
-                    'sshpass', '-p', password,
+                    'sshpass', '-e',
                     'ssh-copy-id',
                     '-i', str(public_key_path),
                     '-p', str(port),
                 ]
                 for option in host_key_options:
                     cmd.extend(['-o', option])
-                cmd.append(f'{username}@{host}')
-                
+                # '--' ends option parsing so the destination can never be
+                # read as an option.
+                cmd.extend(['--', f'{username}@{host}'])
+
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
+                    env={**os.environ, 'SSHPASS': password},
                 )
                 
                 if result.returncode == 0:
@@ -524,15 +728,13 @@ class SSHConnectionService:
                 allow_agent=False
             )
             
-            # Create .ssh directory if it doesn't exist
+            # Append the public key to authorized_keys. The key is sent on
+            # stdin, so no part of it is placed in a shell command.
             stdin, stdout, stderr = client.exec_command(
-                'mkdir -p ~/.ssh && chmod 700 ~/.ssh'
+                remote_shell_command(INSTALL_KEY_SCRIPT)
             )
-            stdout.channel.recv_exit_status()
-            
-            # Append public key to authorized_keys
-            cmd = f"echo '{public_key}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-            stdin, stdout, stderr = client.exec_command(cmd)
+            stdin.write(public_key + "\n")
+            stdin.channel.shutdown_write()
             exit_status = stdout.channel.recv_exit_status()
             
             client.close()
@@ -568,38 +770,49 @@ class SSHConnectionService:
             connection: Connection configuration
             
         Returns:
-            True if successful, False otherwise
+            True only when the remote command confirmed the key is no longer
+            in authorized_keys, False otherwise.
         """
+        client = paramiko.SSHClient()
         try:
             public_key = Path(connection["public_key_path"]).read_text().strip()
-            
-            # Create SSH client with key authentication
-            client = paramiko.SSHClient()
+            command = remove_key_command(public_key)
+
             self.configure_paramiko_client(client)
-            
+
             # Connect using the key we're about to remove (it still works until we remove it)
             key = paramiko.Ed25519Key.from_private_key_file(connection["private_key_path"])
-            
+
             client.connect(
                 hostname=connection["host"],
                 port=connection["port"],
                 username=connection["username"],
                 pkey=key,
-                timeout=10
+                timeout=10,
+                look_for_keys=False,
+                allow_agent=False
             )
-            
-            # Remove the specific key from authorized_keys
-            cmd = f"sed -i '\\|{public_key}|d' ~/.ssh/authorized_keys"
-            stdin, stdout, stderr = client.exec_command(cmd)
-            stdout.channel.recv_exit_status()
-            
-            client.close()
+
+            stdin, stdout, stderr = client.exec_command(command)
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0:
+                logger.error(
+                    f"Removing key from {connection['host']} failed "
+                    f"(exit {exit_status}): {stderr.read().decode(errors='replace').strip()}"
+                )
+                return False
+
             logger.info(f"Removed SSH key from {connection['host']}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to remove key from remote: {e}")
             return False
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
     
     def _test_key_auth(self, host: str, port: int, username: str, private_key_path: Path) -> bool:
         """
@@ -680,9 +893,10 @@ class SSHConnectionService:
     
     def _scan_host_keys(self, host: str, port: int) -> List[str]:
         """Return the remote host key lines reported by ssh-keyscan."""
-        host = normalize_known_hosts_host(host)
+        host = validate_ssh_host(normalize_known_hosts_host(host))
+        port = validate_ssh_port(port)
         try:
-            scan_cmd = ['ssh-keyscan', '-p', str(port), '-T', '10', host]
+            scan_cmd = ['ssh-keyscan', '-p', str(port), '-T', '10', '--', host]
             result = subprocess.run(
                 scan_cmd,
                 capture_output=True,
@@ -865,7 +1079,10 @@ class SSHConnectionService:
                 )
             )
 
-        return self._trust_host_key(host, port, replace=True)
+        # Pin exactly the key lines that were just compared. Scanning again
+        # here would pin whatever answered the second scan (which may differ
+        # from what was approved) or nothing at all if that scan failed.
+        return self._trust_host_key(host, port, replace=True, key_lines=key_lines)
 
     @staticmethod
     def _key_bodies(key_lines: List[str]) -> set:
@@ -881,16 +1098,19 @@ class SSHConnectionService:
         }
 
     def _trust_host_key(
-        self, host: str, port: int, replace: bool = False
+        self, host: str, port: int, replace: bool = False,
+        key_lines: Optional[List[str]] = None
     ) -> List[str]:
         """
-        Retrieve the remote host keys with ssh-keyscan and store them in
-        the WebZFS-owned known_hosts file. Returns the fingerprints of the
-        stored keys.
+        Store host keys in the WebZFS-owned known_hosts file and return
+        their fingerprints.
 
-        Unknown hosts are pinned on first use (the explicit connection
-        creation / trust action is the trust decision). A host whose
-        pinned key no longer matches the remote key raises
+        Callers: confirm_host_key (passes the exact key_lines the
+        administrator approved), _copy_key_to_remote (re-verifies an already
+        pinned host) and trust_host_key. Routine operations never call this
+        for an unpinned host; see ensure_host_key_trusted.
+
+        A host whose pinned key no longer matches raises
         HostKeyVerificationError unless ``replace`` is True, which is the
         deliberate "Trust host key" re-pin path.
 
@@ -898,9 +1118,12 @@ class SSHConnectionService:
             host: Remote hostname or IP
             port: SSH port
             replace: Re-pin an already trusted host whose key changed
+            key_lines: Already scanned known_hosts lines to store. When
+                omitted the host is scanned here.
 
         Returns:
-            List of host key fingerprint strings (may be empty on failure)
+            List of host key fingerprint strings (empty if nothing was
+            scanned, in which case nothing is stored)
 
         Raises:
             HostKeyVerificationError: If the pinned key differs from the
@@ -912,40 +1135,45 @@ class SSHConnectionService:
         # behind in the file instead of being replaced.
         host = normalize_known_hosts_host(host)
 
-        key_lines = self._scan_host_keys(host, port)
+        if key_lines is None:
+            key_lines = self._scan_host_keys(host, port)
 
         if not key_lines:
             logger.warning(f"ssh-keyscan returned no host keys for {host}:{port}")
             return []
 
-        pinned_lines = self._pinned_key_lines(host, port)
-        if pinned_lines and not replace:
-            if self._key_bodies(pinned_lines) != self._key_bodies(key_lines):
-                old_fps = self._fingerprints_for_lines(pinned_lines)
-                new_fps = self._fingerprints_for_lines(key_lines)
-                raise HostKeyVerificationError(
-                    host_key_error_message(
-                        host,
-                        port,
-                        "pinned host key(s) "
-                        f"{', '.join(old_fps) or 'unknown'} do not match remote "
-                        f"host key(s) {', '.join(new_fps) or 'unknown'}"
+        # Compare with the current pin and rewrite the file as one locked
+        # step, so two workers pinning different hosts cannot drop each
+        # other's entries. The network scan above runs outside the lock.
+        with file_lock(self.known_hosts_lock_file):
+            pinned_lines = self._pinned_key_lines(host, port)
+            if pinned_lines and not replace:
+                if self._key_bodies(pinned_lines) != self._key_bodies(key_lines):
+                    old_fps = self._fingerprints_for_lines(pinned_lines)
+                    new_fps = self._fingerprints_for_lines(key_lines)
+                    raise HostKeyVerificationError(
+                        host_key_error_message(
+                            host,
+                            port,
+                            "pinned host key(s) "
+                            f"{', '.join(old_fps) or 'unknown'} do not match remote "
+                            f"host key(s) {', '.join(new_fps) or 'unknown'}"
+                        )
                     )
+
+            host_token = f"[{host}]:{port}" if port != 22 else host
+            existing_lines = [
+                line for line in (
+                    self.known_hosts_file.read_text().splitlines()
+                    if self.known_hosts_file.exists() else []
                 )
+                if line.strip() and not line.split()[0] == host_token
+            ]
 
-        host_token = f"[{host}]:{port}" if port != 22 else host
-        existing_lines = [
-            line for line in (
-                self.known_hosts_file.read_text().splitlines()
-                if self.known_hosts_file.exists() else []
+            write_text_atomic(
+                self.known_hosts_file,
+                '\n'.join(existing_lines + key_lines) + '\n'
             )
-            if line.strip() and not line.split()[0] == host_token
-        ]
-
-        self.known_hosts_file.write_text(
-            '\n'.join(existing_lines + key_lines) + '\n'
-        )
-        os.chmod(self.known_hosts_file, 0o600)
 
         fingerprints = self._fingerprints_for_lines(key_lines)
         logger.info(f"Stored {len(key_lines)} host key(s) for {host}:{port}")
@@ -964,22 +1192,61 @@ class SSHConnectionService:
         """
         return self._trust_host_key(host, port, replace=True)
 
-    def ensure_host_key_trusted(self, host: str, port: int) -> bool:
+    def ensure_host_key_trusted(
+        self, host: str, port: int, expected_fingerprints: Optional[List[str]] = None
+    ) -> bool:
         """
-        Ensure the known_hosts file contains an entry for the given host.
-        If missing, attempt to capture it via ssh-keyscan. An existing
-        entry is never replaced or re-verified here; a host whose key has
-        changed is detected when the connection is made (paramiko with
-        RejectPolicy, or ssh with StrictHostKeyChecking=yes), which raises
-        HostKeyVerificationError. Re-pinning is the explicit
-        trust_host_key() action.
+        Make sure a host key is pinned for host:port before it is used.
+
+        Never trusts a key nobody approved:
+
+        - Already pinned: nothing to do. A changed key is detected when the
+          connection is made (paramiko RejectPolicy, ssh
+          StrictHostKeyChecking=yes) and raises HostKeyVerificationError.
+        - Not pinned, but the caller passes the fingerprints the
+          administrator confirmed when the connection was created (stored on
+          the connection record): the host is re-scanned and re-pinned only
+          if it presents exactly those keys. This restores a lost
+          known_hosts file, for example after restoring a backup on a new
+          machine, without trusting a different key.
+        - Not pinned and nothing to compare with: HostKeyVerificationError.
+          The administrator uses the explicit Trust host key page.
 
         Returns:
-            True if a host key entry exists after this call.
+            True when a host key is pinned after this call.
+
+        Raises:
+            HostKeyVerificationError: The host is not pinned and could not be
+                re-pinned to the previously confirmed keys.
         """
         if self.is_host_key_pinned(host, port):
             return True
-        return len(self._trust_host_key(host, port)) > 0
+        if expected_fingerprints:
+            self.confirm_host_key(host, port, expected_fingerprints)
+            if not self.is_host_key_pinned(host, port):
+                raise HostKeyVerificationError(
+                    host_key_error_message(
+                        normalize_known_hosts_host(host), port,
+                        "the host key could not be pinned"
+                    )
+                )
+            logger.info(
+                f"Re-pinned {host}:{port} to its previously confirmed host key(s)"
+            )
+            return True
+        raise HostKeyVerificationError(
+            host_key_error_message(
+                normalize_known_hosts_host(host), port,
+                "no host key is pinned for this host"
+            )
+        )
+
+    def set_host_key_fingerprints(self, connection_id: str, fingerprints: List[str]) -> None:
+        """Store the host key fingerprints confirmed for a connection."""
+        with self._locked_connections() as data:
+            for item in data["connections"]:
+                if item["id"] == connection_id:
+                    item["host_key_fingerprints"] = list(fingerprints)
 
     def configure_paramiko_client(self, client: paramiko.SSHClient) -> paramiko.SSHClient:
         """
@@ -1060,7 +1327,13 @@ class SSHConnectionService:
             raise Exception(
                 f"Private key file for connection '{conn['name']}' is missing"
             )
-        
+
+        # The stored destination is used on ssh and syncoid command lines;
+        # re-check it so an edited connections file cannot inject options.
+        validate_ssh_host(conn["host"])
+        validate_ssh_username(conn["username"])
+        validate_ssh_port(conn["port"])
+
         return conn
     
     def build_syncoid_profile(self, connection_id: str) -> Dict[str, Any]:
@@ -1084,7 +1357,9 @@ class SSHConnectionService:
         
         # Make sure the host key is trusted before handing the profile to
         # syncoid, which runs with BatchMode and cannot prompt.
-        self.ensure_host_key_trusted(conn["host"], conn["port"])
+        self.ensure_host_key_trusted(
+            conn["host"], conn["port"], conn.get("host_key_fingerprints")
+        )
         
         return {
             "connection_id": conn["id"],
@@ -1100,40 +1375,39 @@ class SSHConnectionService:
     
     # Data Persistence Methods
     
-    def _load_connections(self) -> Dict[str, Any]:
-        """Load connections from JSON file - always reads fresh from disk"""
-        if not self.connections_file.exists():
-            return {"connections": []}
-        
+    def _load_connections(self, strict: bool = False) -> Dict[str, Any]:
+        """Load connections from disk (always fresh).
+
+        A damaged file reads as empty for display (strict=False), but raises
+        when strict=True, which every writer uses, so a damaged file is never
+        replaced by an empty list.
+        """
         try:
-            # Read the file fresh from disk (bypass any caching)
-            with open(self.connections_file, 'r') as f:
-                # Force reading fresh content
-                f.seek(0)
-                content = f.read()
-                if not content.strip():
-                    return {"connections": []}
-                return json.loads(content)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Failed to load connections: {e}")
+            data = read_json(self.connections_file, {"connections": []})
+        except StateFileError as error:
+            if strict:
+                raise Exception(f"SSH connections file is damaged; not changed: {error}")
+            logger.error(f"Failed to load connections: {error}")
             return {"connections": []}
-    
-    def _save_connections(self) -> None:
-        """Save connections to JSON file - ensures data is synced to disk"""
-        try:
-            with open(self.connections_file, 'w') as f:
-                json.dump(self.connections_data, f, indent=2)
-                # Ensure data is flushed to OS buffers
-                f.flush()
-                # Force sync to disk (important for multi-worker environments)
-                os.fsync(f.fileno())
-            
-            # Set secure permissions
-            os.chmod(self.connections_file, 0o600)
-            
-        except IOError as e:
-            logger.error(f"Failed to save connections: {e}")
-            raise Exception(f"Failed to save connections: {str(e)}")
+        if not isinstance(data, dict) or not isinstance(data.get("connections"), list):
+            if strict:
+                raise Exception("SSH connections file has an unexpected format; not changed.")
+            return {"connections": []}
+        return data
+
+    @contextmanager
+    def _locked_connections(self):
+        """Read, change and save ssh_connections.json as one locked step.
+
+        Yields the current file contents (a dict with a "connections" list).
+        Changes made to it are written atomically when the block ends without
+        an exception.
+        """
+        with file_lock(self.connections_lock_file):
+            data = self._load_connections(strict=True)
+            yield data
+            write_json_atomic(self.connections_file, data)
+            self.connections_data = data
     
     # Integration Methods for Other Features
     
@@ -1150,13 +1424,13 @@ class SSHConnectionService:
         Example:
             ['ssh', '-i', '/path/to/key', '-p', '22', 'user@host']
         """
-        conn = self.get_connection(connection_id)
-        if not conn:
-            raise Exception(f"Connection {connection_id} not found")
-        
+        conn = self.require_active_connection(connection_id)
+
         # Ensure the host key is trusted so strict checking succeeds
-        self.ensure_host_key_trusted(conn["host"], conn["port"])
-        
+        self.ensure_host_key_trusted(
+            conn["host"], conn["port"], conn.get("host_key_fingerprints")
+        )
+
         args = [
             'ssh',
             '-i', conn["private_key_path"],
@@ -1164,7 +1438,8 @@ class SSHConnectionService:
         ]
         for option in self.get_host_key_options():
             args.extend(['-o', option])
-        args.append(f'{conn["username"]}@{conn["host"]}')
+        # '--' ends option parsing; callers append the remote command after it.
+        args.extend(['--', f'{conn["username"]}@{conn["host"]}'])
         return args
     
     def get_ssh_client(self, connection_id: str) -> paramiko.SSHClient:

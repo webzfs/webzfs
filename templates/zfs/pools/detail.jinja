@@ -167,7 +167,7 @@
         body.innerHTML = '<div class="flex flex-col items-center justify-center py-12 gap-4">'
             + '<div class="w-12 h-12 rounded-full border-4 border-danger-900 border-t-danger-500 animate-spin"></div>'
             + '<span class="text-text-secondary">Scanning the system for open files and locks...</span></div>';
-        fetch('/zfs/pools/{{ pool.name }}/export/investigate')
+        fetch('/zfs/pools/' + encodeURIComponent({{ pool.name|tojson }}) + '/export/investigate')
             .then(function(response) { return response.text(); })
             .then(function(html) { body.innerHTML = html; })
             .catch(function(err) {
@@ -844,7 +844,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-clear-errors' %}
 {% set title = 'Clear Pool Errors' %}
-{% set message = 'Clear the device error counters for pool <strong>' ~ pool.name ~ '</strong>?<br><br>Clearing only resets the counters; it does not repair any damage. Errors will return if the underlying cause remains. Run a scrub afterwards to verify the pool.' %}
+{% set message %}Clear the device error counters for pool <strong>{{ pool.name }}</strong>?<br><br>Clearing only resets the counters; it does not repair any damage. Errors will return if the underlying cause remains. Run a scrub afterwards to verify the pool.{% endset %}
 {% set confirm_text = 'Clear Errors' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-clear-errors").submit()' %}
@@ -852,7 +852,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-scrub-pause' %}
 {% set title = 'Pause Pool Scrub' %}
-{% set message = 'Pause the running scrub on <strong>' ~ pool.name ~ '</strong>? Progress is checkpointed to disk, and the scrub stays paused across a reboot or export/import until it is resumed. A scheduled scrub of this pool that fires while it is paused resumes it rather than starting over.' %}
+{% set message %}Pause the running scrub on <strong>{{ pool.name }}</strong>? Progress is checkpointed to disk, and the scrub stays paused across a reboot or export/import until it is resumed. A scheduled scrub of this pool that fires while it is paused resumes it rather than starting over.{% endset %}
 {% set confirm_text = 'Pause Scrub' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-pause").submit()' %}
@@ -860,7 +860,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-scrub-resume' %}
 {% set title = 'Resume Pool Scrub' %}
-{% set message = 'Resume the paused scrub on <strong>' ~ pool.name ~ '</strong>? It continues from the last checkpointed transaction group.' %}
+{% set message %}Resume the paused scrub on <strong>{{ pool.name }}</strong>? It continues from the last checkpointed transaction group.{% endset %}
 {% set confirm_text = 'Resume Scrub' %}
 {% set confirm_class = 'info' %}
 {% set confirm_action = 'document.getElementById("form-scrub-resume").submit()' %}
@@ -868,7 +868,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-scrub-error' %}
 {% set title = 'Start Error Scrub' %}
-{% set message = 'Run an error scrub (<span class="font-mono">zpool scrub -e</span>) on <strong>' ~ pool.name ~ '</strong>? Only files with known data errors reported by <span class="font-mono">zpool status -v</span> are scrubbed. It requires the head_errlog pool feature and at least one completed scrub since that feature was enabled, and it cannot start while another scrub or resilver is running or paused. Progress appears on the Scan line; Pause Scrub and Stop Scrub also act on an error scrub.' %}
+{% set message %}Run an error scrub (<span class="font-mono">zpool scrub -e</span>) on <strong>{{ pool.name }}</strong>? Only files with known data errors reported by <span class="font-mono">zpool status -v</span> are scrubbed. It requires the head_errlog pool feature and at least one completed scrub since that feature was enabled, and it cannot start while another scrub or resilver is running or paused. Progress appears on the Scan line; Pause Scrub and Stop Scrub also act on an error scrub.{% endset %}
 {% set confirm_text = 'Start Error Scrub' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-error").submit()' %}
@@ -876,7 +876,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-scrub-time-range' %}
 {% set title = 'Start Time-Range Scrub' %}
-{% set message = 'Scrub only blocks created inside the entered date range on <strong>' ~ pool.name ~ '</strong>? Dates are interpreted in the machine local time zone as <span class="font-mono">YYYY-MM-DD HH:MM</span>.' %}
+{% set message %}Scrub only blocks created inside the entered date range on <strong>{{ pool.name }}</strong>? Dates are interpreted in the machine local time zone as <span class="font-mono">YYYY-MM-DD HH:MM</span>.{% endset %}
 {% set confirm_text = 'Start Time-Range Scrub' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-scrub-time-range").submit()' %}
@@ -884,14 +884,14 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-set-mountpoint' %}
 {% set title = 'Change Pool Mountpoint' %}
-{% set message = 'Change the mountpoint of pool <strong>' ~ pool.name ~ '</strong>?<br><br>' ~
-    'All child datasets that <em>inherit</em> their mountpoint will be remounted under the new path. ' ~
-    'For example, <span class="font-mono">' ~ pool.name ~ '/data</span> currently mounted at ' ~
-    '<span class="font-mono">' ~ (mountpoint_value if mountpoint_value else ('/' ~ pool.name)) ~ '/data</span> ' ~
-    'will move to the new path.<br><br>' ~
-    '<strong class="text-warning-400">Warning:</strong> This may break shares (NFS, SMB), services, ' ~
-    'cron jobs, scripts, or other workloads that depend on the existing mountpoints. ' ~
-    'Child datasets with their own explicitly-set mountpoint will retain their current mountpoint.' %}
+{% set message %}Change the mountpoint of pool <strong>{{ pool.name }}</strong>?<br><br>
+    All child datasets that <em>inherit</em> their mountpoint will be remounted under the new path.
+    For example, <span class="font-mono">{{ pool.name }}/data</span> currently mounted at
+    <span class="font-mono">{{ mountpoint_value if mountpoint_value else ('/' ~ pool.name) }}/data</span>
+    will move to the new path.<br><br>
+    <strong class="text-warning-400">Warning:</strong> This may break shares (NFS, SMB), services,
+    cron jobs, scripts, or other workloads that depend on the existing mountpoints.
+    Child datasets with their own explicitly-set mountpoint will retain their current mountpoint.{% endset %}
 {% set confirm_text = 'Apply Mountpoint' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-set-mountpoint").submit()' %}
@@ -900,7 +900,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 {% if checkpoint_supported %}
 {% set id = 'confirm-checkpoint-create' %}
 {% set title = 'Create Pool Checkpoint' %}
-{% set message = 'Create a checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br>A checkpoint captures the entire pool state. Only one checkpoint can exist at a time.' %}
+{% set message %}Create a checkpoint for pool <strong>{{ pool.name }}</strong>?<br><br>A checkpoint captures the entire pool state. Only one checkpoint can exist at a time.{% endset %}
 {% set confirm_text = 'Create Checkpoint' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-checkpoint-create").submit()' %}
@@ -908,7 +908,7 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
 
 {% set id = 'confirm-checkpoint-discard' %}
 {% set title = 'Discard Pool Checkpoint' %}
-{% set message = 'Discard the checkpoint for pool <strong>' ~ pool.name ~ '</strong>?<br><br><strong class="text-danger-400">Warning:</strong> This cannot be undone.' %}
+{% set message %}Discard the checkpoint for pool <strong>{{ pool.name }}</strong>?<br><br><strong class="text-danger-400">Warning:</strong> This cannot be undone.{% endset %}
 {% set confirm_text = 'Discard Checkpoint' %}
 {% set confirm_class = 'danger' %}
 {% set confirm_action = 'document.getElementById("form-checkpoint-discard").submit()' %}
@@ -1030,6 +1030,16 @@ window.showConfirm = function(dialogId) {
         return (v >= 100 ? v.toFixed(0) : v.toFixed(2)) + " " + units[i];
     }
 
+    // Escape text before it is placed into an HTML string.
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
     function shortName(fullName) {
         var idx = fullName.lastIndexOf("/");
         return idx === -1 ? fullName : fullName.substring(idx + 1);
@@ -1086,7 +1096,7 @@ window.showConfirm = function(dialogId) {
         if (viewStack.length === 0) return;
         var parts = viewStack.map(function(name, idx) {
             var label = idx === 0 ? name : shortName(name);
-            return '<button type="button" class="hover:text-text-primary underline-offset-2 hover:underline" data-stack-index="' + idx + '">' + label + '</button>';
+            return '<button type="button" class="hover:text-text-primary underline-offset-2 hover:underline" data-stack-index="' + idx + '">' + escapeHtml(label) + '</button>';
         });
         breadcrumb.innerHTML = "Viewing: " + parts.join(' <span class="text-text-tertiary">/</span> ');
         var buttons = breadcrumb.querySelectorAll("button[data-stack-index]");
@@ -1101,7 +1111,7 @@ window.showConfirm = function(dialogId) {
 
     function showTooltip(node, event) {
         var lines = [];
-        lines.push('<div class="font-semibold text-text-primary mb-1">' + node.name + "</div>");
+        lines.push('<div class="font-semibold text-text-primary mb-1">' + escapeHtml(node.name) + "</div>");
         lines.push('<div class="grid grid-cols-2 gap-x-3 gap-y-0.5">');
         lines.push('<span class="text-text-tertiary">Used:</span><span>' + formatBytes(node.used) + "</span>");
         lines.push('<span class="text-text-tertiary">Referenced:</span><span>' + formatBytes(node.referenced) + "</span>");
@@ -1111,7 +1121,7 @@ window.showConfirm = function(dialogId) {
         lines.push('<span class="text-text-tertiary">By dataset:</span><span>' + formatBytes(node.used_by_dataset) + "</span>");
         lines.push('<span class="text-text-tertiary">By snapshots:</span><span>' + formatBytes(node.used_by_snapshots) + "</span>");
         lines.push('<span class="text-text-tertiary">By children:</span><span>' + formatBytes(node.used_by_children) + "</span>");
-        lines.push('<span class="text-text-tertiary">Compress:</span><span>' + (node.compressratio || "-") + "</span>");
+        lines.push('<span class="text-text-tertiary">Compress:</span><span>' + escapeHtml(node.compressratio || "-") + "</span>");
         lines.push('<span class="text-text-tertiary">Snapshots:</span><span>' + (node.snapshot_count || 0) + "</span>");
         lines.push("</div>");
         tooltip.innerHTML = lines.join("");

@@ -12,7 +12,7 @@
 {% if message and "Theme changed" in message %}
 <script>
 (function() {
-    var expectedTheme = "{{ active_theme }}";
+    var expectedTheme = {{ active_theme|tojson }};
     var expectedPath = "/static/css/themes/webzfs-theme-" + expectedTheme + ".css";
     var links = document.querySelectorAll('link[rel="stylesheet"]');
     for (var i = 0; i < links.length; i++) {

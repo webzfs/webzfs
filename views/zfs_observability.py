@@ -2,6 +2,7 @@
 ZFS Observability Views
 Provides web interface for viewing ZFS logs, events, and history
 """
+from html import escape
 from fastapi import APIRouter, Request, Query, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, StreamingResponse
 from typing import Annotated, Optional
@@ -155,10 +156,10 @@ def recent_history_partial(request: Request):
             
             for entry in recent_history:
                 html += f'''<tr class="hover:bg-bg-elevated-2 transition-colors">
-                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{entry.get('timestamp', '')}</td>
-                    <td class="px-4 py-3 text-sm text-text-primary font-mono">{entry.get('command', '')}</td>
-                    <td class="px-4 py-3 text-sm text-text-secondary">{entry.get('user') or '-'}</td>
-                    <td class="px-4 py-3 text-sm text-text-secondary">{entry.get('host') or '-'}</td>
+                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{escape(str(entry.get('timestamp', '')))}</td>
+                    <td class="px-4 py-3 text-sm text-text-primary font-mono">{escape(str(entry.get('command', '')))}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{escape(str(entry.get('user') or '-'))}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{escape(str(entry.get('host') or '-'))}</td>
                 </tr>'''
             
             html += '</tbody></table>'
@@ -173,7 +174,7 @@ def recent_history_partial(request: Request):
                 </div>
             ''')
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading history: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading history: {escape(str(e))}</p>')
 
 
 @router.get("/recent-events-partial", response_class=HTMLResponse)
@@ -203,10 +204,10 @@ async def recent_events_partial(request: Request):
             
             for event in recent_events:
                 html += f'''<tr class="hover:bg-bg-elevated-2 transition-colors">
-                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{event.get('time', '')}</td>
-                    <td class="px-4 py-3 text-sm"><span class="badge badge-info">{event.get('class', '')}</span></td>
-                    <td class="px-4 py-3 text-sm text-text-primary">{event.get('pool') or '-'}</td>
-                    <td class="px-4 py-3 text-sm text-text-secondary">{event.get('details') or '-'}</td>
+                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{escape(str(event.get('time', '')))}</td>
+                    <td class="px-4 py-3 text-sm"><span class="badge badge-info">{escape(str(event.get('class', '')))}</span></td>
+                    <td class="px-4 py-3 text-sm text-text-primary">{escape(str(event.get('pool') or '-'))}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{escape(str(event.get('details') or '-'))}</td>
                 </tr>'''
             
             html += '</tbody></table>'
@@ -221,7 +222,7 @@ async def recent_events_partial(request: Request):
                 </div>
             ''')
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading events: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading events: {escape(str(e))}</p>')
 
 
 @router.get("/pool-history", response_class=HTMLResponse)

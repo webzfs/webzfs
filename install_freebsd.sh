@@ -515,6 +515,13 @@ if [ ! -f ".env" ]; then
     echo "Generated new SECRET_KEY"
 fi
 
+# Create the empty webzfs-admin group used by the optional login restriction
+# (RESTRICT_LOGIN in .env). No accounts are added to it.
+if ! pw groupshow webzfs-admin >/dev/null 2>&1; then
+    pw groupadd webzfs-admin
+    printf "${GREEN}✓${NC} Created empty 'webzfs-admin' group (see RESTRICT_LOGIN in .env)\n"
+fi
+
 echo
 printf "${GREEN}✓${NC} Python dependencies installed\n"
 printf "${GREEN}✓${NC} Node.js dependencies installed\n"

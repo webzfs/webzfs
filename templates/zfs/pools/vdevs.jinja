@@ -629,7 +629,7 @@
 
 {% set id = 'confirm-add-vdev' %}
 {% set title = 'Add Auxiliary VDev' %}
-{% set message = 'Add an auxiliary vdev to pool <strong>' ~ pool_name ~ '</strong>?<br><br><strong class="text-warning-400">Warning:</strong> Special Metadata, Dedup, and BRT vdevs cannot be removed once added. Spares, Cache, and Log vdevs can be removed later.' %}
+{% set message %}Add an auxiliary vdev to pool <strong>{{ pool_name }}</strong>?<br><br><strong class="text-warning-400">Warning:</strong> Special Metadata, Dedup, and BRT vdevs cannot be removed once added. Spares, Cache, and Log vdevs can be removed later.{% endset %}
 {% set confirm_text = 'Add Auxiliary VDev' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-add-vdev").submit()' %}
@@ -637,7 +637,7 @@
 
 {% set id = 'confirm-remove-aux' %}
 {% set title = 'Remove Auxiliary VDev' %}
-{% set message = 'Remove this auxiliary vdev from pool <strong>' ~ pool_name ~ '</strong>?<br><br>For cache and log vdevs, removal is immediate. For spares, the spare device will be released.' %}
+{% set message %}Remove this auxiliary vdev from pool <strong>{{ pool_name }}</strong>?<br><br>For cache and log vdevs, removal is immediate. For spares, the spare device will be released.{% endset %}
 {% set confirm_text = 'Remove VDev' %}
 {% set confirm_class = 'danger' %}
 {% set confirm_action = 'document.getElementById("form-remove-aux").submit()' %}
@@ -645,7 +645,7 @@
 
 {% set id = 'confirm-attach' %}
 {% set title = 'Attach Device' %}
-{% set message = 'Attach a new device to create or extend a mirror in pool <strong>' ~ pool_name ~ '</strong>?<br><br>This will trigger a resilver operation.' %}
+{% set message %}Attach a new device to create or extend a mirror in pool <strong>{{ pool_name }}</strong>?<br><br>This will trigger a resilver operation.{% endset %}
 {% set confirm_text = 'Attach Device' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-attach").submit()' %}
@@ -653,7 +653,7 @@
 
 {% set id = 'confirm-detach' %}
 {% set title = 'Detach Device from Mirror' %}
-{% set message = 'Detach this device from its mirror in pool <strong>' ~ pool_name ~ '</strong>?<br><br>The mirror will continue operating with the remaining devices.' %}
+{% set message %}Detach this device from its mirror in pool <strong>{{ pool_name }}</strong>?<br><br>The mirror will continue operating with the remaining devices.{% endset %}
 {% set confirm_text = 'Detach' %}
 {% set confirm_class = 'danger' %}
 {% set confirm_action = 'document.getElementById("form-detach").submit()' %}
@@ -661,7 +661,7 @@
 
 {% set id = 'confirm-replace' %}
 {% set title = 'Replace Device' %}
-{% set message = 'Replace a device in pool <strong>' ~ pool_name ~ '</strong>?<br><br>The pool will resilver data onto the new device. This may take a significant amount of time.' %}
+{% set message %}Replace a device in pool <strong>{{ pool_name }}</strong>?<br><br>The pool will resilver data onto the new device. This may take a significant amount of time.{% endset %}
 {% set confirm_text = 'Replace Device' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-replace").submit()' %}
@@ -669,7 +669,7 @@
 
 {% set id = 'confirm-online' %}
 {% set title = 'Bring Device Online' %}
-{% set message = 'Bring this device online in pool <strong>' ~ pool_name ~ '</strong>?' %}
+{% set message %}Bring this device online in pool <strong>{{ pool_name }}</strong>?{% endset %}
 {% set confirm_text = 'Bring Online' %}
 {% set confirm_class = 'primary' %}
 {% set confirm_action = 'document.getElementById("form-online").submit()' %}
@@ -677,7 +677,7 @@
 
 {% set id = 'confirm-offline' %}
 {% set title = 'Take Device Offline' %}
-{% set message = 'Take this device offline in pool <strong>' ~ pool_name ~ '</strong>?<br><br>The pool must have sufficient redundancy to operate without this device.' %}
+{% set message %}Take this device offline in pool <strong>{{ pool_name }}</strong>?<br><br>The pool must have sufficient redundancy to operate without this device.{% endset %}
 {% set confirm_text = 'Take Offline' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-offline").submit()' %}
@@ -685,7 +685,7 @@
 
 {% set id = 'confirm-clear' %}
 {% set title = 'Clear Device Errors' %}
-{% set message = 'Clear the error counters for this device in pool <strong>' ~ pool_name ~ '</strong>?<br><br>Clearing only resets the counters; it does not repair any damage. Errors will return if the underlying cause remains. Run a scrub afterwards to verify the pool.' %}
+{% set message %}Clear the error counters for this device in pool <strong>{{ pool_name }}</strong>?<br><br>Clearing only resets the counters; it does not repair any damage. Errors will return if the underlying cause remains. Run a scrub afterwards to verify the pool.{% endset %}
 {% set confirm_text = 'Clear Errors' %}
 {% set confirm_class = 'warning' %}
 {% set confirm_action = 'document.getElementById("form-clear").submit()' %}
@@ -882,17 +882,17 @@ function renderTopology(topology) {
 
                 // Action buttons
                 if (dev.state === 'ONLINE') {
-                    html += '<button type="button" class="text-text-tertiary hover:text-warning-400 transition-colors p-0.5" title="Take Offline" onclick="prepareDeviceAction(\'offline\', \'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg></button>';
+                    html += '<button type="button" class="text-text-tertiary hover:text-warning-400 transition-colors p-0.5" title="Take Offline" onclick="prepareDeviceAction(\'offline\', ' + jsArg(dev.name) + ')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg></button>';
                 } else if (dev.state === 'OFFLINE') {
-                    html += '<button type="button" class="text-text-tertiary hover:text-success-400 transition-colors p-0.5" title="Bring Online" onclick="prepareDeviceAction(\'online\', \'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>';
+                    html += '<button type="button" class="text-text-tertiary hover:text-success-400 transition-colors p-0.5" title="Bring Online" onclick="prepareDeviceAction(\'online\', ' + jsArg(dev.name) + ')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>';
                 }
-                html += '<button type="button" class="text-text-tertiary hover:text-info-400 transition-colors p-0.5" title="Replace Device" onclick="prepareReplace(\'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>';
+                html += '<button type="button" class="text-text-tertiary hover:text-info-400 transition-colors p-0.5" title="Replace Device" onclick="prepareReplace(' + jsArg(dev.name) + ')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>';
                 var clearClass = (dev.read_errors > 0 || dev.write_errors > 0 || dev.cksum_errors > 0)
                     ? 'text-warning-400 hover:text-warning-300'
                     : 'text-text-tertiary hover:text-warning-400';
-                html += '<button type="button" class="' + clearClass + ' transition-colors p-0.5" title="Clear Errors" onclick="prepareDeviceAction(\'clear\', \'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>';
+                html += '<button type="button" class="' + clearClass + ' transition-colors p-0.5" title="Clear Errors" onclick="prepareDeviceAction(\'clear\', ' + jsArg(dev.name) + ')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>';
                 if (vdev.type === 'mirror') {
-                    html += '<button type="button" class="text-text-tertiary hover:text-danger-400 transition-colors p-0.5" title="Detach from Mirror" onclick="prepareDetach(\'' + escAttr(dev.name) + '\')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg></button>';
+                    html += '<button type="button" class="text-text-tertiary hover:text-danger-400 transition-colors p-0.5" title="Detach from Mirror" onclick="prepareDetach(' + jsArg(dev.name) + ')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg></button>';
                 }
                 html += '</div></td></tr>';
             });
@@ -902,7 +902,7 @@ function renderTopology(topology) {
             if (sec.key === 'data' && (vdev.type === 'single' || vdev.type === 'mirror')) {
                 var firstDev = (vdev.devices && vdev.devices.length > 0) ? vdev.devices[0].name : '';
                 var attachLabel = vdev.type === 'single' ? 'Attach disk to create mirror' : 'Attach disk to extend mirror';
-                html += '<div class="mt-2 pt-2 border-t border-border-subtle/30"><button type="button" class="text-xs text-primary-400 hover:text-primary-300 transition-colors inline-flex items-center gap-1" onclick="prepareAttach(\'' + escAttr(firstDev) + '\')"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>' + attachLabel + '</button></div>';
+                html += '<div class="mt-2 pt-2 border-t border-border-subtle/30"><button type="button" class="text-xs text-primary-400 hover:text-primary-300 transition-colors inline-flex items-center gap-1" onclick="prepareAttach(' + jsArg(firstDev) + ')"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>' + attachLabel + '</button></div>';
             }
 
             html += '</div>';
@@ -1763,6 +1763,14 @@ function escHtml(str) {
 function escAttr(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// A JavaScript string argument for an inline handler such as
+// onclick="f(' + jsArg(x) + ')". escAttr alone is not enough there: the
+// browser decodes &#39; back to a quote before the handler runs. JSON
+// encoding makes a valid string literal, and escAttr then keeps it inside
+// the attribute.
+function jsArg(str) {
+    return escAttr(JSON.stringify(String(str == null ? '' : str)));
 }
 
 // ==================== Warning Acknowledgment ====================

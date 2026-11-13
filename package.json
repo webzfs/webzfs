@@ -4,7 +4,8 @@
   "description": "ZFS Web Management Interface",
   "main": "index.js",
   "scripts": {
-    "build:css": "postcss src/styles.css -o static/css/styles.css && npm run build:terminal-assets",
+    "build:css": "postcss src/styles.css -o static/css/styles.css && npm run build:terminal-assets && npm run build:web-assets",
+    "build:web-assets": "mkdir -p static/vendor/htmx static/vendor/alpinejs static/vendor/chartjs && cp node_modules/htmx.org/dist/htmx.min.js static/vendor/htmx/htmx.min.js && cp node_modules/alpinejs/dist/cdn.min.js static/vendor/alpinejs/alpine.min.js && cp node_modules/chart.js/dist/chart.umd.js static/vendor/chartjs/chart.umd.js",
     "build:terminal-assets": "mkdir -p static/vendor/xterm && cp node_modules/@xterm/xterm/lib/xterm.js static/vendor/xterm/xterm.js && cp node_modules/@xterm/xterm/css/xterm.css static/vendor/xterm/xterm.css && cp node_modules/@xterm/addon-fit/lib/addon-fit.js static/vendor/xterm/addon-fit.js",
     "watch:css": "onchange --verbose 'src/**/*.css' 'templates/**/*.jinja' -- postcss src/styles.css -o static/css/styles.css",
     "test:cockpit": "node --test integrations/cockpit/test/*.test.js"

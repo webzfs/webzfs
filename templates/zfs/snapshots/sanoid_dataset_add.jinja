@@ -206,13 +206,28 @@
 </div>
 
 <script>
+// Escape text before it is placed into an HTML string. Template values come
+// from sanoid.conf and may contain any characters.
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function showTemplateInfo() {
     const select = document.getElementById('template');
     const infoDiv = document.getElementById('template_info');
     const option = select.options[select.selectedIndex];
     
     if (option.value) {
-        const config = JSON.parse(option.getAttribute('data-config'));
+        const rawConfig = JSON.parse(option.getAttribute('data-config'));
+        const config = {};
+        Object.keys(rawConfig).forEach(function(key) {
+            config[key] = escapeHtml(rawConfig[key]);
+        });
         let html = '<div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><strong class="text-primary-400">Retention Policy:</strong></div><div class="grid grid-cols-2 gap-2 text-xs">';
         
         if (config.frequently && config.frequently !== '0') html += `<div class="text-text-secondary">Frequently: <span class="text-info-400 font-semibold">${config.frequently}</span></div>`;

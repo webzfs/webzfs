@@ -256,7 +256,20 @@ async def create_dataset_form(
 ):
     """Display dataset creation form"""
     pool_datasets = []
-    
+
+    # pool and parent come from the query string; ignore anything that is not
+    # a valid ZFS name so it never reaches the template.
+    try:
+        if pool:
+            dataset_service.validate_dataset_name(pool)
+    except ValueError:
+        pool = None
+    try:
+        if parent:
+            dataset_service.validate_dataset_name(parent)
+    except ValueError:
+        parent = None
+
     # If a pool is specified, get all datasets for that pool (for parent dropdown)
     if pool:
         try:

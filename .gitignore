@@ -304,6 +304,11 @@ static/css/*
 static/js/*
 !static/js/space_visualizer.js
 !static/js/terminal/
+# Vendored third-party browser libraries (htmx, Alpine.js, Chart.js, xterm)
+# are committed so an install needs no download for them. The build:css
+# chain still refreshes them from node_modules; bump the version in
+# package.json, run npm install and npm run build:css, then commit the copies.
+!static/vendor/
 
 # WebZFS runtime data
 .ssh/

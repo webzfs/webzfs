@@ -7,6 +7,7 @@ Observability page. The standalone Performance index and Pool Capacity
 pages were removed during consolidation; capacity information is shown
 on the Pools detail page.
 """
+from html import escape
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from typing import Optional
@@ -162,21 +163,21 @@ async def pool_iostat_partial(
                 device_prefix = '<span class="text-text-secondary mr-1">└─ </span>'
 
             html += '<tr class="hover:bg-bg-elevated-2">'
-            html += f'<td class="px-4 py-3 text-sm font-medium text-text-primary" {device_style}>{device_prefix}{stat["device"]}</td>'
-            html += f'<td class="px-4 py-3 text-sm text-text-secondary">{stat["alloc"]}</td>'
-            html += f'<td class="px-4 py-3 text-sm text-text-secondary">{stat["free"]}</td>'
-            html += f'<td class="px-4 py-3 text-sm text-text-primary">{stat["read_ops"]}</td>'
-            html += f'<td class="px-4 py-3 text-sm text-text-primary">{stat["write_ops"]}</td>'
-            html += f'<td class="px-4 py-3 text-sm text-primary-400">{stat["read_bw"]}</td>'
-            html += f'<td class="px-4 py-3 text-sm text-success-400">{stat["write_bw"]}</td>'
+            html += f'<td class="px-4 py-3 text-sm font-medium text-text-primary" {device_style}>{device_prefix}{escape(str(stat["device"]))}</td>'
+            html += f'<td class="px-4 py-3 text-sm text-text-secondary">{escape(str(stat["alloc"]))}</td>'
+            html += f'<td class="px-4 py-3 text-sm text-text-secondary">{escape(str(stat["free"]))}</td>'
+            html += f'<td class="px-4 py-3 text-sm text-text-primary">{escape(str(stat["read_ops"]))}</td>'
+            html += f'<td class="px-4 py-3 text-sm text-text-primary">{escape(str(stat["write_ops"]))}</td>'
+            html += f'<td class="px-4 py-3 text-sm text-primary-400">{escape(str(stat["read_bw"]))}</td>'
+            html += f'<td class="px-4 py-3 text-sm text-success-400">{escape(str(stat["write_bw"]))}</td>'
 
             if latency:
-                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{stat.get("read_latency", "-")}</td>'
-                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{stat.get("write_latency", "-")}</td>'
+                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{escape(str(stat.get("read_latency", "-")))}</td>'
+                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{escape(str(stat.get("write_latency", "-")))}</td>'
 
             if queue:
-                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{stat.get("sync_queue", "-")}</td>'
-                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{stat.get("async_queue", "-")}</td>'
+                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{escape(str(stat.get("sync_queue", "-")))}</td>'
+                html += f'<td class="px-4 py-3 text-sm text-text-secondary">{escape(str(stat.get("async_queue", "-")))}</td>'
 
             html += '</tr>'
 
@@ -184,7 +185,7 @@ async def pool_iostat_partial(
         return HTMLResponse(content=html)
 
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-center text-danger-400 py-4">Error loading data: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-center text-danger-400 py-4">Error loading data: {escape(str(e))}</p>')
 
 
 @router.get("/pool-iostat-raw", response_class=HTMLResponse)
@@ -207,10 +208,10 @@ async def pool_iostat_raw(
         )
 
         raw_output = iostat_data.get('raw_output', 'No data')
-        return HTMLResponse(content=raw_output)
+        return HTMLResponse(content=escape(str(raw_output)))
 
     except Exception as e:
-        return HTMLResponse(content=f'Error: {str(e)}')
+        return HTMLResponse(content=f'Error: {escape(str(e))}')
 
 
 @router.get("/arc-realtime", response_class=HTMLResponse)
@@ -270,12 +271,12 @@ async def arc_stats_raw():
             error_msg = raw_arcstats['error']
             if raw_arcstats.get('system') == 'FreeBSD':
                 error_msg += '\n\nNote: Install zfs-stats with: pkg install zfs-stats'
-            return HTMLResponse(content=f'<span class="text-warning-400">{error_msg}</span>')
+            return HTMLResponse(content=f'<span class="text-warning-400">{escape(str(error_msg))}</span>')
 
-        return HTMLResponse(content=raw_arcstats.get('output', 'No data available'))
+        return HTMLResponse(content=escape(str(raw_arcstats.get('output', 'No data available'))))
 
     except Exception as e:
-        return HTMLResponse(content=f'<span class="text-danger-400">Error: {str(e)}</span>')
+        return HTMLResponse(content=f'<span class="text-danger-400">Error: {escape(str(e))}</span>')
 
 
 @router.get("/processes", response_class=HTMLResponse)
@@ -345,7 +346,7 @@ async def processes_summary():
         '''
         return HTMLResponse(content=html)
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-danger-400">Error: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-danger-400">Error: {escape(str(e))}</p>')
 
 
 @router.get("/processes/download")
@@ -431,20 +432,20 @@ async def processes_table():
                 badge_class = 'bg-bg-elevated-2 text-text-primary'
 
             html += f'''<tr class="hover:bg-bg-elevated-2">
-                <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap">{proc['pid']}</td>
-                <td class="px-4 py-3 text-sm font-medium text-text-primary">{proc['name']}</td>
-                <td class="px-4 py-3 text-sm text-text-secondary">{proc['username']}</td>
+                <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap">{escape(str(proc['pid']))}</td>
+                <td class="px-4 py-3 text-sm font-medium text-text-primary">{escape(str(proc['name']))}</td>
+                <td class="px-4 py-3 text-sm text-text-secondary">{escape(str(proc['username']))}</td>
                 <td class="px-4 py-3 text-sm text-text-primary">{proc['cpu_percent']:.1f}%</td>
                 <td class="px-4 py-3 text-sm text-text-primary">{proc['memory_percent']:.1f}%</td>
                 <td class="px-4 py-3 text-sm">
-                    <span class="px-2 py-1 text-xs rounded-full {badge_class}">{status}</span>
+                    <span class="px-2 py-1 text-xs rounded-full {badge_class}">{escape(str(status))}</span>
                 </td>
             </tr>'''
 
         html += '</tbody></table>'
         return HTMLResponse(content=html)
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-center text-danger-400 py-4">Error loading processes: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-center text-danger-400 py-4">Error loading processes: {escape(str(e))}</p>')
 
 
 @router.get("/dataset-space", response_class=HTMLResponse)
@@ -617,19 +618,19 @@ async def vdev_stats_table(pool: str):
             write_bw_class = 'text-success-400 font-bold' if (write_bw != '0' and write_bw != '-') else 'text-text-secondary'
 
             html += f'''<tr class="{row_class} hover:bg-bg-elevated-2">
-                <td class="px-4 py-2 {name_class}">{name}</td>
-                <td class="px-4 py-2 text-right text-text-secondary">{vdev.get('alloc', '-')}</td>
-                <td class="px-4 py-2 text-right text-text-secondary">{vdev.get('free', '-')}</td>
-                <td class="px-4 py-2 text-right {read_ops_class}">{read_ops}</td>
-                <td class="px-4 py-2 text-right {write_ops_class}">{write_ops}</td>
-                <td class="px-4 py-2 text-right {read_bw_class}">{read_bw}</td>
-                <td class="px-4 py-2 text-right {write_bw_class}">{write_bw}</td>
+                <td class="px-4 py-2 {name_class}">{escape(str(name))}</td>
+                <td class="px-4 py-2 text-right text-text-secondary">{escape(str(vdev.get('alloc', '-')))}</td>
+                <td class="px-4 py-2 text-right text-text-secondary">{escape(str(vdev.get('free', '-')))}</td>
+                <td class="px-4 py-2 text-right {read_ops_class}">{escape(str(read_ops))}</td>
+                <td class="px-4 py-2 text-right {write_ops_class}">{escape(str(write_ops))}</td>
+                <td class="px-4 py-2 text-right {read_bw_class}">{escape(str(read_bw))}</td>
+                <td class="px-4 py-2 text-right {write_bw_class}">{escape(str(write_bw))}</td>
             </tr>'''
 
         html += '</tbody></table>'
         return HTMLResponse(content=html)
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-center text-danger-400 py-4">Error loading VDEV stats: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-center text-danger-400 py-4">Error loading VDEV stats: {escape(str(e))}</p>')
 
 
 @router.get("/system-iostat", response_class=HTMLResponse)
@@ -733,18 +734,18 @@ async def system_iostat_output(
                 count=1,
             )
         else:
-            return HTMLResponse(content=f'<span class="text-warning-400">System I/O stats not available on {system}</span>')
+            return HTMLResponse(content=f'<span class="text-warning-400">System I/O stats not available on {escape(str(system))}</span>')
 
         if iostat_data.get('error'):
             error_msg = iostat_data['error']
             if system == 'Linux':
                 error_msg += '\n\nNote: Install the sysstat package to enable iostat:\n  sudo apt install sysstat  (Debian/Ubuntu)\n  sudo pacman -S sysstat    (Arch Linux)'
-            return HTMLResponse(content=f'<span class="text-warning-400">{error_msg}</span>')
+            return HTMLResponse(content=f'<span class="text-warning-400">{escape(str(error_msg))}</span>')
 
-        return HTMLResponse(content=iostat_data.get('output', 'No data available'))
+        return HTMLResponse(content=escape(str(iostat_data.get('output', 'No data available'))))
 
     except Exception as e:
-        return HTMLResponse(content=f'<span class="text-danger-400">Error: {str(e)}</span>')
+        return HTMLResponse(content=f'<span class="text-danger-400">Error: {escape(str(e))}</span>')
 
 
 @router.get("/dataset-stats", response_class=HTMLResponse)

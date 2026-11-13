@@ -1072,6 +1072,15 @@ async def create_pool(
 @router.get("/{pool_name}/export/confirm", response_class=HTMLResponse)
 async def export_pool_confirm(request: Request, pool_name: str):
     """Display export confirmation page"""
+    # pool_name comes straight from the URL path; refuse anything that is not
+    # a valid ZFS pool name before it reaches the template.
+    try:
+        pool_service.validate_pool_name(pool_name)
+    except ValueError:
+        return RedirectResponse(
+            url="/zfs/pools?" + urlencode({"error": "Invalid pool name."}),
+            status_code=303
+        )
     return templates.TemplateResponse(
         request,
         name="zfs/pools/export_confirm.jinja",
@@ -1137,9 +1146,23 @@ async def investigate_pool_usage(request: Request, pool_name: str):
         )
 
 
+def valid_pool_name_or_none(value):
+    """Return value if it is a valid pool name, otherwise None."""
+    if not value:
+        return None
+    try:
+        pool_service.validate_pool_name(value)
+    except ValueError:
+        return None
+    return value
+
+
 @router.get("/import/list", response_class=HTMLResponse)
 async def import_pools_list(request: Request):
     """Display list of importable pools"""
+    # failed_pool arrives in the query string after a failed import; it is
+    # used in a form action and page text, so only a valid pool name is kept.
+    failed_pool = valid_pool_name_or_none(request.query_params.get("failed_pool"))
     try:
         importable_pools = pool_service.get_importable_pools()
         return templates.TemplateResponse(
@@ -1147,6 +1170,7 @@ async def import_pools_list(request: Request):
             name="zfs/pools/import.jinja",
             context={
                 "importable_pools": importable_pools,
+                "failed_pool": failed_pool,
                 "page_title": "Import ZFS Pools"
             }
         )
@@ -1156,6 +1180,7 @@ async def import_pools_list(request: Request):
             name="zfs/pools/import.jinja",
             context={
                 "importable_pools": [],
+                "failed_pool": failed_pool,
                 "error": str(e),
                 "page_title": "Import ZFS Pools"
             }
