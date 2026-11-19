@@ -58,7 +58,7 @@ Ok... now back to your regularly scheduled README.md...
 
 - **Linux**: Any distribution with OpenZFS support
 - **FreeBSD**: FreeBSD 13.x and later with OpenZFS
-- **NetBSD**: NetBSD 10.1 and 11.0 (amd64) with OpenZFS
+- **NetBSD**: NetBSD 10.1, 10.2, 11.0, and 11.1 (amd64) with OpenZFS
 
 The application automatically detects the operating system and adapts its behavior accordingly.
 

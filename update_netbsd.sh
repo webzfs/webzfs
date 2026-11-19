@@ -73,13 +73,21 @@ detect_netbsd_platform() {
             WHEEL_SUBDIR="netbsd10-1"
             WHEEL_PLATFORM="netbsd_10_1_amd64"
             ;;
+        10.2:amd64)
+            WHEEL_SUBDIR="netbsd10-2"
+            WHEEL_PLATFORM="netbsd_10_2_amd64"
+            ;;
         11.0:amd64)
             WHEEL_SUBDIR="netbsd11-0"
             WHEEL_PLATFORM="netbsd_11_0_amd64"
             ;;
+        11.1:amd64)
+            WHEEL_SUBDIR="netbsd11-1"
+            WHEEL_PLATFORM="netbsd_11_1_amd64"
+            ;;
         *)
             printf "${RED}Error: No pre-compiled wheel set exists for NetBSD ${NETBSD_RELEASE} on ${NETBSD_ARCH}${NC}\n"
-            echo "Supported platforms: NetBSD 10.1 amd64, NetBSD 11.0 amd64"
+            echo "Supported platforms: NetBSD 10.1, 10.2, 11.0, and 11.1 (amd64)"
             exit 1
             ;;
     esac
