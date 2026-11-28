@@ -526,10 +526,16 @@
 
             var count = Number(summary.count) || 0;
             row.setAttribute('data-snapshots', String(count));
-            countElement.replaceChildren();
+
+            // The count links to the Snapshots page filtered to this dataset.
+            var datasetName = row.getAttribute('data-dataset-name') || '';
+            var countLink = document.createElement('a');
+            countLink.href = '/zfs/snapshots?dataset=' + encodeURIComponent(datasetName);
+            countLink.textContent = String(count);
+            countLink.className = 'hover:underline';
+            countElement.replaceChildren(countLink);
 
             if (count === 0) {
-                countElement.textContent = '0';
                 countElement.title = 'No direct snapshots';
                 countElement.className = 'dataset-snapshot-count text-text-tertiary';
                 return;
@@ -541,9 +547,8 @@
                 var latestDate = formatSnapshotDate(summary.latest_creation);
                 if (latestDate) title += ' (' + latestDate + ')';
             }
-            countElement.textContent = String(count);
             countElement.title = title;
-            countElement.className = 'dataset-snapshot-count text-text-primary font-medium';
+            countElement.className = 'dataset-snapshot-count text-primary-400 hover:text-primary-300 font-medium transition-colors';
         }
 
         function loadSnapshotSummaries() {
