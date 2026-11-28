@@ -1,0 +1,66 @@
+{% extends "layout.jinja" %}
+
+{% set active_page = "utils" %}
+
+{% block content %}
+<nav class="text-sm mb-6 text-text-tertiary">
+    <a href="/utils" class="hover:text-primary-400">Utilities</a>
+    <span class="mx-2">/</span>
+    <a href="/utils/logs" class="hover:text-primary-400">Audit Logs</a>
+    <span class="mx-2">/</span>
+    <span class="text-text-primary">Shell Session History</span>
+</nav>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <h1 class="text-3xl font-bold text-text-primary mb-0">Shell Session History</h1>
+    <div class="flex flex-wrap gap-2">
+        <a href="/utils/logs/shell-history-public-key" class="btn-secondary" hx-boost="false">Verification Key</a>
+        <a href="/utils/logs/shell-history-ledger" class="btn-secondary" hx-boost="false">Signed Ledger</a>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Recording</div><div class="text-lg font-semibold {% if summary.recording_enabled %}text-warning-400{% else %}text-text-secondary{% endif %}">{% if summary.recording_enabled %}Enabled{% else %}Disabled{% endif %}</div></div>
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Sessions</div><div class="text-lg font-semibold text-text-primary">{{ summary.session_count }}</div></div>
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Archive Size</div><div class="text-lg font-semibold text-text-primary">{{ summary.total_size_display }}</div></div>
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Integrity</div><div class="text-lg font-semibold {% if summary.all_valid and summary.ledger.valid %}text-success-400{% else %}text-danger-400{% endif %}">{% if summary.all_valid and summary.ledger.valid %}Verified{% else %}Attention required{% endif %}</div></div>
+</div>
+
+<div class="alert-warning mb-6">
+    <p class="text-sm text-warning-400 mb-0"><strong>Sensitive audit data:</strong> recordings can contain passwords, private keys, tokens, and hidden terminal input. Archives are owner-readable and tamper-evident, but a sufficiently privileged local user can still replace or remove them.</p>
+</div>
+
+<form method="get" action="/utils/logs/shell-history" class="card mb-6">
+    <div class="card-body grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div><label for="history-user" class="form-label">WebZFS User</label><input id="history-user" name="user" value="{{ filters.user }}" class="form-input w-full" placeholder="Filter by username"></div>
+        <div><label for="history-status" class="form-label">Status</label><select id="history-status" name="status" class="form-select w-full"><option value="">All states</option><option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>Completed</option><option value="incomplete" {% if filters.status == 'incomplete' %}selected{% endif %}>Incomplete</option></select></div>
+        <div><label for="history-integrity" class="form-label">Integrity</label><select id="history-integrity" name="integrity" class="form-select w-full"><option value="">All results</option><option value="valid" {% if filters.integrity == 'valid' %}selected{% endif %}>Verified</option><option value="invalid" {% if filters.integrity == 'invalid' %}selected{% endif %}>Invalid</option></select></div>
+        <div class="flex gap-2"><button type="submit" class="btn-primary flex-1">Apply Filters</button><a href="/utils/logs/shell-history" class="btn-secondary">Reset</a></div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="overflow-x-auto">
+        <table class="min-w-full">
+            <thead><tr class="bg-bg-elevated-2"><th class="px-4 py-3 text-left text-xs uppercase text-text-secondary">Started</th><th class="px-4 py-3 text-left text-xs uppercase text-text-secondary">WebZFS User</th><th class="px-4 py-3 text-left text-xs uppercase text-text-secondary">Effective User</th><th class="px-4 py-3 text-left text-xs uppercase text-text-secondary">Status</th><th class="px-4 py-3 text-left text-xs uppercase text-text-secondary">Integrity</th><th class="px-4 py-3 text-right text-xs uppercase text-text-secondary">Action</th></tr></thead>
+            <tbody class="divide-y divide-border-subtle">
+                {% for recording in recordings %}
+                <tr class="hover:bg-bg-elevated-2">
+                    <td class="px-4 py-3 text-sm font-mono text-text-secondary whitespace-nowrap">{{ recording.started_at }}</td>
+                    <td class="px-4 py-3 text-sm text-primary-400">{{ recording.authenticated_user }}</td>
+                    <td class="px-4 py-3 text-sm text-warning-400">{{ recording.effective_user }}</td>
+                    <td class="px-4 py-3">
+                        <span class="{% if recording.effective_status == 'completed' %}badge-success{% else %}badge-warning{% endif %}">{{ recording.effective_status }}</span>
+                        {% if recording.legacy_status_corrected %}<div class="text-xs text-text-tertiary mt-1">Legacy signed status: {{ recording.signed_status }}</div>{% endif %}
+                    </td>
+                    <td class="px-4 py-3"><span class="{% if recording.verification.valid %}badge-success{% else %}badge-danger{% endif %}">{% if recording.verification.valid %}Verified{% else %}Invalid{% endif %}</span></td>
+                    <td class="px-4 py-3 text-right"><a class="btn-primary btn-sm" hx-boost="false" href="/utils/logs/shell-history/{{ recording.session_id }}">Review</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="px-6 py-12 text-center text-text-secondary">No recorded terminal sessions are available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
