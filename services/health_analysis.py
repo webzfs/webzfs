@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import threading
 
+from services import smartd
 from services.utils import (
     is_freebsd,
     is_linux,
@@ -19,6 +20,7 @@ from services.utils import (
     run_privileged_command,
     run_zfs_command,
 )
+from services.scan_status import errors_section_has_errors, parse_scan
 
 
 class HealthAnalysisService:
@@ -1276,9 +1278,14 @@ class HealthAnalysisService:
         # Check if smartd is running
         status["smartd_running"] = self._is_smartd_running()
 
-        # Check if smartd.conf exists
-        smartd_conf = Path("/etc/smartd.conf")
-        status["smartd_config_exists"] = smartd_conf.exists()
+        # Read smartd.conf once from the path smartd uses on this platform
+        status["smartd_config_path"] = str(smartd.get_smartd_config_path())
+        try:
+            config_content = smartd.read_smartd_config()
+        except Exception:
+            config_content = None
+        status["smartd_config_exists"] = config_content is not None
+        parsed_config = smartd.parse_smartd_config(config_content or "")
 
         # For each disk, check if tests have run recently
         thirty_days_ago_hours = None
@@ -1315,16 +1322,12 @@ class HealthAnalysisService:
                     if (current_hours - test_hours) <= 720:
                         disk_status["last_test_within_30_days"] = True
 
-                # Check if this disk has tests configured in smartd.conf
-                if status["smartd_config_exists"]:
-                    try:
-                        with open(smartd_conf, "r") as f:
-                            config_content = f.read()
-                        disk_name = disk_path.split("/")[-1]
-                        if disk_path in config_content or disk_name in config_content or "DEVICESCAN" in config_content:
-                            disk_status["tests_configured"] = True
-                    except Exception:
-                        pass
+                # Check if smartd.conf has an entry for this disk. Only
+                # real entries count: DEVICESCAN, or a line whose device
+                # (and -d selector for controller disks) is this disk.
+                disk_type = type_args[1] if len(type_args) == 2 else None
+                if smartd.smartd_config_covers_disk(parsed_config, disk_path, disk_type):
+                    disk_status["tests_configured"] = True
 
             except Exception:
                 pass
@@ -1335,32 +1338,7 @@ class HealthAnalysisService:
 
     def _is_smartd_running(self) -> bool:
         """Check if smartd daemon is running."""
-        if is_freebsd():
-            try:
-                result = subprocess.run(
-                    ["service", "smartd", "status"],
-                    capture_output=True, text=True, check=False,
-                )
-                return result.returncode == 0
-            except Exception:
-                return False
-
-        # Linux
-        try:
-            result = subprocess.run(
-                ["systemctl", "is-active", "smartd"],
-                capture_output=True, text=True, check=False,
-            )
-            return result.stdout.strip() == "active"
-        except FileNotFoundError:
-            try:
-                result = subprocess.run(
-                    ["service", "smartd", "status"],
-                    capture_output=True, text=True, check=False,
-                )
-                return result.returncode == 0
-            except Exception:
-                return False
+        return bool(smartd.get_smartd_status().get("running"))
 
     # ------------------------------------------------------------------
     # Scrub status verification
@@ -1446,46 +1424,29 @@ class HealthAnalysisService:
         return False
 
     def _parse_scrub_info(self, status_output: str) -> Dict[str, Any]:
-        """Parse scrub information from zpool status output."""
+        """Parse scrub information from zpool status output.
+
+        Delegates the ``scan:`` block to :mod:`services.scan_status` so paused
+        scrubs are reported the same way as in the pool and dashboard views.
+        """
+        scan = parse_scan(status_output)
         info: Dict[str, Any] = {
             "last_scrub": None,
             "scrub_within_30_days": False,
             "scrub_in_progress": False,
+            "scrub_paused": False,
+            "scrub_state": scan.state,
+            "scan_errors": scan.has_errors or errors_section_has_errors(status_output),
         }
 
-        for line in status_output.split("\n"):
-            stripped = line.strip()
+        if scan.last_scrub is not None:
+            info["last_scrub"] = scan.last_scrub.isoformat()
+            days_ago = (datetime.now() - scan.last_scrub).days
+            info["scrub_within_30_days"] = days_ago <= 30
 
-            if "scrub in progress" in stripped.lower():
-                info["scrub_in_progress"] = True
-
-            if "scan:" in stripped.lower() or "scrub" in stripped.lower():
-                # Look for "scrub repaired ... on Sun Mar  2 ..."
-                # or "scrub repaired ... on 2025-03-02T10:00:00"
-                date_match = re.search(
-                    r"on\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d{4})", stripped
-                )
-                if date_match:
-                    try:
-                        date_str = date_match.group(1)
-                        scrub_date = datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y")
-                        info["last_scrub"] = scrub_date.isoformat()
-                        days_ago = (datetime.now() - scrub_date).days
-                        info["scrub_within_30_days"] = days_ago <= 30
-                    except ValueError:
-                        pass
-
-                # ISO format dates
-                iso_match = re.search(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})", stripped)
-                if iso_match and info["last_scrub"] is None:
-                    try:
-                        date_str = iso_match.group(1).replace("T", " ")
-                        scrub_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                        info["last_scrub"] = scrub_date.isoformat()
-                        days_ago = (datetime.now() - scrub_date).days
-                        info["scrub_within_30_days"] = days_ago <= 30
-                    except ValueError:
-                        pass
+        # Scrub-only flags: a running resilver is not reported as a scrub.
+        info["scrub_in_progress"] = scan.scrub_in_progress
+        info["scrub_paused"] = scan.scrub_paused
 
         return info
 

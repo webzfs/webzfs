@@ -5,6 +5,7 @@ Uses deferred HTMX loading so the page shell renders instantly.
 Analysis runs in a background thread with HTMX polling for progress.
 """
 import threading
+from html import escape
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from typing import Annotated, Optional
@@ -52,7 +53,7 @@ async def health_content_partial(request: Request):
         return HTMLResponse(
             content=f"""
             <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded" role="alert">
-                <strong>Error:</strong> {e}
+                <strong>Error:</strong> {escape(str(e))}
             </div>
             """,
             status_code=200,

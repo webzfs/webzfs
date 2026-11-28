@@ -2,6 +2,7 @@
 SMART Disk Monitoring Views
 Provides web interface for SMART disk monitoring and management
 """
+from html import escape
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, StreamingResponse, Response
 from typing import Annotated, Optional
@@ -49,7 +50,7 @@ async def smart_content_partial(request: Request):
         return HTMLResponse(
             content=f"""
             <div class="bg-danger-900/30 border-2 border-danger-500/50 text-danger-400 px-4 py-3 rounded" role="alert">
-                <strong>Error:</strong> {e}
+                <strong>Error:</strong> {escape(str(e))}
             </div>
             """,
             status_code=200,
@@ -506,14 +507,15 @@ async def smartd_index(request: Request):
     """Display smartd daemon status and configuration"""
     try:
         status = smart_service.get_smartd_status()
-        config = smart_service.get_smartd_config()
-        
+        config_info = smart_service.get_smartd_config_info()
+
         return templates.TemplateResponse(
             request,
             name="utils/smart/smartd.jinja",
             context={
                 "status": status,
-                "config": config,
+                "config": config_info["content"],
+                "config_info": config_info,
                 "page_title": "Smartd Configuration"
             }
         )
@@ -524,6 +526,7 @@ async def smartd_index(request: Request):
             context={
                 "status": {"error": str(e)},
                 "config": "",
+                "config_info": None,
                 "error": str(e),
                 "page_title": "Smartd Configuration"
             }

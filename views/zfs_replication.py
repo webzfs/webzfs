@@ -24,6 +24,10 @@ from services.schedule_utils import (
     preview_next_runs,
 )
 from services.utils import get_openzfs_man_page_section_url, get_os_type, get_zfs_version
+from core.receive_options import (
+    normalize_receive_options,
+    validate_receive_options,
+)
 from auth.dependencies import get_current_user
 
 
@@ -151,6 +155,7 @@ async def send_receive_form(request: Request):
 @router.post("/send-receive/execute", response_class=HTMLResponse)
 async def send_receive_execute(
     request: Request,
+    user: Annotated[str, Depends(get_current_user)],
     source: Annotated[str, Form()],
     target: Annotated[str, Form()],
     replication_type: Annotated[str, Form()],
@@ -158,10 +163,14 @@ async def send_receive_execute(
     recursive: Annotated[bool, Form()] = False,
     raw: Annotated[bool, Form()] = False,
     large_blocks: Annotated[bool, Form()] = False,
+    include_intermediate: Annotated[bool, Form()] = False,
+    resumable: Annotated[bool, Form()] = False,
     compression: Annotated[str, Form()] = "lz4",
-    remote_host: Annotated[str, Form()] = "",
-    remote_port: Annotated[int, Form()] = 22,
-    ssh_connection_id: Annotated[str, Form()] = ""
+    ssh_connection_id: Annotated[str, Form()] = "",
+    unmounted: Annotated[bool, Form()] = True,
+    receive_overrides: Annotated[str, Form()] = "",
+    receive_excludes: Annotated[str, Form()] = "",
+    receive_target_mode: Annotated[str, Form()] = "",
 ):
     """Execute a one-time ZFS send/receive operation.
     
@@ -170,28 +179,37 @@ async def send_receive_execute(
     the active transfer instead of waiting for the request to complete.
     """
     try:
-        options = {}
-        if remote_host:
-            options['remote_host'] = remote_host
-            options['remote_port'] = remote_port
-
-        # Look up the SSH connection to get the private key path.
-        # Without this, the SSH command would not include -i <key>
-        # and would fail with "Permission denied".
-        if ssh_connection_id:
-            connection = ssh_service.get_connection(ssh_connection_id)
-            if connection:
-                options['ssh_key'] = connection['private_key_path']
-                # If remote_host was not set from the hidden field,
-                # build it from the connection record
-                if not remote_host:
-                    options['remote_host'] = f"{connection['username']}@{connection['host']}"
-                    options['remote_port'] = connection['port']
-        
         rep_type = ReplicationType(replication_type)
+
+        # Remote replication always takes its SSH destination, port and key
+        # from the stored SSH connection record. The form's remote_host and
+        # remote_port hidden fields are display copies and are not read:
+        # accepting them let a crafted value such as '-oProxyCommand=...'
+        # reach the ssh command line and run a local command.
+        options = {}
+        if rep_type != ReplicationType.LOCAL:
+            if not ssh_connection_id:
+                raise ValueError("Select an SSH connection for remote replication.")
+            connection = ssh_service.require_active_connection(ssh_connection_id)
+            options['remote_host'] = f"{connection['username']}@{connection['host']}"
+            options['remote_port'] = connection['port']
+            options['ssh_key'] = connection['private_key_path']
+
         comp_method = CompressionMethod(compression)
         job_name = f"Manual: {source} → {target}"
-        
+
+        # Validate the receive-side options here, before the background
+        # thread starts: an invalid combination must surface as a form
+        # error, not vanish inside a thread (issue #23).
+        overrides, excludes = validate_receive_options(
+            receive_overrides,
+            receive_excludes,
+            raw=raw,
+            incremental=incremental,
+            discard_first_component=receive_target_mode == "discard",
+            only_last_component=receive_target_mode == "only_last",
+        )
+
         # Run replication in a background thread so user gets immediate feedback
         thread = threading.Thread(
             target=replication_service.execute_replication,
@@ -203,8 +221,16 @@ async def send_receive_execute(
                 'recursive': recursive,
                 'raw': raw,
                 'large_blocks': large_blocks,
+                'include_intermediate': include_intermediate,
+                'resumable': resumable,
                 'compression': comp_method,
                 'job_name': job_name,
+                'unmounted': unmounted,
+                'receive_overrides': overrides,
+                'receive_excludes': excludes,
+                'discard_first_component': receive_target_mode == "discard",
+                'only_last_component': receive_target_mode == "only_last",
+                'user': user,
                 **options
             },
             daemon=True
@@ -237,14 +263,16 @@ async def estimate_size(
     request: Request,
     source: Annotated[str, Form()],
     target: Annotated[str, Form()],
-    incremental: Annotated[bool, Form()] = True
+    incremental: Annotated[bool, Form()] = True,
+    include_intermediate: Annotated[bool, Form()] = False
 ):
     """Estimate transfer size for replication"""
     try:
         estimate = replication_service.estimate_transfer_size(
             source=source,
             target=target,
-            incremental=incremental
+            incremental=incremental,
+            include_intermediate=include_intermediate
         )
         
         return templates.TemplateResponse(
@@ -306,7 +334,9 @@ async def syncoid_index(request: Request):
 
 
 @router.post("/api/test-remote-connection")
-async def test_remote_connection(data: Dict = Body(...)):
+def test_remote_connection(data: Dict = Body(...)):
+    # Plain def: runs ssh with a 30 second timeout, so it must not run on
+    # the event loop (FastAPI runs plain def handlers in its thread pool).
     """API endpoint to test remote SSH connection and fetch datasets using SSH connection ID"""
     try:
         import subprocess
@@ -319,19 +349,23 @@ async def test_remote_connection(data: Dict = Body(...)):
                 "error": "SSH connection is required"
             })
         
-        # Get the SSH connection
-        connection = ssh_service.get_connection(ssh_connection_id)
-        if not connection:
+        # Get the SSH connection; require_active_connection also validates
+        # the stored host, username, port and key path.
+        try:
+            connection = ssh_service.require_active_connection(ssh_connection_id)
+        except Exception as error:
             return JSONResponse({
                 "success": False,
-                "error": "SSH connection not found"
+                "error": str(error)
             })
-        
+
         # Get list of datasets from remote using key-based authentication
         try:
             # Build the SSH command using the stored key and the
             # WebZFS-owned known_hosts database for strict verification
-            ssh_service.ensure_host_key_trusted(connection['host'], connection['port'])
+            ssh_service.ensure_host_key_trusted(
+                connection['host'], connection['port'], connection.get('host_key_fingerprints')
+            )
             ssh_cmd = [
                 'ssh',
                 '-i', connection['private_key_path'],
@@ -341,6 +375,7 @@ async def test_remote_connection(data: Dict = Body(...)):
             for ssh_option in ssh_service.get_host_key_options():
                 ssh_cmd.extend(['-o', ssh_option])
             ssh_cmd.extend([
+                '--',
                 f"{connection['username']}@{connection['host']}",
                 'zfs', 'list', '-H', '-o', 'name'
             ])
@@ -406,7 +441,8 @@ async def get_ssh_connections():
 
 
 @router.post("/api/check-large-blocks")
-async def check_large_blocks(data: Dict = Body(...)):
+def check_large_blocks(data: Dict = Body(...)):
+    # Plain def: may run ssh with a 30 second timeout (see above).
     """API endpoint that reports whether a dataset needs zfs send -L.
 
     Checks recordsize (filesystems) and volblocksize (volumes). Values
@@ -432,15 +468,18 @@ async def check_large_blocks(data: Dict = Body(...)):
 
         ssh_connection_id = data.get('ssh_connection_id')
         if ssh_connection_id:
-            connection = ssh_service.get_connection(ssh_connection_id)
-            if not connection:
+            try:
+                connection = ssh_service.require_active_connection(ssh_connection_id)
+            except Exception as error:
                 return JSONResponse({
                     "success": False,
-                    "error": "SSH connection not found"
+                    "error": str(error)
                 })
             # Validate the name locally before it is sent to a shell
             dataset_service.validate_dataset_name(dataset)
-            ssh_service.ensure_host_key_trusted(connection['host'], connection['port'])
+            ssh_service.ensure_host_key_trusted(
+                connection['host'], connection['port'], connection.get('host_key_fingerprints')
+            )
             ssh_cmd = [
                 'ssh',
                 '-i', connection['private_key_path'],
@@ -451,6 +490,7 @@ async def check_large_blocks(data: Dict = Body(...)):
             for ssh_option in ssh_service.get_host_key_options():
                 ssh_cmd.extend(['-o', ssh_option])
             ssh_cmd.extend([
+                '--',
                 f"{connection['username']}@{connection['host']}",
                 'zfs', 'get', '-H', '-p', '-o', 'property,value',
                 'recordsize,volblocksize', dataset
@@ -628,6 +668,185 @@ async def delete_all_executions(request: Request):
         return RedirectResponse(
             url=f"/zfs/replication/history?error={str(e)}",
             status_code=303,
+        )
+
+
+def _execution_transport_options(execution: Dict) -> Dict:
+    """Rebuild the SSH transport options persisted on an execution record.
+
+    A failed resumable receive can only be resumed or discarded through the
+    same transport it was started with, so the remote host, port and key are
+    stored on the record at creation time.
+    """
+    options = {}
+    if execution.get('remote_host'):
+        options['remote_host'] = execution['remote_host']
+        options['remote_port'] = execution.get('remote_port') or 22
+    if execution.get('ssh_key'):
+        options['ssh_key'] = execution['ssh_key']
+    return options
+
+
+@router.post("/history/{execution_id}/resume", response_class=HTMLResponse)
+async def resume_execution(
+    request: Request,
+    execution_id: int,
+    user: Annotated[str, Depends(get_current_user)],
+    parsable: Annotated[bool, Form()] = False,
+    verbose: Annotated[bool, Form()] = False
+):
+    """Resume a partially received stream from its saved resume token.
+
+    Launches `zfs send -t <token> | zfs receive <target>` in a background
+    thread, mirroring the one-time send/receive flow.
+    """
+    try:
+        execution = replication_service.get_execution_detail(execution_id)
+        if not execution:
+            return RedirectResponse(
+                url="/zfs/replication/history?error=Execution not found",
+                status_code=303
+            )
+
+        token = execution.get('receive_resume_token')
+        if not token:
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No saved resume token for this execution"
+                ),
+                status_code=303
+            )
+
+        # A token can only be consumed by one stream. Refuse a second
+        # resume while an earlier one is still running, otherwise two
+        # sends race for the same saved receive state.
+        if execution.get('status') == 'running':
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=This execution is still running"
+                ),
+                status_code=303
+            )
+
+        # The token belongs to the dataset that was actually received into,
+        # which differs from the selected target for full sends and for an
+        # interrupted recursive stream. It is always recorded alongside the
+        # token, so the selected target is never used as a fallback here.
+        target = execution.get('receive_resume_target')
+        if not target:
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No receive target recorded for this execution"
+                ),
+                status_code=303
+            )
+        rep_type = ReplicationType(execution.get('replication_type'))
+        options = _execution_transport_options(execution)
+
+        # `zfs send -t` only accepts -P, -e, -n and -v; the service rejects
+        # anything else, so only the two useful verbose flags are offered.
+        resume_flags = []
+        if parsable:
+            resume_flags.append('P')
+        if verbose:
+            resume_flags.append('v')
+        if resume_flags:
+            options['resume_flags'] = resume_flags
+
+        thread = threading.Thread(
+            target=replication_service.execute_resume,
+            kwargs={
+                'execution_id': execution_id,
+                'receive_resume_token': token,
+                'target': target,
+                'replication_type': rep_type,
+                'options': options,
+                'user': user,
+            },
+            daemon=True
+        )
+        thread.start()
+
+        return RedirectResponse(
+            url=(
+                f"/zfs/replication/history?message="
+                f"Resume started for execution #{execution_id}"
+            ),
+            status_code=303
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/replication/history/{execution_id}?error={str(e)}",
+            status_code=303
+        )
+
+
+@router.post("/history/{execution_id}/discard", response_class=HTMLResponse)
+def discard_execution_resume_state(
+    request: Request,
+    execution_id: int,
+    user: Annotated[str, Depends(get_current_user)]
+):
+    """Discard saved receive state with `zfs receive -A <target>`.
+
+    The execution detail page routes this through a confirmation modal,
+    because aborting destroys the partially received dataset on the
+    receiving side.
+    """
+    try:
+        execution = replication_service.get_execution_detail(execution_id)
+        if not execution:
+            return RedirectResponse(
+                url="/zfs/replication/history?error=Execution not found",
+                status_code=303
+            )
+
+        # Only discard state this execution is known to own. Without a
+        # recorded token there is nothing of ours to abort, and falling
+        # back to target_dataset could run `zfs receive -A` against an
+        # unrelated transfer that is saving state on that dataset.
+        if not execution.get('receive_resume_token'):
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No saved receive state for this execution"
+                ),
+                status_code=303
+            )
+
+        target = execution.get('receive_resume_target')
+        if not target:
+            return RedirectResponse(
+                url=(
+                    f"/zfs/replication/history/{execution_id}"
+                    "?error=No receive target recorded for this execution"
+                ),
+                status_code=303
+            )
+        rep_type = ReplicationType(execution.get('replication_type'))
+
+        replication_service.discard_resume_state(
+            execution_id=execution_id,
+            target=target,
+            replication_type=rep_type,
+            options=_execution_transport_options(execution),
+            user=user,
+        )
+
+        return RedirectResponse(
+            url=(
+                f"/zfs/replication/history/{execution_id}"
+                "?message=Saved receive state discarded"
+            ),
+            status_code=303
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/zfs/replication/history/{execution_id}?error={str(e)}",
+            status_code=303
         )
 
 
@@ -1012,7 +1231,11 @@ async def syncoid_job_save(
     create_bookmark: Annotated[bool, Form()] = False,
     force_delete: Annotated[bool, Form()] = False,
     large_blocks: Annotated[bool, Form()] = False,
+    raw_send: Annotated[bool, Form()] = False,
     additional_flags: Annotated[str, Form()] = "",
+    receive_unmounted: Annotated[str, Form()] = "true",
+    receive_overrides: Annotated[str, Form()] = "",
+    receive_excludes: Annotated[str, Form()] = "",
 ):
     """Create or update a scheduled Syncoid job and register it with
     the OS scheduler (systemd timer on Linux, root crontab on BSD)."""
@@ -1052,7 +1275,9 @@ async def syncoid_job_save(
         "create_bookmark": create_bookmark,
         "force_delete": force_delete,
         "large_blocks": large_blocks,
+        "raw_send": raw_send,
         "additional_flags": additional_flags,
+        "receive_options": None,
     }
 
     try:
@@ -1060,6 +1285,26 @@ async def syncoid_job_save(
         is_valid, schedule_error = validate_cron_expression(schedule)
         if not is_valid:
             return _parse_job_form_error(request, schedule_error, form_job)
+
+        # Receive-side options saved with the job (issue #23). Scheduled
+        # jobs cannot know whether Syncoid will send a raw stream, so
+        # encryption overrides are rejected here (allow_encryption=False).
+        # Syncoid's --recvoptions only honours -u/-o/-x (it silently drops
+        # -d/-e), so the job form does not expose target naming.
+        receive_unmounted_bool = receive_unmounted.strip().lower() not in {
+            "false", "0", "off", "no", ""
+        }
+        overrides_map, excludes_list = validate_receive_options(
+            receive_overrides,
+            receive_excludes,
+            allow_encryption=False,
+        )
+        receive_options = normalize_receive_options(
+            unmounted=receive_unmounted_bool,
+            overrides=overrides_map,
+            excludes=excludes_list,
+        )
+        form_job["receive_options"] = receive_options
 
         if job_id and target_new_child:
             existing_job = storage_service.get_syncoid_job(int(job_id))
@@ -1119,9 +1364,11 @@ async def syncoid_job_save(
                 create_bookmark=create_bookmark,
                 force_delete=force_delete,
                 large_blocks=large_blocks,
+                raw_send=raw_send,
                 additional_flags=additional_flags,
                 ssh_connection_id=ssh_connection_id,
                 replication_type=replication_type,
+                receive_options=receive_options,
             )
             if not updated:
                 return _parse_job_form_error(
@@ -1144,9 +1391,11 @@ async def syncoid_job_save(
                 create_bookmark=create_bookmark,
                 force_delete=force_delete,
                 large_blocks=large_blocks,
+                raw_send=raw_send,
                 additional_flags=additional_flags or None,
                 ssh_connection_id=ssh_connection_id or None,
                 replication_type=replication_type,
+                receive_options=receive_options,
             )
             action = "created"
 

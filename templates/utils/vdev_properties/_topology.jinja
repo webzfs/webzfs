@@ -17,7 +17,7 @@
 
 <div class="p-3 space-y-3">
     <!-- Pool node -->
-    <div class="{{ node_classes(topology.pool.token) }} p-3 bg-primary-500/5 border-primary-400/30" data-node="{{ topology.pool.token }}" onclick="selectVdevNode('{{ topology.pool.token }}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVdevNode('{{ topology.pool.token }}')}">
+    <div class="{{ node_classes(topology.pool.token) }} p-3 bg-primary-500/5 border-primary-400/30" data-node="{{ topology.pool.token }}" onclick="selectVdevNode(this.dataset.node)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVdevNode(this.dataset.node)}">
         <div class="flex justify-between items-center gap-3 flex-wrap">
             <div class="flex items-center gap-3 min-w-0">
                 <div class="w-9 h-9 rounded-lg border border-border-default bg-bg-elevated-2 flex items-center justify-center text-primary-400 flex-shrink-0">
@@ -42,7 +42,7 @@
         {% set group_search = (group.name ~ ' ' ~ group.type ~ ' ' ~ group.section ~ ' ' ~ (group.props.values()|join(' ')))|lower %}
         <div data-group-search="{{ group_search }}">
             {% if group.is_group %}
-            <div class="{{ node_classes(group.token) }} p-3 bg-bg-elevated-2" data-node="{{ group.token }}" onclick="selectVdevNode('{{ group.token }}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVdevNode('{{ group.token }}')}">
+            <div class="{{ node_classes(group.token) }} p-3 bg-bg-elevated-2" data-node="{{ group.token }}" onclick="selectVdevNode(this.dataset.node)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVdevNode(this.dataset.node)}">
                 <div class="flex justify-between items-center gap-3 flex-wrap">
                     <div class="flex items-center gap-3 min-w-0">
                         <div class="w-9 h-9 rounded-lg border border-border-default bg-bg-elevated flex items-center justify-center text-primary-400 flex-shrink-0">

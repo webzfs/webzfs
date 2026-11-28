@@ -12,6 +12,7 @@ from services.fleet_monitoring import FleetMonitoringService
 from services.ssh_connection import SSHConnectionService
 from services.fleet_command import get_command_context, save_order
 from typing import Optional, Annotated
+from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,27 @@ router = APIRouter(prefix="/fleet", tags=["fleet"], dependencies=[Depends(get_cu
 fleet_service = FleetMonitoringService()
 ssh_service = SSHConnectionService()
 
+# Handlers here are plain def, not async def: most open SSH connections to
+# remote servers (paramiko, ssh-keyscan) that can take many seconds. FastAPI
+# runs plain def handlers in its thread pool; an async def handler doing
+# this would freeze every other request on the worker. Only
+# fleet_command_order stays async because it awaits request.json().
+
+
+def add_host_key_status(server: dict) -> dict:
+    """
+    Mark whether the server's SSH host key is pinned in the WebZFS
+    known_hosts file, so the server card can show "Host key trusted"
+    instead of the "Trust host key" action once a key is confirmed.
+    """
+    server["host_key_pinned"] = ssh_service.is_host_key_pinned(
+        server["ip"], server["port"]
+    )
+    return server
+
 
 @router.get("/", response_class=HTMLResponse)
-async def fleet_index(request: Request):
+def fleet_index(request: Request):
     """
     Main fleet view page.
 
@@ -34,6 +53,8 @@ async def fleet_index(request: Request):
     a couple of seconds.
     """
     servers = fleet_service.list_servers()
+    for server in servers:
+        add_host_key_status(server)
 
     return templates.TemplateResponse(
         request,
@@ -46,7 +67,7 @@ async def fleet_index(request: Request):
 
 
 @router.get("/servers/{server_id}/card", response_class=HTMLResponse)
-async def get_server_card_partial(request: Request, server_id: str):
+def get_server_card_partial(request: Request, server_id: str):
     """
     HTMX endpoint that returns a single refreshed server card.
 
@@ -76,6 +97,7 @@ async def get_server_card_partial(request: Request, server_id: str):
         server = fleet_service.get_server(server_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Server not found")
+    add_host_key_status(server)
 
     return templates.TemplateResponse(
         request,
@@ -91,7 +113,7 @@ async def get_server_card_partial(request: Request, server_id: str):
 
 
 @router.get("/servers/add", response_class=HTMLResponse)
-async def add_server_form(request: Request):
+def add_server_form(request: Request):
     """Display form to add a new server"""
     # list_connections() reloads from disk to get latest connections
     ssh_connections = ssh_service.list_connections()
@@ -107,7 +129,7 @@ async def add_server_form(request: Request):
 
 
 @router.post("/servers/add")
-async def add_server_submit(
+def add_server_submit(
     request: Request,
     ssh_connection_id: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
@@ -141,9 +163,16 @@ async def add_server_submit(
                 port=port
             )
         
-        # Redirect to fleet index with success message
+        # Redirect to fleet index with success message. A manually added
+        # server has no pinned host key yet; it is not contacted until the
+        # administrator confirms the key on the Trust host key page.
+        if ssh_connection_id:
+            message = "Server added successfully"
+        else:
+            message = ("Server added. Use 'Trust host key' on its card to verify the "
+                       "host key before it can be monitored.")
         return RedirectResponse(
-            url="/fleet/?success=Server added successfully",
+            url="/fleet/?" + urlencode({"success": message}),
             status_code=303
         )
         
@@ -166,7 +195,7 @@ async def add_server_submit(
 
 
 @router.get("/servers/remove", response_class=HTMLResponse)
-async def remove_server_list(request: Request):
+def remove_server_list(request: Request):
     """Display list of servers with remove buttons"""
     servers = fleet_service.list_servers()
     
@@ -181,7 +210,7 @@ async def remove_server_list(request: Request):
 
 
 @router.post("/servers/remove")
-async def remove_server_without_id(request: Request):
+def remove_server_without_id(request: Request):
     """Handle POST to /servers/remove without server ID - return error"""
     raise HTTPException(
         status_code=400, 
@@ -190,7 +219,7 @@ async def remove_server_without_id(request: Request):
 
 
 @router.post("/servers/{server_id}/remove")
-async def remove_server_submit(request: Request, server_id: str):
+def remove_server_submit(request: Request, server_id: str):
     """Remove a server from the fleet"""
     try:
         fleet_service.remove_server(server_id)
@@ -205,7 +234,7 @@ async def remove_server_submit(request: Request, server_id: str):
 
 
 @router.get("/servers/{server_id}/test", response_class=HTMLResponse)
-async def test_server_connection(request: Request, server_id: str):
+def test_server_connection(request: Request, server_id: str):
     """Test connection to a server"""
     try:
         result = fleet_service.test_connection(server_id)
@@ -228,8 +257,93 @@ async def test_server_connection(request: Request, server_id: str):
         )
 
 
+@router.get("/servers/{server_id}/trust-host-key", response_class=HTMLResponse)
+def trust_server_host_key_form(request: Request, server_id: str):
+    """
+    Step 1 of the show-and-confirm host key trust flow.
+
+    Scans the remote host key WITHOUT pinning it and renders the
+    fingerprints so the administrator can verify them out of band (for
+    example against `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
+    run on the server's console). Nothing is written to known_hosts by
+    this route.
+    """
+    try:
+        server = fleet_service.get_server(server_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    host = server["ip"]
+    port = server["port"]
+    try:
+        preview = ssh_service.preview_host_key(host, port)
+    except Exception as e:
+        logger.error(f"Host key scan failed for fleet server {server_id}: {e}")
+        return RedirectResponse(
+            url=f"/fleet/?error=Host key scan failed for {host}:{port}: {e}",
+            status_code=303
+        )
+
+    return templates.TemplateResponse(
+        request,
+        name="fleet/trust_host_key.jinja",
+        context={
+            "active_page": "fleet",
+            "server": server,
+            "preview": preview,
+        }
+    )
+
+
+@router.post("/servers/{server_id}/trust-host-key")
+def trust_server_host_key(
+    request: Request,
+    server_id: str,
+    fingerprint: Annotated[list[str], Form()] = []
+):
+    """
+    Step 2 of the show-and-confirm host key trust flow.
+
+    Pins the host key only after the administrator confirmed the exact
+    fingerprints rendered by the GET route. The service re-scans and
+    refuses the pin if the remote key changed in between, so a key is
+    never trusted without having been displayed first.
+
+    Servers added before host-key verification was enforced may have no
+    pinned key, and a server whose key changed fails to connect. This is
+    the deliberate "I verified the new key out of band" path; the key is
+    never re-pinned automatically.
+    """
+    try:
+        server = fleet_service.get_server(server_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    host = server["ip"]
+    port = server["port"]
+    try:
+        fingerprints = ssh_service.confirm_host_key(host, port, fingerprint)
+        logger.info(
+            f"Pinned SSH host key for fleet server {server_id} "
+            f"({host}:{port}): {', '.join(fingerprints)}"
+        )
+        return RedirectResponse(
+            url=(
+                f"/fleet/?success=Host key pinned for {host}:{port} "
+                f"({', '.join(fingerprints)})"
+            ),
+            status_code=303
+        )
+    except Exception as e:
+        logger.error(f"Failed to pin host key for fleet server {server_id}: {e}")
+        return RedirectResponse(
+            url=f"/fleet/?error={e}",
+            status_code=303
+        )
+
+
 @router.post("/refresh")
-async def refresh_all_servers(request: Request):
+def refresh_all_servers(request: Request):
     """Refresh pool data from all servers"""
     try:
         results = fleet_service.fetch_all_servers()
@@ -240,7 +354,7 @@ async def refresh_all_servers(request: Request):
 
 
 @router.post("/servers/{server_id}/refresh")
-async def refresh_single_server(request: Request, server_id: str):
+def refresh_single_server(request: Request, server_id: str):
     """Refresh pool data from a single server"""
     try:
         pools = fleet_service.fetch_server_pools(server_id)
@@ -253,7 +367,7 @@ async def refresh_single_server(request: Request, server_id: str):
 
 
 @router.get("/servers/{server_id}/pools", response_class=HTMLResponse)
-async def get_server_pools_partial(request: Request, server_id: str):
+def get_server_pools_partial(request: Request, server_id: str):
     """Get pool data for a server (HTMX partial)"""
     try:
         server = fleet_service.get_server(server_id)
@@ -274,7 +388,7 @@ async def get_server_pools_partial(request: Request, server_id: str):
 
 
 @router.get("/servers/{server_id}/pools/{pool_name}/space-tree")
-async def get_pool_space_tree(request: Request, server_id: str, pool_name: str):
+def get_pool_space_tree(request: Request, server_id: str, pool_name: str):
     """
     JSON endpoint that returns the dataset space-usage tree for a pool
     on a remote fleet server. Consumed by the dataset space visualizer
@@ -306,7 +420,7 @@ async def get_pool_space_tree(request: Request, server_id: str, pool_name: str):
 
 
 @router.get("/pools", response_class=HTMLResponse)
-async def fleet_pools_page(request: Request):
+def fleet_pools_page(request: Request):
     """
     Fleet pools page shell. Renders immediately with a loading spinner.
     Pool data loads asynchronously via HTMX from /fleet/pools/data.
@@ -321,7 +435,7 @@ async def fleet_pools_page(request: Request):
 
 
 @router.get("/pools/data", response_class=HTMLResponse)
-async def fleet_pools_data(request: Request):
+def fleet_pools_data(request: Request):
     """
     HTMX endpoint that gathers all pools from local server and remote
     fleet servers, merges them into a single sorted list, and returns

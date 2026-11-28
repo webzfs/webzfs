@@ -106,69 +106,18 @@ fi
 
 echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found ($PYTHON_CMD)"
 
-if ! command_exists node; then
-    echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js v22+ and try again"
+# Node.js and npm are not required to install WebZFS (GitHub issue #277).
+# The built stylesheet (static/css/styles.css) and the vendored JavaScript
+# (static/vendor/) are committed to the repository. Verify the stylesheet
+# is present so an incomplete source tree fails here with a clear message.
+if [ ! -s "${SOURCE_DIR}/static/css/styles.css" ]; then
+    echo -e "${RED}Error: static/css/styles.css is missing from the source tree${NC}"
+    echo "Download a complete copy of WebZFS and try again. Developers can"
+    echo "rebuild the file with: npm install && npm run build:css"
     exit 1
 fi
 
-if ! command_exists npm; then
-    echo -e "${RED}Error: npm is not installed${NC}"
-    echo "Please install npm and try again"
-    exit 1
-fi
-
-# Reject Snap-packaged Node.js/npm (GitHub issue #209).
-# The build steps (npm install, npm run build:css) run as the webzfs
-# service account with HOME=/opt/webzfs. Snapd refuses to run snaps for
-# users whose home directory is outside /home, which makes the Node Snap
-# unusable for the WebZFS build. A system Node.js/npm must be installed
-# instead. The existing Snap does not need to be removed.
-NODE_REAL_PATH=$(readlink -f "$(command -v node)" 2>/dev/null || true)
-NPM_REAL_PATH=$(readlink -f "$(command -v npm)" 2>/dev/null || true)
-
-case "$NODE_REAL_PATH:$NPM_REAL_PATH" in
-    /snap/*|*:/snap/*)
-        echo -e "${RED}Error: Node.js/npm are installed as a Snap package${NC}"
-        echo
-        echo "The Node Snap cannot be used by the WebZFS installer because the"
-        echo "build runs as the 'webzfs' service account with HOME=/opt/webzfs,"
-        echo "and snapd rejects home directories outside of /home."
-        echo
-        echo "Please install a system (non-Snap) Node.js 22+ and npm, then"
-        echo "rerun this installer. For example, on Debian/Ubuntu:"
-        echo
-        echo "  sudo apt update"
-        echo "  sudo apt install nodejs npm"
-        echo
-        echo "The existing Node Snap does not need to be removed; the system"
-        echo "packages can coexist with it. If both are installed, ensure the"
-        echo "non-Snap node/npm come first in PATH."
-        exit 1
-        ;;
-esac
-
-# Enforce the Node.js 22+ requirement
-NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//')
-NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1)
-
-case "$NODE_MAJOR" in
-    ''|*[!0-9]*)
-        echo -e "${RED}Error: Unable to determine the Node.js version${NC}"
-        echo "Please install Node.js v22 or newer and try again"
-        exit 1
-        ;;
-esac
-
-if [ "$NODE_MAJOR" -lt 22 ]; then
-    echo -e "${RED}Error: Node.js 22+ is required (found ${NODE_VERSION})${NC}"
-    echo "Please install Node.js v22 or newer and try again"
-    exit 1
-fi
-
-
-echo -e "${GREEN}✓${NC} Node.js $(node --version) found"
-echo -e "${GREEN}✓${NC} npm $(npm --version) found"
+echo -e "${GREEN}✓${NC} Prebuilt static assets found"
 
 
 # Check for sudo
@@ -273,6 +222,13 @@ chgrp shadow /etc/shadow
 chmod 640 /etc/shadow
 echo -e "${GREEN}✓${NC} PAM authentication configured"
 
+# Create the empty webzfs-admin group used by the optional login restriction
+# (RESTRICT_LOGIN in .env). No accounts are added to it.
+if ! getent group webzfs-admin &>/dev/null; then
+    groupadd webzfs-admin
+    echo -e "${GREEN}✓${NC} Created empty 'webzfs-admin' group (see RESTRICT_LOGIN in .env)"
+fi
+
 # Create installation directory if it doesn't exist
 if [ ! -d "$INSTALL_DIR" ]; then
     echo "Creating installation directory: $INSTALL_DIR"
@@ -345,7 +301,7 @@ echo
 # Create a temporary install script that runs as the webzfs user
 # Using a script file instead of heredoc to preserve stdin for later read prompts
 TEMP_INSTALL_SCRIPT="${INSTALL_DIR}/_install_deps.sh"
-echo "Installing Python and Node.js dependencies as $WEBZFS_USER..."
+echo "Installing Python dependencies as $WEBZFS_USER..."
 echo "(This may take a few minutes...)"
 echo
 
@@ -388,15 +344,6 @@ echo "Installing/upgrading pip in virtual environment..."
 
 echo "Installing Python dependencies in virtual environment..."
 .venv/bin/pip install -r requirements.txt >> install_log.txt 2>&1
-
-echo "Installing Node.js dependencies..."
-npm install >> install_log.txt 2>&1
-
-echo "Creating static directory structure..."
-mkdir -p static/css
-
-echo "Building static assets..."
-npm run build:css >> install_log.txt 2>&1
 
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then

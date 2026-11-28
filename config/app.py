@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from auth.exceptions import AuthenticationFailed
+from config.security_headers import SecurityHeadersMiddleware
 from config.settings import settings
 from views import router
 
@@ -33,12 +34,18 @@ def reconcile_scheduled_tasks() -> None:
 
 def create_app() -> FastAPI:
     app = FastAPI(debug=settings.DEBUG)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.mount("/static", StaticFiles(directory="static"), name="static")
     app.include_router(router)
 
     @app.exception_handler(AuthenticationFailed)
     def redirect_to_login(request: Request, exc: AuthenticationFailed) -> Response:
         return RedirectResponse("/login/")
+
+    @app.on_event("startup")
+    def report_login_policy() -> None:
+        from auth.login_policy import log_policy_at_startup
+        log_policy_at_startup()
 
     @app.on_event("startup")
     def start_scheduler_reconciliation() -> None:

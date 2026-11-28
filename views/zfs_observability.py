@@ -2,6 +2,7 @@
 ZFS Observability Views
 Provides web interface for viewing ZFS logs, events, and history
 """
+from html import escape
 from fastapi import APIRouter, Request, Query, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, StreamingResponse
 from typing import Annotated, Optional
@@ -9,7 +10,7 @@ from datetime import datetime
 import io
 import zipfile
 from config.templates import templates
-from services.zfs_observability import ZFSObservabilityService
+from services.zfs_observability import ZFSObservabilityService, ZIL_SAMPLE_SECONDS
 from services.utils import get_openzfs_man_page_url
 from auth.dependencies import get_current_user
 
@@ -52,27 +53,9 @@ async def observability_index(request: Request):
         except Exception:
             latest_health = None
 
-        # Compute scrub freshness for the Scrub Status card. We use the
-        # existing dashboard helper which already parses zpool status for
-        # every pool and exposes scrub_within_30_days per pool.
-        scrub_overdue_count = 0
-        scrub_total_pools = 0
-        scrub_known = False
-        try:
-            from services.dashboard import get_scrub_status_all
-            scrub_status_all = get_scrub_status_all() or {}
-            scrub_pools = scrub_status_all.get("pools", []) or []
-            scrub_total_pools = len(scrub_pools)
-            scrub_known = scrub_total_pools > 0
-            if scrub_known:
-                scrub_overdue_count = sum(
-                    1 for p in scrub_pools if not p.get("scrub_within_30_days")
-                )
-        except Exception:
-            scrub_known = False
-            scrub_overdue_count = 0
-            scrub_total_pools = 0
-
+        # The Scrub Status card is not computed here. It runs zpool status
+        # for every pool, which waits for spun-down disks, so it is loaded
+        # by HTMX from /scrub-status-card after the page has rendered.
         return templates.TemplateResponse(
             request,
             name="zfs/observability/index.jinja",
@@ -83,9 +66,6 @@ async def observability_index(request: Request):
                 "all_processes": all_processes,
                 "processes": active_processes,
                 "latest_health": latest_health,
-                "scrub_known": scrub_known,
-                "scrub_overdue_count": scrub_overdue_count,
-                "scrub_total_pools": scrub_total_pools,
                 "page_title": "ZFS Observability"
             }
         )
@@ -100,18 +80,56 @@ async def observability_index(request: Request):
                 "all_processes": [],
                 "processes": [],
                 "latest_health": None,
-                "scrub_known": False,
-                "scrub_overdue_count": 0,
-                "scrub_total_pools": 0,
                 "error": str(e),
                 "page_title": "ZFS Observability"
             }
         )
 
 
+@router.get("/scrub-status-card", response_class=HTMLResponse)
+def scrub_status_card(request: Request):
+    """HTMX partial for the Pool Scrub Status dashboard card.
+
+    Runs zpool status for every pool, which can wait for spun-down disks to
+    wake. Declared as a plain ``def`` so FastAPI runs it in its threadpool and
+    a slow pool does not block the event loop for other requests.
+    """
+    scrub_overdue_count = 0
+    scrub_total_pools = 0
+    scrub_known = False
+    try:
+        from services.dashboard import get_scrub_status_all
+        scrub_status_all = get_scrub_status_all() or {}
+        scrub_pools = scrub_status_all.get("pools", []) or []
+        scrub_total_pools = len(scrub_pools)
+        scrub_known = scrub_total_pools > 0
+        for pool in scrub_pools:
+            if not pool.get("scrub_within_30_days"):
+                scrub_overdue_count += 1
+    except Exception:
+        scrub_known = False
+        scrub_overdue_count = 0
+        scrub_total_pools = 0
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/scrub_status_card.jinja",
+        context={
+            "scrub_known": scrub_known,
+            "scrub_overdue_count": scrub_overdue_count,
+            "scrub_total_pools": scrub_total_pools,
+        }
+    )
+
+
 @router.get("/recent-history-partial", response_class=HTMLResponse)
-async def recent_history_partial(request: Request):
-    """HTMX partial for loading recent pool history asynchronously"""
+def recent_history_partial(request: Request):
+    """HTMX partial for loading recent pool history asynchronously.
+
+    zpool history reads the on-disk history log, so this is a plain ``def``
+    and runs in the threadpool rather than blocking the event loop while
+    disks spin up.
+    """
     try:
         # Get first available pool to show recent history
         from services.zfs_pool import ZFSPoolService
@@ -138,10 +156,10 @@ async def recent_history_partial(request: Request):
             
             for entry in recent_history:
                 html += f'''<tr class="hover:bg-bg-elevated-2 transition-colors">
-                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{entry.get('timestamp', '')}</td>
-                    <td class="px-4 py-3 text-sm text-text-primary font-mono">{entry.get('command', '')}</td>
-                    <td class="px-4 py-3 text-sm text-text-secondary">{entry.get('user') or '-'}</td>
-                    <td class="px-4 py-3 text-sm text-text-secondary">{entry.get('host') or '-'}</td>
+                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{escape(str(entry.get('timestamp', '')))}</td>
+                    <td class="px-4 py-3 text-sm text-text-primary font-mono">{escape(str(entry.get('command', '')))}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{escape(str(entry.get('user') or '-'))}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{escape(str(entry.get('host') or '-'))}</td>
                 </tr>'''
             
             html += '</tbody></table>'
@@ -156,7 +174,7 @@ async def recent_history_partial(request: Request):
                 </div>
             ''')
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading history: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading history: {escape(str(e))}</p>')
 
 
 @router.get("/recent-events-partial", response_class=HTMLResponse)
@@ -186,10 +204,10 @@ async def recent_events_partial(request: Request):
             
             for event in recent_events:
                 html += f'''<tr class="hover:bg-bg-elevated-2 transition-colors">
-                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{event.get('time', '')}</td>
-                    <td class="px-4 py-3 text-sm"><span class="badge badge-info">{event.get('class', '')}</span></td>
-                    <td class="px-4 py-3 text-sm text-text-primary">{event.get('pool') or '-'}</td>
-                    <td class="px-4 py-3 text-sm text-text-secondary">{event.get('details') or '-'}</td>
+                    <td class="px-4 py-3 text-sm text-text-primary whitespace-nowrap font-mono">{escape(str(event.get('time', '')))}</td>
+                    <td class="px-4 py-3 text-sm"><span class="badge badge-info">{escape(str(event.get('class', '')))}</span></td>
+                    <td class="px-4 py-3 text-sm text-text-primary">{escape(str(event.get('pool') or '-'))}</td>
+                    <td class="px-4 py-3 text-sm text-text-secondary">{escape(str(event.get('details') or '-'))}</td>
                 </tr>'''
             
             html += '</tbody></table>'
@@ -204,7 +222,7 @@ async def recent_events_partial(request: Request):
                 </div>
             ''')
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading events: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-danger-400 py-4">Error loading events: {escape(str(e))}</p>')
 
 
 @router.get("/pool-history", response_class=HTMLResponse)
@@ -1395,3 +1413,116 @@ Each file contains detailed information about various aspects of your ZFS system
             content=f"Error generating zip file: {str(e)}",
             status_code=500
         )
+
+
+@router.get("/zil-stats", response_class=HTMLResponse)
+async def zil_stats(request: Request, sample: int = 0):
+    """Display ZIL (ZFS Intent Log) statistics.
+
+    Reads the ``zil`` kstat, which Linux publishes as
+    ``/proc/spl/kstat/zfs/zil`` and FreeBSD/NetBSD as
+    ``kstat.zfs.misc.zil``. The page is a shell; the statistics are loaded
+    and auto refreshed from ``/zil-stats-panel`` with htmx polling, as on the
+    system iostat page.
+    """
+    if sample not in ZIL_SAMPLE_SECONDS:
+        sample = 0
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/zil_stats.jinja",
+        context={
+            "sample": sample,
+            "sample_choices": ZIL_SAMPLE_SECONDS,
+            # A sample request blocks for its window, so poll one second
+            # after it ends; the cumulative view polls every 5 seconds.
+            "refresh_seconds": sample + 1 if sample else 5,
+            "page_title": "ZIL Statistics"
+        }
+    )
+
+
+@router.get("/zil-stats-panel", response_class=HTMLResponse)
+def zil_stats_panel(request: Request, sample: int = 0):
+    """Return the ZIL statistics partial.
+
+    ``sample=0`` shows counters since the ZFS module was loaded. ``sample=N``
+    (one of ``ZIL_SAMPLE_SECONDS``) blocks for N seconds and shows only the
+    change in that window, so this handler must stay plain ``def``.
+    """
+    try:
+        zil = observability_service.get_zil_stats(sample or None)
+    except Exception as e:
+        zil = {"available": False, "error": str(e)}
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/zil_stats_panel.jinja",
+        context={"zil": zil}
+    )
+
+
+@router.get("/txg-history", response_class=HTMLResponse)
+def txg_history(request: Request, pool: Optional[str] = None):
+    """Display the per-pool txg history kstat.
+
+    The history is only populated while ``zfs_txg_history`` is non-zero; when
+    it is empty the page explains that instead of rendering an empty table.
+    Plain ``def`` so the blocking zpool/sysctl calls run in the threadpool.
+    """
+    from services.zfs_pool import ZFSPoolService
+
+    pool_service = ZFSPoolService()
+    try:
+        pools = [p.get("name") for p in pool_service.list_pools() if p.get("name")]
+    except Exception:
+        pools = []
+
+    selected_pool = pool or (pools[0] if pools else None)
+    txg = {"available": False, "pool": selected_pool, "entries": []}
+    if selected_pool:
+        txg = observability_service.get_txg_history(selected_pool)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/txg_history.jinja",
+        context={
+            "txg": txg,
+            "pools": pools,
+            "selected_pool": selected_pool,
+            "page_title": "TXG History"
+        }
+    )
+
+
+@router.get("/vdev-activity", response_class=HTMLResponse)
+def vdev_activity(request: Request, pool: Optional[str] = None):
+    """Display TRIM and initialize progress for a pool's leaf vdevs.
+
+    Parsing is shared with the vdev management page (H8) through
+    :mod:`services.vdev_activity`. Plain ``def`` so zpool status, which can
+    wait on spun-down disks, runs in the threadpool.
+    """
+    from services.zfs_pool import ZFSPoolService
+
+    pool_service = ZFSPoolService()
+    try:
+        pools = [p.get("name") for p in pool_service.list_pools() if p.get("name")]
+    except Exception:
+        pools = []
+
+    selected_pool = pool or (pools[0] if pools else None)
+    activity = {"available": False, "pool": selected_pool}
+    if selected_pool:
+        activity = observability_service.get_vdev_activity(selected_pool)
+
+    return templates.TemplateResponse(
+        request,
+        name="zfs/observability/vdev_activity.jinja",
+        context={
+            "activity": activity,
+            "pools": pools,
+            "selected_pool": selected_pool,
+            "page_title": "TRIM / Initialize Status"
+        }
+    )

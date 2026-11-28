@@ -58,11 +58,11 @@
             </button>
             {% if z.origin == 'override' %}
             <form method="post" action="/utils/zed/restore/{{ z.name }}" class="inline" hx-boost="false">
-                <button type="submit" class="btn btn-secondary btn-sm" onclick="return confirm('Restore {{ z.name }} to the packaged version?')">Restore</button>
+                <button type="submit" class="btn btn-secondary btn-sm" data-confirm="Restore {{ z.name }} to the packaged version?" onclick="return confirm(this.dataset.confirm)">Restore</button>
             </form>
             {% elif z.origin == 'custom' %}
             <form method="post" action="/utils/zed/delete/{{ z.name }}" class="inline" hx-boost="false">
-                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete {{ z.name }}?')">Delete</button>
+                <button type="submit" class="btn btn-danger btn-sm" data-confirm="Delete {{ z.name }}?" onclick="return confirm(this.dataset.confirm)">Delete</button>
             </form>
             {% else %}
             <button class="btn btn-secondary btn-sm" disabled>Protected</button>

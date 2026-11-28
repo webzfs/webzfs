@@ -143,7 +143,9 @@
 <!-- Confirmation Modal -->
 {% set id = 'confirm-export-pool' %}
 {% set title = 'Export ZFS Pool' %}
-{% set message = 'Are you sure you want to export ' ~ pool_name ~ '? All datasets will be unmounted and the pool will no longer be accessible until re-imported.' %}
+{# Block set: pool_name is autoescaped inside the block, so the message is
+   safe even though partials/confirm.jinja renders it without escaping. #}
+{% set message %}Are you sure you want to export {{ pool_name }}? All datasets will be unmounted and the pool will no longer be accessible until re-imported.{% endset %}
 {% set confirm_text = 'Export Pool' %}
 {% set confirm_class = 'danger' %}
 {% set confirm_action = 'submitExportForm()' %}

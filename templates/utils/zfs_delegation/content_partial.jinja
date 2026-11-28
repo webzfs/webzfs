@@ -147,12 +147,12 @@
     {% set id = 'confirm-pool-toggle' %}
     {% if state.pool_enabled == 'on' %}
     {% set title = 'Disable Pool Delegation' %}
-    {% set message = 'Turning delegation off on pool <strong>' + state.pool + '</strong> prevents all non-privileged access through stored grants. Grant metadata remains configured and takes effect again when delegation is re-enabled.' %}
+    {% set message %}Turning delegation off on pool <strong>{{ state.pool }}</strong> prevents all non-privileged access through stored grants. Grant metadata remains configured and takes effect again when delegation is re-enabled.{% endset %}
     {% set confirm_text = 'Disable Delegation' %}
     {% set confirm_class = 'danger' %}
     {% else %}
     {% set title = 'Enable Pool Delegation' %}
-    {% set message = 'Turning delegation on for pool <strong>' + state.pool + '</strong> allows non-privileged users to exercise any stored grants on datasets in this pool.' %}
+    {% set message %}Turning delegation on for pool <strong>{{ state.pool }}</strong> allows non-privileged users to exercise any stored grants on datasets in this pool.{% endset %}
     {% set confirm_text = 'Enable Delegation' %}
     {% set confirm_class = 'primary' %}
     {% endif %}

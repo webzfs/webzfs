@@ -3,8 +3,8 @@
 {% set leaf_search = (leaf.name ~ ' ' ~ leaf.path ~ ' ' ~ leaf.physpath ~ ' ' ~ leaf.state ~ ' ' ~ (v.values()|join(' ')))|lower %}
 <div class="border rounded-xl cursor-pointer transition-colors hover:border-border-strong p-2.5 bg-bg-elevated {% if selected == leaf.token %}border-primary-400 ring-1 ring-primary-400/30{% else %}border-border-subtle{% endif %} {% if leaf.missing %}border-dashed{% endif %}"
      data-node="{{ leaf.token }}" data-leaf-search="{{ leaf_search }}"
-     onclick="event.stopPropagation(); selectVdevNode('{{ leaf.token }}')" role="button" tabindex="0"
-     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();selectVdevNode('{{ leaf.token }}')}">
+     onclick="event.stopPropagation(); selectVdevNode(this.dataset.node)" role="button" tabindex="0"
+     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();selectVdevNode(this.dataset.node)}">
     <div class="flex justify-between items-center gap-3 flex-wrap">
         <div class="flex items-center gap-3 min-w-0">
             <div class="w-9 h-9 rounded-lg border border-border-default bg-bg-elevated-2 flex items-center justify-center text-primary-400 flex-shrink-0">

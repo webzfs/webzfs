@@ -7,6 +7,8 @@ import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
+from services.ssh_connection import validate_ssh_host
+
 
 # Strict cron field validation patterns
 CRON_FIELD_PATTERNS = {
@@ -24,8 +26,7 @@ SHELL_DANGEROUS_PATTERN = re.compile(r'[;&|`$(){}[\]<>\\\'\"!#]')  # Shell metac
 # Valid characters for dataset names (ZFS naming rules)
 DATASET_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_.\-:/]+$')
 
-# Valid characters for hostnames
-HOSTNAME_PATTERN = re.compile(r'^[a-zA-Z0-9.\-]+$')
+# Hostnames are validated by services.ssh_connection.validate_ssh_host.
 
 # Valid characters for job names (alphanumeric, underscore, hyphen, space)
 JOB_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\- ]+$')
@@ -117,10 +118,12 @@ class CronService:
         """
         if not hostname:
             return  # Hostname is optional
-        if len(hostname) > 253:
-            raise ValueError(f"{field_name} name too long (max 253 characters)")
-        if not HOSTNAME_PATTERN.match(hostname):
-            raise ValueError(f"{field_name} contains invalid characters. Only alphanumeric, dot, and hyphen allowed")
+        # Shared SSH host rules: IP address or DNS hostname, never starting
+        # with '-' (which ssh and syncoid would parse as an option).
+        try:
+            validate_ssh_host(hostname)
+        except ValueError as error:
+            raise ValueError(f"{field_name}: {error}")
     
     @staticmethod
     def _validate_bandwidth(bwlimit: str, field_name: str = "Bandwidth limit") -> None:

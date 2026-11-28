@@ -4,16 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="WebZFS Interface" />
-    <script
-      src="https://unpkg.com/htmx.org@1.9.10"
-      integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
-      crossorigin="anonymous"
-    ></script>
+    {# Third-party libraries are served locally. They are pinned in
+       package.json, verified by npm against the package-lock.json sha512
+       integrity values, and copied into static/vendor/ by
+       `npm run build:web-assets` (chained from build:css). No page loads
+       script from a CDN. #}
+    <script src="{{ request.app.url_path_for('static', path='vendor/htmx/htmx.min.js') }}"></script>
     <script
       defer
-      src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"
+      src="{{ request.app.url_path_for('static', path='vendor/alpinejs/alpine.min.js') }}"
     ></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="{{ request.app.url_path_for('static', path='vendor/chartjs/chart.umd.js') }}"></script>
     {# Local assets use root-relative paths (url_path_for) rather than
        url_for. url_for emits an absolute URL with the scheme the backend
        saw, which is http:// when TLS terminates at a reverse proxy, and the

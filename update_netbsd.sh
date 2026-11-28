@@ -73,13 +73,21 @@ detect_netbsd_platform() {
             WHEEL_SUBDIR="netbsd10-1"
             WHEEL_PLATFORM="netbsd_10_1_amd64"
             ;;
+        10.2:amd64)
+            WHEEL_SUBDIR="netbsd10-2"
+            WHEEL_PLATFORM="netbsd_10_2_amd64"
+            ;;
         11.0:amd64)
             WHEEL_SUBDIR="netbsd11-0"
             WHEEL_PLATFORM="netbsd_11_0_amd64"
             ;;
+        11.1:amd64)
+            WHEEL_SUBDIR="netbsd11-1"
+            WHEEL_PLATFORM="netbsd_11_1_amd64"
+            ;;
         *)
             printf "${RED}Error: No pre-compiled wheel set exists for NetBSD ${NETBSD_RELEASE} on ${NETBSD_ARCH}${NC}\n"
-            echo "Supported platforms: NetBSD 10.1 amd64, NetBSD 11.0 amd64"
+            echo "Supported platforms: NetBSD 10.1, 10.2, 11.0, and 11.1 (amd64)"
             exit 1
             ;;
     esac
@@ -434,7 +442,7 @@ fi
 echo
 
 # Update dependencies
-echo "Updating Python and Node.js dependencies..."
+echo "Updating Python dependencies..."
 echo "(This may take a few minutes...)"
 echo
 
@@ -474,16 +482,9 @@ if ! .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> upd
     exit 1
 fi
 
-echo "Updating Node.js dependencies..."
-npm install >> update_log.txt 2>&1
-
-echo "Rebuilding static assets..."
-npm run build:css >> update_log.txt 2>&1
-
 echo
 printf "${GREEN}✓${NC} Python dependencies updated\n"
-printf "${GREEN}✓${NC} Node.js dependencies updated\n"
-printf "${GREEN}✓${NC} Static assets rebuilt\n"
+printf "${GREEN}✓${NC} Static assets updated\n"
 echo
 
 # Write/refresh installation platform marker

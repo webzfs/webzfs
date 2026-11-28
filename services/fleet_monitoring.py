@@ -6,12 +6,29 @@ import json
 import os
 import re
 import uuid
+from contextlib import contextmanager
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from cryptography.fernet import Fernet
 import paramiko
 import logging
+
+from services.json_state import (
+    StateFileError,
+    file_lock,
+    read_json,
+    write_json_atomic,
+    write_text_atomic,
+)
+
+from services.ssh_connection import (
+    HostKeyVerificationError,
+    host_key_error_message,
+    validate_ssh_host,
+    validate_ssh_port,
+    validate_ssh_username,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +42,12 @@ class FleetMonitoringService:
         self.config_dir = Path.home() / ".config" / "webzfs"
         self.config_dir.mkdir(parents=True, exist_ok=True)
         
-        # Set up server config file
+        # Set up server config file. Every change to it (and creation of the
+        # encryption key) holds the lock file so Gunicorn workers cannot
+        # overwrite each other.
         self.servers_file = self.config_dir / "fleet_servers.json"
-        
+        self.lock_file = self.config_dir / "fleet_servers.lock"
+
         # Set up encryption key file
         self.key_file = self.config_dir / ".fleet_key"
         self._ensure_encryption_key()
@@ -53,34 +73,48 @@ class FleetMonitoringService:
         return self._ssh_service
     
     def _ensure_encryption_key(self) -> None:
-        """Ensure encryption key exists, create if necessary"""
-        if not self.key_file.exists():
-            key = Fernet.generate_key()
-            self.key_file.write_bytes(key)
-            # Set secure permissions (owner read/write only)
-            os.chmod(self.key_file, 0o600)
-    
-    def _load_servers(self) -> Dict[str, Any]:
-        """Load servers from config file"""
-        if not self.servers_file.exists():
-            return {"servers": []}
-        
+        """Create the encryption key once, even when workers start together.
+
+        Without the lock, two workers starting at the same time could each
+        generate a key; the second write would make passwords saved with the
+        first key undecryptable. The key is written atomically with mode 0600.
+        """
+        with file_lock(self.lock_file):
+            if not self.key_file.exists():
+                write_text_atomic(self.key_file, Fernet.generate_key().decode())
+
+    def _load_servers(self, strict: bool = False) -> Dict[str, Any]:
+        """Load servers from disk (always fresh).
+
+        A damaged file reads as empty for display (strict=False), but raises
+        when strict=True, which every writer uses, so a damaged file is never
+        replaced by an empty list.
+        """
         try:
-            with open(self.servers_file, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
+            data = read_json(self.servers_file, {"servers": []})
+        except StateFileError as error:
+            if strict:
+                raise Exception(f"Fleet servers file is damaged; not changed: {error}")
+            logger.error(f"Failed to load fleet servers: {error}")
             return {"servers": []}
+        if not isinstance(data, dict) or not isinstance(data.get("servers"), list):
+            if strict:
+                raise Exception("Fleet servers file has an unexpected format; not changed.")
+            return {"servers": []}
+        return data
 
     def _reload_servers(self) -> None:
         """Reload server data so multiple application workers stay consistent."""
         self.servers_data = self._load_servers()
-    
-    def _save_servers(self) -> None:
-        """Save servers to config file"""
-        with open(self.servers_file, 'w') as f:
-            json.dump(self.servers_data, f, indent=2)
-        # Set secure permissions
-        os.chmod(self.servers_file, 0o600)
+
+    @contextmanager
+    def _locked_servers(self):
+        """Read, change and save fleet_servers.json as one locked step."""
+        with file_lock(self.lock_file):
+            data = self._load_servers(strict=True)
+            yield data
+            write_json_atomic(self.servers_file, data)
+            self.servers_data = data
     
     def _encrypt_password(self, password: str) -> str:
         """Encrypt a password"""
@@ -150,9 +184,17 @@ class FleetMonitoringService:
         Returns:
             server_id: UUID of created server
         """
-        self._reload_servers()
+        validate_ssh_host(ip)
+        validate_ssh_username(username)
+        port = validate_ssh_port(port)
+
         server_id = str(uuid.uuid4())
-        
+
+        # The host key is NOT pinned here. Connections to an unpinned host
+        # are refused (_create_ssh_client), and the server card offers the
+        # "Trust host key" page, where the administrator sees and confirms
+        # the fingerprint before anything is pinned or any password is sent.
+
         server = {
             "id": server_id,
             "name": name,
@@ -168,12 +210,12 @@ class FleetMonitoringService:
             "status": "unknown",
             "pools": []
         }
-        
-        self.servers_data.setdefault("servers", []).append(server)
-        self._save_servers()
-        
+
+        with self._locked_servers() as data:
+            data["servers"].append(server)
+
         return server_id
-    
+
     def add_server_from_ssh_connection(self, ssh_connection_id: str, name: str = None) -> str:
         """
         Add a server to the fleet using an existing SSH connection
@@ -188,13 +230,18 @@ class FleetMonitoringService:
         Raises:
             ValueError: If SSH connection not found
         """
-        self._reload_servers()
         ssh_service = self._get_ssh_service()
         connection = ssh_service.get_connection(ssh_connection_id)
         
         if not connection:
             raise ValueError(f"SSH connection {ssh_connection_id} not found")
-        
+
+        # The connection was pinned when it was created. If that pin is
+        # missing, it is restored only to the fingerprints confirmed then.
+        ssh_service.ensure_host_key_trusted(
+            connection['host'], connection['port'], connection.get('host_key_fingerprints')
+        )
+
         server_id = str(uuid.uuid4())
         
         # Use connection name if no custom name provided
@@ -215,10 +262,10 @@ class FleetMonitoringService:
             "status": "unknown",
             "pools": []
         }
-        
-        self.servers_data.setdefault("servers", []).append(server)
-        self._save_servers()
-        
+
+        with self._locked_servers() as data:
+            data["servers"].append(server)
+
         # Mark the SSH connection as used by fleet
         ssh_service.mark_connection_used(ssh_connection_id, 'fleet')
         
@@ -234,16 +281,14 @@ class FleetMonitoringService:
         Raises:
             KeyError: If server not found
         """
-        self._reload_servers()
-        servers = self.servers_data.get("servers", [])
-        for i, server in enumerate(servers):
-            if server["id"] == server_id:
-                del servers[i]
-                self._save_servers()
-                # Remove from cache
-                self._pool_cache.pop(server_id, None)
-                return
-        raise KeyError(f"Server {server_id} not found")
+        with self._locked_servers() as data:
+            before = len(data["servers"])
+            data["servers"] = [s for s in data["servers"] if s["id"] != server_id]
+            found = len(data["servers"]) != before
+        if not found:
+            raise KeyError(f"Server {server_id} not found")
+        # Remove from cache
+        self._pool_cache.pop(server_id, None)
     
     def update_server(self, server_id: str, **updates) -> None:
         """
@@ -253,17 +298,19 @@ class FleetMonitoringService:
             server_id: Server UUID
             **updates: Fields to update
         """
-        self._reload_servers()
-        for server in self.servers_data.get("servers", []):
-            if server["id"] == server_id:
-                # Handle password encryption if updating password
-                if "password" in updates:
-                    updates["password"] = self._encrypt_password(updates["password"])
-                
-                server.update(updates)
-                self._save_servers()
-                return
-        raise KeyError(f"Server {server_id} not found")
+        # Handle password encryption if updating password
+        if "password" in updates:
+            updates["password"] = self._encrypt_password(updates["password"])
+
+        found = False
+        with self._locked_servers() as data:
+            for server in data["servers"]:
+                if server["id"] == server_id:
+                    server.update(updates)
+                    found = True
+                    break
+        if not found:
+            raise KeyError(f"Server {server_id} not found")
     
     def test_connection(self, server_id: str) -> Dict[str, Any]:
         """
@@ -817,7 +864,17 @@ class FleetMonitoringService:
             Connected SSH client
         """
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # Verify the host key against WebZFS's pinned known_hosts file.
+        # Unknown hosts are rejected; they must be added under SSH
+        # Connections (or re-added here) to be pinned deliberately.
+        ssh_service = self._get_ssh_service()
+        ssh_service.configure_paramiko_client(client)
+
+        host = server["ip"]
+        port = server["port"]
+        if not ssh_service.is_host_key_pinned(host, port):
+            raise HostKeyVerificationError(host_key_error_message(host, port))
         
         # Check auth type - default to password for backward compatibility
         auth_type = server.get("auth_type", "password")
@@ -848,7 +905,12 @@ class FleetMonitoringService:
                     pkey=private_key,
                     timeout=10
                 )
+            except HostKeyVerificationError:
+                raise
             except Exception as e:
+                # A changed/unpinned host key must surface as a host-key
+                # error, not a generic authentication failure.
+                ssh_service.raise_for_paramiko_host_key_error(e, host, port)
                 logger.error(f"Failed to connect with SSH key: {e}")
                 raise Exception(f"SSH key authentication failed: {str(e)}")
         else:
@@ -859,13 +921,18 @@ class FleetMonitoringService:
             password = self._decrypt_password(server["password"])
             
             # Connect with password
-            client.connect(
-                hostname=server["ip"],
-                port=server["port"],
-                username=server["username"],
-                password=password,
-                timeout=10
-            )
+            try:
+                client.connect(
+                    hostname=host,
+                    port=port,
+                    username=server["username"],
+                    password=password,
+                    timeout=10
+                )
+            except Exception as e:
+                ssh_service.raise_for_paramiko_host_key_error(e, host, port)
+                logger.error(f"Failed to connect with password: {e}")
+                raise Exception(f"SSH password authentication failed: {str(e)}")
         
         return client
     

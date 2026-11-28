@@ -96,6 +96,40 @@ class AuditLogger:
 
         return logger
 
+    @staticmethod
+    def _escape_value(value: Any) -> str:
+        """
+        Make one value safe for a single log line.
+
+        Values can come from a request (an attempted username, a file path, a
+        dataset name). A newline in such a value would end the current entry
+        and start a forged one, so every control character is written as an
+        escape sequence, backslashes and double quotes are escaped, and the
+        value is quoted when it contains a space or a quote. The log viewer
+        splits entries on whitespace and strips the surrounding quotes, so the
+        escaped form stays readable there.
+        """
+        escaped = []
+        for char in str(value):
+            if char == "\\":
+                escaped.append("\\\\")
+            elif char == '"':
+                escaped.append('\\"')
+            elif char == "\n":
+                escaped.append("\\n")
+            elif char == "\r":
+                escaped.append("\\r")
+            elif char == "\t":
+                escaped.append("\\t")
+            elif ord(char) < 32 or ord(char) == 127:
+                escaped.append(f"\\x{ord(char):02x}")
+            else:
+                escaped.append(char)
+        text = "".join(escaped)
+        if text == "" or " " in text or '"' in text:
+            return f'"{text}"'
+        return text
+
     def _format_details(self, details: Dict[str, Any]) -> str:
         """
         Format details dictionary into a log string.
@@ -104,16 +138,12 @@ class AuditLogger:
             details: Dictionary of key-value pairs
 
         Returns:
-            Formatted string like "key1=value1 key2=value2"
+            Formatted string like "key1=value1 key2=value2", one line
         """
         parts = []
         for key, value in details.items():
             if value is not None:
-                # Escape spaces in values
-                str_value = str(value)
-                if " " in str_value:
-                    str_value = f'"{str_value}"'
-                parts.append(f"{key}={str_value}")
+                parts.append(f"{key}={self._escape_value(value)}")
         return " ".join(parts)
 
     # ==================== Authentication Logging ====================
@@ -230,8 +260,14 @@ class AuditLogger:
         vdevs: list,
         success: bool = True,
         error: Optional[str] = None,
+        **details,
     ) -> None:
-        """Log pool creation"""
+        """Log pool creation.
+
+        ``details`` holds the non-secret create options (pool and root
+        dataset properties with a log-safe key location, mountpoint,
+        altroot, force). Passphrases and key material must never be passed.
+        """
         self.log_zfs_operation(
             user=user,
             operation="create_pool",
@@ -239,6 +275,7 @@ class AuditLogger:
             vdevs=",".join(vdevs) if vdevs else None,
             success=success,
             error=error,
+            **details,
         )
 
     def log_pool_destroy(
@@ -264,6 +301,7 @@ class AuditLogger:
         user: str,
         pool_name: str,
         force: bool = False,
+        readonly: bool = False,
         success: bool = True,
         error: Optional[str] = None,
     ) -> None:
@@ -273,6 +311,7 @@ class AuditLogger:
             operation="import_pool",
             pool=pool_name,
             force=force,
+            readonly=readonly,
             success=success,
             error=error,
         )
@@ -504,6 +543,24 @@ class AuditLogger:
             error=error,
         )
 
+    def log_pool_clear(
+        self,
+        user: str,
+        pool_name: str,
+        device: Optional[str] = None,
+        success: bool = True,
+        error: Optional[str] = None,
+    ) -> None:
+        """Log clearing device errors for a pool or a single device"""
+        self.log_zfs_operation(
+            user=user,
+            operation="clear_errors",
+            pool=pool_name,
+            device=device,
+            success=success,
+            error=error,
+        )
+
     # Dataset Operations
     def log_dataset_create(
         self,
@@ -511,14 +568,51 @@ class AuditLogger:
         dataset_name: str,
         success: bool = True,
         error: Optional[str] = None,
+        keyformat: Optional[str] = None,
+        keylocation: Optional[str] = None,
     ) -> None:
-        """Log dataset creation"""
+        """Log dataset creation.
+
+        ``keyformat`` and ``keylocation`` are recorded for encrypted datasets.
+        Callers pass a log-safe key location; key material is never logged.
+        """
+        details = {}
+        if keyformat:
+            details["keyformat"] = keyformat
+        if keylocation:
+            details["keylocation"] = keylocation
         self.log_zfs_operation(
             user=user,
             operation="create_dataset",
             dataset=dataset_name,
             success=success,
             error=error,
+            **details,
+        )
+
+    def log_dataset_key_operation(
+        self,
+        user: str,
+        operation: str,
+        dataset_name: Optional[str] = None,
+        success: bool = True,
+        error: Optional[str] = None,
+        **details,
+    ) -> None:
+        """Log an encryption key operation.
+
+        ``operation`` is one of load_key, unload_key, load_all_keys,
+        change_key, inherit_key or create_key_file. ``details`` may hold the
+        key format, a log-safe key location or a key file path. Passphrases
+        and key material must never be passed here.
+        """
+        self.log_zfs_operation(
+            user=user,
+            operation=operation,
+            dataset=dataset_name,
+            success=success,
+            error=error,
+            **details,
         )
 
     def log_dataset_destroy(
@@ -573,6 +667,28 @@ class AuditLogger:
             dataset=dataset_name,
             property=property_name,
             value=property_value,
+            success=success,
+            error=error,
+        )
+
+    def log_dataset_property_inherit(
+        self,
+        user: str,
+        dataset_name: str,
+        property_name: str,
+        recursive: bool = False,
+        received: bool = False,
+        success: bool = True,
+        error: Optional[str] = None,
+    ) -> None:
+        """Log a `zfs inherit` operation on a dataset property"""
+        self.log_zfs_operation(
+            user=user,
+            operation="inherit_dataset_property",
+            dataset=dataset_name,
+            property=property_name,
+            recursive=recursive,
+            received=received,
             success=success,
             error=error,
         )

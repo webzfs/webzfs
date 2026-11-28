@@ -58,7 +58,7 @@ Ok... now back to your regularly scheduled README.md...
 
 - **Linux**: Any distribution with OpenZFS support
 - **FreeBSD**: FreeBSD 13.x and later with OpenZFS
-- **NetBSD**: NetBSD 10.1 and 11.0 (amd64) with OpenZFS
+- **NetBSD**: NetBSD 10.1, 10.2, 11.0, and 11.1 (amd64) with OpenZFS
 
 The application automatically detects the operating system and adapts its behavior accordingly.
 
@@ -68,7 +68,6 @@ The application automatically detects the operating system and adapts its behavi
 
 - Linux or FreeBSD or NetBSD with ZFS installed
 - Python 3.12+
-- Node.js v22+ and npm
 - sudo (required on Linux; the service runs as an unprivileged user and uses sudo for approved commands)
 - ZFS utilities (zpool, zfs, zdb, etc)
 - smartmontools (smartctl)
@@ -77,12 +76,14 @@ The application automatically detects the operating system and adapts its behavi
 - sanoid (optional but strongly recommended)
 - rsync
 
-#### FreeBSD Package Requirements: (Automatically installed with the install script) python312 py312-pip node npm smartmontools sanoid libsodium expat bash rsync
+Node.js and npm are not required to install or update WebZFS. The built stylesheet and vendored JavaScript are included in the repository. Node.js v22+ is only needed by developers who change templates or styles (see BUILD_AND_RUN.md).
+
+#### FreeBSD Package Requirements: (Automatically installed with the install script) python312 py312-pip smartmontools sanoid libsodium expat bash rsync
 #### ArchLinux Requirements:
 #### RHEL Package Requirements:
 #### Fedora Package Requirements: 
 #### SUSE Package Requirements:
-#### Debain/Ubuntu/Proxmox Package Requirements: sudo rsync nodejs npm libsodium-dev python3.13-venv python3-pip python3-full sanoid smartmontools
+#### Debain/Ubuntu/Proxmox Package Requirements: sudo rsync libsodium-dev python3.13-venv python3-pip python3-full sanoid smartmontools
 #### Mint Package Requirements: sudo git curl ca-certificates rsync build-essential pkg-config libsodium-dev libffi-dev libssl-dev python3.12 python3.12-venv python3.12-dev python3-pip smartmontools sanoid
 
 ### Installation

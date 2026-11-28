@@ -81,13 +81,21 @@ detect_netbsd_platform() {
             WHEEL_SUBDIR="netbsd10-1"
             WHEEL_PLATFORM="netbsd_10_1_amd64"
             ;;
+        10.2:amd64)
+            WHEEL_SUBDIR="netbsd10-2"
+            WHEEL_PLATFORM="netbsd_10_2_amd64"
+            ;;
         11.0:amd64)
             WHEEL_SUBDIR="netbsd11-0"
             WHEEL_PLATFORM="netbsd_11_0_amd64"
             ;;
+        11.1:amd64)
+            WHEEL_SUBDIR="netbsd11-1"
+            WHEEL_PLATFORM="netbsd_11_1_amd64"
+            ;;
         *)
             printf "${RED}Error: No pre-compiled wheel set exists for NetBSD ${NETBSD_RELEASE} on ${NETBSD_ARCH}${NC}\n"
-            echo "Supported platforms: NetBSD 10.1 amd64, NetBSD 11.0 amd64"
+            echo "Supported platforms: NetBSD 10.1, 10.2, 11.0, and 11.1 (amd64)"
             echo "Installation on other releases/architectures requires building"
             echo "the native Python packages from source, which is not automated"
             echo "by this installer."
@@ -149,7 +157,9 @@ install_dependencies() {
 
     # Install System Packages
     echo "Installing system packages via pkgin..."
-    pkgin -y install python312 py312-pip nodejs smartmontools \
+    # Node.js is not needed; the built stylesheet and vendored JavaScript
+    # are committed to the repository (GitHub issue #277).
+    pkgin -y install python312 py312-pip smartmontools \
                      git perl mbuffer lzop pvs mozilla-rootcerts \
                      p5-Config-IniFiles p5-Capture-Tiny \
                      gmake libsodium curl pkg-config openssl
@@ -304,19 +314,13 @@ if [ "$PYTHON_VERSION" != "3.12" ]; then
     echo "  Install Python 3.12 with: pkgin install python312 py312-pip"
 fi
 
-if ! command_exists node; then
-    printf "${RED}Error: Node.js is not installed${NC}\n"
-    echo "Please install Node.js first"
+if [ ! -s "${SOURCE_DIR}/static/css/styles.css" ]; then
+    printf "${RED}Error: static/css/styles.css is missing from the source tree${NC}\n"
+    echo "Download a complete copy of WebZFS and try again. Developers can"
+    echo "rebuild the file with: npm install && npm run build:css"
     exit 1
 fi
-printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
-
-if ! command_exists npm; then
-    printf "${RED}Error: npm is not installed${NC}\n"
-    echo "Please install npm first"
-    exit 1
-fi
-printf "${GREEN}✓${NC} npm $(npm --version) found\n"
+printf "${GREEN}✓${NC} Prebuilt static assets found\n"
 
 if ! command_exists rsync; then
     printf "${RED}Error: rsync is not installed${NC}\n"
@@ -557,7 +561,7 @@ fi
 echo
 
 # Install dependencies
-echo "Installing Python and Node.js dependencies..."
+echo "Installing Python dependencies..."
 echo "(This should be quick with pre-compiled wheels...)"
 echo
 
@@ -624,15 +628,6 @@ if ! .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> ins
     exit 1
 fi
 
-echo "Installing Node.js dependencies..."
-npm install >> install_log.txt 2>&1
-
-echo "Creating static directory structure..."
-mkdir -p static/css
-
-echo "Building static assets..."
-npm run build:css >> install_log.txt 2>&1
-
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
     echo "Creating .env configuration file..."
@@ -644,10 +639,16 @@ if [ ! -f ".env" ]; then
     echo "Generated new SECRET_KEY"
 fi
 
+# Create the empty webzfs-admin group used by the optional login restriction
+# (RESTRICT_LOGIN in .env). No accounts are added to it.
+if ! groupinfo -e webzfs-admin >/dev/null 2>&1; then
+    groupadd webzfs-admin
+    printf "${GREEN}✓${NC} Created empty 'webzfs-admin' group (see RESTRICT_LOGIN in .env)\n"
+fi
+
 echo
 printf "${GREEN}✓${NC} Python dependencies installed\n"
-printf "${GREEN}✓${NC} Node.js dependencies installed\n"
-printf "${GREEN}✓${NC} Static assets built\n"
+printf "${GREEN}✓${NC} Static assets installed\n"
 printf "${GREEN}✓${NC} Configuration file created\n"
 echo
 

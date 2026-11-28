@@ -73,7 +73,9 @@
                   </td>
                   <td class="py-3 px-4 text-right">
                     <button
-                      onclick="confirmRemove('{{ server.id }}', '{{ server.name }}')"
+                      data-server-id="{{ server.id }}"
+                      data-server-name="{{ server.name }}"
+                      onclick="confirmRemove(this.dataset.serverId, this.dataset.serverName)"
                       class="btn-danger btn-sm inline-flex items-center"
                     >
                       <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,7 +163,7 @@ function confirmRemove(serverId, serverName) {
   const nameSpan = document.getElementById('serverName');
   
   nameSpan.textContent = serverName;
-  form.action = `/fleet/servers/${serverId}/remove`;
+  form.action = `/fleet/servers/${encodeURIComponent(serverId)}/remove`;
   console.log('Form action set to:', form.action);
   modal.classList.remove('hidden');
 }

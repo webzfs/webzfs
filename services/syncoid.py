@@ -11,10 +11,15 @@ import subprocess
 import json
 import shlex
 import threading
+import logging
 from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 
 from services.utils import run_privileged_command, run_zfs_command
+from services.ssh_connection import validate_ssh_destination
+from core.receive_options import recvoptions_string, validate_receive_options
+
+logger = logging.getLogger(__name__)
 
 
 class SyncoidService:
@@ -209,6 +214,7 @@ class SyncoidService:
         ssh_key: Optional[str] = None,
         ssh_options: Optional[List[str]] = None,
         send_options: Optional[str] = None,
+        recv_options: Optional[Dict[str, Any]] = None,
         additional_flags: Optional[str] = None,
         source_host: Optional[str] = None,
         target_host: Optional[str] = None,
@@ -245,6 +251,10 @@ class SyncoidService:
                           --sendoptions (e.g. 'L' for large-block send).
                           Validated against ALLOWED_SEND_OPTIONS; any
                           other value is rejected (issue #204).
+            recv_options: Structured receive options saved with the job
+                          (``-u``/``-o``/``-x``) rendered as Syncoid's
+                          --recvoptions value (issue #23). Syncoid does
+                          not honour ``-d``/``-e`` there.
             additional_flags: Shell-style additional Syncoid flags. The text
                               is parsed with shlex and appended as argv tokens
                               before the source and target. It is never passed
@@ -337,6 +347,19 @@ class SyncoidService:
                     }
                 cmd.append(f'--sendoptions={send_options}')
             
+            if recv_options:
+                # Validate before rendering so a job saved through the API
+                # with a bad property name or an encryption override fails
+                # with a readable error instead of a syncoid crash.
+                validate_receive_options(
+                    recv_options.get('overrides') or {},
+                    recv_options.get('excludes') or [],
+                    allow_encryption=False,
+                )
+                recv_string = recvoptions_string(recv_options)
+                if recv_string:
+                    cmd.append(f'--recvoptions={recv_string}')
+
             if debug:
                 cmd.append('--debug')
             
@@ -345,20 +368,25 @@ class SyncoidService:
 
             cmd.extend(self.parse_additional_flags(additional_flags))
             
-            # Build source string
+            # Build source string. Hosts are validated because syncoid passes
+            # them to ssh through a shell; an option-like host such as
+            # '-oProxyCommand=...' would run a local command.
             if source_host:
+                validate_ssh_destination(source_host)
                 source_str = f"{source_host}:{source}"
             else:
                 source_str = source
-            
+
             # Build target string
             if target_host:
+                validate_ssh_destination(target_host)
                 target_str = f"{target_host}:{target}"
             else:
                 target_str = target
-            
-            # Add source and target
-            cmd.extend([source_str, target_str])
+
+            # Add source and target after '--' so neither can be parsed as
+            # a syncoid option (Getopt::Long ends option parsing at '--').
+            cmd.extend(['--', source_str, target_str])
             
             # Execute through a single seam so the privilege model can be
             # changed in one place (planned least-privilege work will run
@@ -581,6 +609,32 @@ class SyncoidService:
         unit = match.group(2)
         return int(value * self.BYTE_UNIT_FACTORS.get(unit, 1))
     
+    def _pinned_ssh_options(self, host_string: str) -> List[str]:
+        """
+        Return SSH -o options that verify host keys against WebZFS's own
+        known_hosts file, when the host is pinned there.
+
+        If the host is not pinned in WebZFS, OpenSSH's default strict host
+        key checking still applies (it fails closed for a non-interactive
+        ssh), so no bypass options are ever added.
+
+        Args:
+            host_string: SSH destination such as 'user@host'
+
+        Returns:
+            List of '-o' option values, possibly empty
+        """
+        validate_ssh_destination(host_string)
+        host = host_string.rsplit('@', 1)[-1]
+        try:
+            from services.ssh_connection import SSHConnectionService
+            ssh_service = SSHConnectionService()
+            if ssh_service.is_host_key_pinned(host, 22):
+                return ssh_service.get_host_key_options()
+        except Exception as e:
+            logger.warning(f"Could not resolve pinned host key for {host}: {e}")
+        return []
+
     def estimate_transfer_size(
         self,
         source: str,
@@ -600,8 +654,11 @@ class SyncoidService:
         """
         try:
             # Get list of snapshots for source
+            ssh_options = []
             if source_host:
-                list_cmd = ['ssh', source_host, 'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
+                for option in self._pinned_ssh_options(source_host):
+                    ssh_options.extend(['-o', option])
+                list_cmd = ['ssh'] + ssh_options + ['--', source_host, 'zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
             else:
                 list_cmd = ['zfs', 'list', '-t', 'snapshot', '-H', '-o', 'name', '-r', source]
             
@@ -621,7 +678,7 @@ class SyncoidService:
             
             # Use zfs send with dry-run to estimate size
             if source_host:
-                send_cmd = ['ssh', source_host, 'zfs', 'send', '-nv', latest_snapshot]
+                send_cmd = ['ssh'] + ssh_options + ['--', source_host, 'zfs', 'send', '-nv', latest_snapshot]
             else:
                 send_cmd = ['zfs', 'send', '-nv', latest_snapshot]
             

@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 import re
 
+from services.zfs_capabilities import parse_zfs_version
+
 
 OPERATIONS = frozenset("""
 allow bookmark clone create destroy diff hold load-key change-key mount promote
@@ -57,18 +59,16 @@ def detect_support(output: str, platform: str) -> DelegationSupport:
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     user_lines = [line for line in lines if line.startswith("zfs-") and not line.startswith("zfs-kmod-")]
     kernel_lines = [line for line in lines if line.startswith("zfs-kmod-")]
-    pattern = r"zfs-(?:kmod-)?(\d+)\.(\d+)\.(\d+)(?:[-+_][A-Za-z0-9_.+~-]+)?"
-    user = re.fullmatch(pattern, user_lines[0]) if len(user_lines) == 1 else None
-    if not user or len(lines) != len(user_lines) + len(kernel_lines):
+    user, kernel = parse_zfs_version(output)
+    if user is None or len(user_lines) != 1 or len(lines) != len(user_lines) + len(kernel_lines):
         return DelegationSupport(platform, reason="Unable to identify the userland ZFS version.")
-    version = f"{user[1]}.{user[2]}"
+    version = f"{user[0]}.{user[1]}"
     if version not in {"2.3", "2.4"}:
         return DelegationSupport(platform, version, "Only OpenZFS 2.3 and 2.4 are writable.")
     if any(re.search(r"(?:[-_.~])(?:rc|alpha|beta)\d*", line, re.I) for line in lines):
         return DelegationSupport(platform, version, "Prerelease ZFS builds are read-only.")
     if kernel_lines:
-        kernel = re.fullmatch(pattern, kernel_lines[0]) if len(kernel_lines) == 1 else None
-        if not kernel or kernel.group(1, 2) != user.group(1, 2):
+        if len(kernel_lines) != 1 or kernel is None or kernel[:2] != user[:2]:
             return DelegationSupport(platform, version, "Userland and kernel versions disagree or cannot be parsed.")
     return DelegationSupport(platform, version)
 

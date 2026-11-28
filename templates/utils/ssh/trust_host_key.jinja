@@ -1,0 +1,49 @@
+{% extends "layout.jinja" %}
+
+{% set active_page = 'utils' %}
+
+{#
+  Show-and-confirm host key trust page for an SSH connection.
+
+  Rendered by GET /utils/ssh/{id}/trust-host-key. Nothing is pinned by
+  rendering this page. The hidden fingerprint inputs (from
+  host_key_preview.jinja) are posted back, and the server pins the key only
+  if the host still presents exactly these fingerprints.
+#}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6 max-w-3xl">
+    <nav class="text-sm mb-6 text-text-tertiary">
+        <a href="/utils" class="hover:text-primary-400">Utilities</a>
+        <span class="mx-2">/</span>
+        <a href="/utils/ssh" class="hover:text-primary-400">SSH Connection Manager</a>
+        <span class="mx-2">/</span>
+        <span class="text-text-primary">Trust Host Key</span>
+    </nav>
+
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-text-primary">Verify SSH Host Key</h1>
+        <p class="text-text-secondary mt-1">
+            {{ connection.name }}
+            <span class="font-mono text-sm">({{ connection.username }}@{{ connection.host }}:{{ connection.port }})</span>
+        </p>
+    </div>
+
+    <form method="post" action="/utils/ssh/{{ connection.id }}/trust-host-key" hx-boost="false" class="space-y-4">
+        {% include "utils/ssh/host_key_preview.jinja" %}
+
+        <div class="flex justify-end gap-3">
+            <a href="/utils/ssh" class="btn-secondary">Cancel</a>
+            {% if preview.scanned %}
+            <button type="submit" class="{% if preview.is_changed %}btn-danger{% else %}btn-primary{% endif %}">
+                {% if preview.is_changed %}
+                    I verified this new key, replace the pin
+                {% else %}
+                    I verified this fingerprint, trust this host
+                {% endif %}
+            </button>
+            {% endif %}
+        </div>
+    </form>
+</div>
+{% endblock %}

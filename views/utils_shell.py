@@ -8,6 +8,7 @@ import time
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 
 from auth.dependencies import get_current_user
+from auth.login_policy import is_login_allowed
 from auth.token import InvalidToken, get_token_claims
 from config.settings import settings
 from config.templates import templates
@@ -79,7 +80,8 @@ async def terminal(websocket: WebSocket):
         await websocket.close(code=4401)
         return
     username = claims["username"]
-    if not can_use_shell(username):
+    # Group lookups may reach LDAP/SSSD, so run the policy check off the event loop.
+    if not await asyncio.to_thread(is_login_allowed, username) or not can_use_shell(username):
         await websocket.close(code=4403)
         return
 
