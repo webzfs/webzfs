@@ -241,14 +241,15 @@ echo
 # python312 - Python runtime
 # py312-pip - pip package used to seed the virtual environment because
 #             FreeBSD builds Python with --without-ensurepip
-# node/npm - Node.js for building CSS assets
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
 # libsodium - runtime dependency of pynacl (used by paramiko for SSH)
 # bash - shell prerequisite (not part of the FreeBSD base system)
 # rsync - file synchronization prerequisite (not part of the FreeBSD base system)
 # Note: rust, gmake are NOT needed when using pre-compiled wheels
-pkg install -y python312 py312-pip node npm smartmontools sanoid libsodium expat bash rsync
+# Note: Node.js and npm are NOT needed; the built stylesheet and vendored
+#       JavaScript are committed to the repository (GitHub issue #277)
+pkg install -y python312 py312-pip smartmontools sanoid libsodium expat bash rsync
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -287,19 +288,14 @@ if [ "$PYTHON_VERSION" != "3.12" ]; then
     echo "  Using Python ${PYTHON_VERSION} will force source compilation of native packages."
 fi
 
-if ! command_exists node; then
-    printf "${RED}Error: Node.js was not installed correctly${NC}\n"
+if [ ! -s "${SOURCE_DIR}/static/css/styles.css" ]; then
+    printf "${RED}Error: static/css/styles.css is missing from the source tree${NC}\n"
+    echo "Download a complete copy of WebZFS and try again. Developers can"
+    echo "rebuild the file with: npm install && npm run build:css"
     exit 1
 fi
 
-printf "${GREEN}✓${NC} Node.js $(node --version) found\n"
-
-if ! command_exists npm; then
-    printf "${RED}Error: npm was not installed correctly${NC}\n"
-    exit 1
-fi
-
-printf "${GREEN}✓${NC} npm $(npm --version) found\n"
+printf "${GREEN}✓${NC} Prebuilt static assets found\n"
 
 if ! command_exists rsync; then
     printf "${RED}Error: rsync was not installed correctly${NC}\n"
@@ -439,7 +435,7 @@ printf "${GREEN}✓${NC} Data directory and files created\n"
 echo
 
 # Install dependencies
-echo "Installing Python and Node.js dependencies..."
+echo "Installing Python dependencies..."
 echo "(This should be quick with pre-compiled wheels...)"
 echo
 
@@ -496,15 +492,6 @@ if ! .venv/bin/pip install --find-links="$WHEELS_DIR" -r requirements.txt >> ins
     exit 1
 fi
 
-echo "Installing Node.js dependencies..."
-npm install >> install_log.txt 2>&1
-
-echo "Creating static directory structure..."
-mkdir -p static/css
-
-echo "Building static assets..."
-npm run build:css >> install_log.txt 2>&1
-
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
     echo "Creating .env configuration file..."
@@ -524,8 +511,7 @@ fi
 
 echo
 printf "${GREEN}✓${NC} Python dependencies installed\n"
-printf "${GREEN}✓${NC} Node.js dependencies installed\n"
-printf "${GREEN}✓${NC} Static assets built\n"
+printf "${GREEN}✓${NC} Static assets installed\n"
 printf "${GREEN}✓${NC} Configuration file created\n"
 echo
 

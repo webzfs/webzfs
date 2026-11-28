@@ -430,7 +430,7 @@ fi
 echo
 
 # Update dependencies
-echo "Updating Python and Node.js dependencies..."
+echo "Updating Python dependencies..."
 echo "(This may take a few minutes...)"
 echo
 
@@ -505,16 +505,9 @@ if ! .venv/bin/pip install $FIND_LINKS_FLAG -r requirements.txt >> update_log.tx
     exit 1
 fi
 
-echo "Updating Node.js dependencies..."
-npm install >> update_log.txt 2>&1
-
-echo "Rebuilding static assets..."
-npm run build:css >> update_log.txt 2>&1
-
 echo
 printf "${GREEN}✓${NC} Python dependencies updated\n"
-printf "${GREEN}✓${NC} Node.js dependencies updated\n"
-printf "${GREEN}✓${NC} Static assets rebuilt\n"
+printf "${GREEN}✓${NC} Static assets updated\n"
 echo
 
 # Restart service if it was running
