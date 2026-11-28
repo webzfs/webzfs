@@ -16,8 +16,11 @@ from services.dashboard import (
     get_realtime_system_data,
     get_pool_info_extended,
     get_arc_stats_summary,
-    get_scrub_status_all,
-    get_memory_stats, 
+    build_pool_alerts,
+    check_scrub_cron,
+    get_disk_health_summary,
+    get_jobs_services_status,
+    get_memory_stats,
     get_system_load_stats
 )
 
@@ -173,12 +176,20 @@ def system_stats_refresh(request: Request):
 
 @router.get("/zfs-pools-refresh", response_class=HTMLResponse)
 def zfs_pools_refresh(request: Request):
-    """HTMX endpoint for refreshing pool information."""
+    """HTMX endpoint for pool information (every 5 min + manual).
+
+    The response also carries the attention strip as an OOB swap.
+    """
     try:
         pools = get_pool_info_extended()
-        context = {'pools': pools}
+        context = {
+            'pools': pools,
+            'alerts': build_pool_alerts(pools),
+            'scrub_cron_configured': check_scrub_cron(),
+            'disk_health': get_disk_health_summary(),
+        }
     except Exception as exc:
-        context = {'error': str(exc), 'pools': []}
+        context = {'error': str(exc), 'pools': [], 'alerts': []}
 
     return templates.TemplateResponse(
         request, name="dashboard/zfs_pools.jinja", context=context,
@@ -199,15 +210,14 @@ def arc_stats_refresh(request: Request):
     )
 
 
-@router.get("/scrub-status-refresh", response_class=HTMLResponse)
-def scrub_status_refresh(request: Request):
-    """HTMX endpoint for refreshing scrub status."""
+@router.get("/jobs-services-refresh", response_class=HTMLResponse)
+def jobs_services_refresh(request: Request):
+    """HTMX endpoint for the Jobs and Services card (every 5 min + manual)."""
     try:
-        scrub_status = get_scrub_status_all()
-        context = {'scrub_status': scrub_status}
+        context = {'status': get_jobs_services_status()}
     except Exception as exc:
-        context = {'scrub_status': {'pools': [], 'error': str(exc)}}
+        context = {'status': {'error': str(exc)}}
 
     return templates.TemplateResponse(
-        request, name="dashboard/scrub_status_data.jinja", context=context,
+        request, name="dashboard/jobs_services_data.jinja", context=context,
     )

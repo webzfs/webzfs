@@ -49,6 +49,10 @@
             <h1 class="text-3xl font-bold text-text-primary">System Dashboard</h1>
         </div>
 
+        {# Attention strip: filled out-of-band by the ZFS Pools response
+           (dashboard/zfs_pools.jinja). Stays hidden on a healthy system. #}
+        <div id="dash-attention" hidden></div>
+
         <!-- ================================================================
              ROW 1: System Info | Memory Usage | System Load  (3 columns)
              ================================================================ -->
@@ -194,10 +198,10 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </div>
-                <!-- Async load: ZFS pools -->
+                <!-- Async load: ZFS pools (also refreshes every 5 min) -->
                 <div id="zfs-pools-content"
                      hx-get="/zfs-pools-refresh"
-                     hx-trigger="load"
+                     hx-trigger="load, every 300s"
                      hx-swap="innerHTML">
                     <div class="flex items-center justify-center py-8">
                         <svg class="w-6 h-6 text-text-tertiary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -256,36 +260,36 @@
         </div>
 
         <!-- ================================================================
-             ROW 5: Scrub Status
+             ROW 5: Jobs and Services (failed jobs, monitoring daemons)
              ================================================================ -->
         <div class="card animate-fade-in" style="animation-delay: 0.6s;">
             <div class="card-body">
                 <div class="flex items-center gap-3 mb-4">
                     <div class="p-2 bg-warning-500/10 border border-warning-500/20 rounded-lg">
                         <svg class="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
                         </svg>
                     </div>
-                    <h2 class="text-lg font-semibold text-text-primary">Scrub Status</h2>
+                    <h2 class="text-lg font-semibold text-text-primary">Jobs and Services</h2>
                     <button type="button"
                             class="ml-auto p-1.5 rounded-lg hover:bg-bg-elevated-3 text-text-secondary hover:text-text-primary transition-colors"
-                            hx-get="/scrub-status-refresh"
-                            hx-target="#scrub-status-content"
+                            hx-get="/jobs-services-refresh"
+                            hx-target="#jobs-services-content"
                             hx-swap="innerHTML"
-                            hx-indicator="#scrub-spinner"
-                            title="Refresh scrub status">
+                            hx-indicator="#jobs-services-spinner"
+                            title="Refresh job and service status">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                         </svg>
                     </button>
-                    <svg id="scrub-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg id="jobs-services-spinner" class="w-4 h-4 text-text-tertiary htmx-indicator animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </div>
-                <!-- Async load: scrub status (also refreshes every 5 min) -->
-                <div id="scrub-status-content"
-                     hx-get="/scrub-status-refresh"
+                <!-- Async load: jobs and services (also refreshes every 5 min) -->
+                <div id="jobs-services-content"
+                     hx-get="/jobs-services-refresh"
                      hx-trigger="load, every 300s"
                      hx-swap="innerHTML">
                     <div class="flex items-center justify-center py-8">
@@ -293,7 +297,7 @@
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        <span class="ml-2 text-sm text-text-tertiary">Loading scrub status...</span>
+                        <span class="ml-2 text-sm text-text-tertiary">Loading job and service status...</span>
                     </div>
                 </div>
             </div>
