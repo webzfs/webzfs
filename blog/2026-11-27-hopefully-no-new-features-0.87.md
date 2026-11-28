@@ -11,9 +11,12 @@ In the 0.85 post, under "What comes next", the very first bullet point was:
 `Hopefully no new features`  
 ![](./images/maury.gif)
 
-So anyway, here's a release with over 16,000 new lines in it.
+So anyway, here's a release with over 10,000 new lines in it.  Ok technically they're not all **NEW**, ome were in side branches I had on my local gitea that I forgot about, some were for bug fixes I had written earlier and didn't get pushed before. And also technically I just made up that 10k figure, i don't actually know how many new lines there are, but it sounds good. Sounds a lot better than something like 2,347 new lines.
 
-In my defense, I didn't go looking for shiny new things to build. What I did was sit down and compare what `zpool` and `zfs` can actually do against what WebZFS lets you do, and write down every missing thing... and as it turns out... that list got long. Uncomfortably long. A lot of it was stuff where I honestly thought "wait, I don't have that already?"
+In my defense, I didn't go looking for shiny new things to build... I just ended up being wrong.  And unlike the typical modus operandi in world these days, I wont try to gaslight everyone else when I'm genuinely the one at fault. 
+![](./images/dont_shoot.jpg)
+
+All self-deprecating jokes aside, what I did was sit down and compare what `zpool` and `zfs` can actually do against what WebZFS lets you do, and write down every missing thing... and as it turns out... that list got long. Uncomfortably long. A lot of it was stuff where I honestly thought "wait, I don't have that already?"
 After working through the list and deciding what I didn't want to be bothered with, I made a branch for each on my local Gitea, worked on them, and then spent a weekend merging them all into 0.87. If you want to know how that went, the commit log has you covered:
 
 ```text
@@ -32,9 +35,9 @@ However thankfully... it's all in main now. Here's the highlights.
 
 At the end of the 0.78 post I said I needed to go verify which features are 2.4.x only and disable them in the UI if you're on something older, and then told someone to go make that issue ticket.
 
-Fun fact, no one made that ticket for me.  So I kinda forgot about it. Seriously, if you find something wrong, make a ticket so I dont forget.
+Fun fact, no one made that ticket for me.  So I kinda forgot about it. Seriously, if you find something wrong, make a ticket so I dont forget. A bunch of this I had worked on in a side branch before I forgot about it... cut me some slack, that was 3 months ago... you dont expect me to remember everything do you?
 
-ANywho, it's done now. WebZFS now checks your OpenZFS version and platform, and hides or disables the things your system can't do. dRAID needs 2.1, error scrubs need 2.2, scrub time ranges need 2.4, and NetBSD's ZFS is its own special little world. You shouldn't get offered a button that ZFS is just going to laugh at anymore. Key word being "shouldn't", it might still happen from time to time where I missed things.
+Anywho, branch is found and reworked into the latest, so it's done now. WebZFS now checks your OpenZFS version and platform, and hides or disables the things your system can't do. dRAID needs 2.1, error scrubs need 2.2, scrub time ranges need 2.4, and NetBSD's ZFS is its own special little world. You shouldn't get offered a button that ZFS is just going to laugh at anymore. Key word being "shouldn't", it might still happen from time to time where I missed things.
 
 A lot of the things below relied on this.
 
