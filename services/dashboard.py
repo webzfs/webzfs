@@ -13,7 +13,9 @@ from typing import Any, Dict, List, Optional
 import humanize
 import psutil
 
-from services.utils import is_freebsd, is_netbsd, run_command, run_zfs_command
+from services.utils import (
+    is_freebsd, is_linux, is_netbsd, run_command, run_zfs_command,
+)
 from services.scan_status import errors_section_has_errors, parse_scan
 from services.zfs_pool import ZFSPoolService
 from services.zfs_performance import ZFSPerformanceService
@@ -427,10 +429,104 @@ def _parse_pool_status_counts(
     return counts
 
 
+def _parse_status_sections(status_output: str) -> dict[str, str]:
+    """Extract the ``status:``, ``action:`` and ``errors:`` text of one pool.
+
+    ``zpool status`` wraps long ``status:`` and ``action:`` text onto
+    tab-indented continuation lines; those are joined with single spaces.
+    """
+    sections = {'status': '', 'action': '', 'errors': ''}
+    current = None
+    for line in status_output.splitlines():
+        match = re.match(r'^\s*([a-z]+):\s*(.*)$', line)
+        if match:
+            label = match.group(1)
+            if label in sections and not sections[label]:
+                current = label
+                sections[label] = match.group(2).strip()
+            else:
+                current = None
+            continue
+        if current and line.startswith('\t') and line.strip():
+            sections[current] = f"{sections[current]} {line.strip()}".strip()
+        else:
+            current = None
+
+    errors_text = sections['errors']
+    return {
+        'status_text': sections['status'],
+        'action_text': sections['action'],
+        'errors_text': errors_text,
+        'data_errors': bool(errors_text)
+        and errors_text.lower() != 'no known data errors',
+    }
+
+
+def _parse_percent(value: Any) -> Optional[int]:
+    """Convert a value such as ``12%`` to an int, or None when not numeric."""
+    try:
+        return int(str(value).strip().rstrip('%'))
+    except (ValueError, TypeError):
+        return None
+
+
+def build_pool_alerts(pools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return the conditions that need attention, for the dashboard strip.
+
+    One entry per condition: a pool that is not ONLINE, a pool with data
+    errors, and a resilver in progress. A healthy system returns an empty list.
+    """
+    faulted_states = ('FAULTED', 'UNAVAIL', 'REMOVED', 'SUSPENDED')
+    alerts: list[dict[str, Any]] = []
+
+    for pool in pools:
+        name = pool.get('name', '')
+        health = pool.get('health') or 'UNKNOWN'
+        status_text = pool.get('status_text', '')
+        action_text = pool.get('action_text', '')
+        status_shown = False
+
+        if health != 'ONLINE':
+            alerts.append({
+                'level': 'danger' if health in faulted_states else 'warning',
+                'pool': name,
+                'title': f"pool is {health}",
+                'detail': status_text,
+                'action': action_text,
+            })
+            status_shown = True
+
+        if pool.get('data_errors'):
+            alerts.append({
+                'level': 'danger',
+                'pool': name,
+                'title': f"data errors: {pool.get('errors_text', '')}",
+                'detail': '' if status_shown else status_text,
+                'action': '' if status_shown else action_text,
+            })
+
+        if pool.get('resilver_in_progress'):
+            parts = ['resilver in progress']
+            if pool.get('scrub_progress') is not None:
+                parts.append(f"{pool['scrub_progress']}% done")
+            if pool.get('scan_eta'):
+                parts.append(f"{pool['scan_eta']} to go")
+            alerts.append({
+                'level': 'info',
+                'pool': name,
+                'title': ', '.join(parts),
+                'detail': '',
+                'action': '',
+            })
+
+    return alerts
+
+
 def get_pool_info_extended() -> list[dict[str, Any]]:
     """
     Return pool information enriched with dataset/snapshot counts,
-    vdev/disk counts, and error totals.
+    vdev/disk counts, error totals, scan (scrub/resilver) state and the
+    ``status:``/``action:``/``errors:`` text from ``zpool status``.
     """
     try:
         pool_service = ZFSPoolService()
@@ -480,14 +576,21 @@ def get_pool_info_extended() -> list[dict[str, Any]]:
         pool['read_errors'] = 0
         pool['write_errors'] = 0
         pool['cksum_errors'] = 0
+        pool['frag_pct'] = _parse_percent(pool.get('frag'))
+        pool.update(_parse_scrub_info(''))
+        pool.update(_parse_status_sections(''))
 
         try:
+            # No -v: the errors: summary line is enough to detect data
+            # errors, and the file list can be long on a damaged pool.
             result = run_zfs_command(
                 ['zpool', 'status', name],
                 check=False, timeout=15,
             )
             if result.returncode == 0:
                 pool.update(_parse_pool_status_counts(result.stdout, name))
+                pool.update(_parse_scrub_info(result.stdout))
+                pool.update(_parse_status_sections(result.stdout))
         except Exception:
             pass
 
@@ -625,7 +728,7 @@ def get_arc_stats_summary() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _check_scrub_cron() -> bool:
+def check_scrub_cron() -> bool:
     """Check if scrub cron jobs are configured."""
     home = Path.home()
     schedules_file = home / '.config' / 'webzfs' / 'scrub_schedules.json'
@@ -680,13 +783,28 @@ def _parse_scrub_info(status_output: str) -> dict[str, Any]:
         'scrub_progress': scan.progress,
         'scan_line': scan.raw or None,
         'scan_errors': scan.has_errors or errors_section_has_errors(status_output),
+        'scrub_age_days': None,
+        'resilver_in_progress': scan.kind == 'resilver' and scan.in_progress,
+        'scan_eta': None,
     }
+
+    if scan.in_progress:
+        eta_match = re.search(r'((?:\d+ days? )?\d+:\d{2}:\d{2}) to go', scan.raw)
+        if eta_match:
+            info['scan_eta'] = eta_match.group(1)
 
     if scan.last_scrub is not None:
         info['last_scrub'] = scan.last_scrub.isoformat()
         days_ago = (datetime.now() - scan.last_scrub).days
         info['scrub_within_30_days'] = days_ago <= 30
-        info['last_scrub_human'] = humanize.naturaltime(scan.last_scrub)
+        info['scrub_age_days'] = days_ago
+        # Exact day counts up to 30 days, so the label never rounds to
+        # "a month ago" while the age is still inside the 30 day window.
+        if 1 <= days_ago <= 30:
+            unit = 'day' if days_ago == 1 else 'days'
+            info['last_scrub_human'] = f"{days_ago} {unit} ago"
+        else:
+            info['last_scrub_human'] = humanize.naturaltime(scan.last_scrub)
 
     if not scan.present:
         for line in status_output.split('\n'):
@@ -702,7 +820,7 @@ def get_scrub_status_all() -> dict[str, Any]:
     """Return scrub status for every pool."""
     status: dict[str, Any] = {
         'pools': [],
-        'scrub_cron_configured': _check_scrub_cron(),
+        'scrub_cron_configured': check_scrub_cron(),
     }
 
     try:
@@ -750,6 +868,238 @@ def get_scrub_status_all() -> dict[str, Any]:
         pass
 
     return status
+
+
+# ---------------------------------------------------------------------------
+# Disk health summary (from the latest saved health report)
+# ---------------------------------------------------------------------------
+
+
+def _parse_iso(value: Any) -> Optional[datetime]:
+    """Parse an ISO timestamp, returning None when missing or malformed."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def get_disk_health_summary() -> Optional[dict[str, Any]]:
+    """Return disk counts from the newest completed health report.
+
+    Reads the saved report only; no disk is probed. Returns None when no
+    completed report with disk health results exists.
+    """
+    try:
+        from services.health_analysis import HealthAnalysisService
+        reports = HealthAnalysisService().list_reports(limit=20)
+    except Exception:
+        return None
+
+    for report in reports:
+        summary = report.get('summary') or {}
+        if report.get('status') != 'completed' or not summary.get('total_disks'):
+            continue
+        completed = _parse_iso(report.get('completed_at'))
+        return {
+            'report_id': report.get('id'),
+            'total': summary.get('total_disks', 0),
+            'healthy': summary.get('healthy_disks', 0),
+            'warning': summary.get('warning_disks', 0),
+            'critical': summary.get('critical_disks', 0),
+            'age_human': humanize.naturaltime(completed) if completed else None,
+            'stale': bool(completed)
+            and (datetime.now() - completed).days > 30,
+        }
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Failed jobs and monitoring services
+# ---------------------------------------------------------------------------
+
+FAILED_JOB_WINDOW_HOURS = 24
+
+SMARTD_BINARY_PATHS = (
+    '/usr/sbin/smartd',
+    '/usr/local/sbin/smartd',
+    '/usr/pkg/sbin/smartd',
+    '/sbin/smartd',
+    '/usr/bin/smartd',
+)
+
+
+def _first_line(text: Any, max_length: int = 160) -> str:
+    """Return the first non-empty line of a message, shortened for display."""
+    for line in str(text or '').splitlines():
+        line = line.strip()
+        if line:
+            if len(line) > max_length:
+                return line[:max_length - 3] + '...'
+            return line
+    return ''
+
+
+def _time_ago(value: Any) -> str:
+    """Return a relative time such as "3 hours ago" for an ISO timestamp."""
+    parsed = _parse_iso(value)
+    return humanize.naturaltime(parsed) if parsed else ''
+
+
+def get_failed_jobs() -> list[dict[str, Any]]:
+    """Return failed replication runs and scheduled tasks that last failed.
+
+    Replication runs (native and Syncoid) are taken from the execution history
+    and limited to the last FAILED_JOB_WINDOW_HOURS hours. Scheduled tasks
+    (Syncoid, scrub, SMART test, health check) are listed when they are enabled
+    and their most recent run did not succeed, whatever its age.
+    """
+    failed: list[dict[str, Any]] = []
+    try:
+        from services.storage import FileStorageService
+        storage = FileStorageService()
+    except Exception:
+        return failed
+
+    cutoff = datetime.now() - timedelta(hours=FAILED_JOB_WINDOW_HOURS)
+    listed_job_ids = set()
+
+    try:
+        for execution in storage.get_execution_history(limit=200):
+            if execution.get('status') not in ('failure', 'failed'):
+                continue
+            finished = execution.get('completed_at') or execution.get('started_at')
+            finished_time = _parse_iso(finished)
+            if finished_time is None or finished_time < cutoff:
+                continue
+            name = execution.get('job_name') or (
+                f"{execution.get('source_dataset', '')} to "
+                f"{execution.get('target_dataset', '')}"
+            )
+            failed.append({
+                'kind': 'Replication',
+                'name': name,
+                'when': humanize.naturaltime(finished_time),
+                'detail': _first_line(execution.get('error_message')),
+                'url': f"/zfs/replication/history/{execution.get('id')}",
+            })
+            if execution.get('job_id'):
+                listed_job_ids.add(str(execution['job_id']))
+    except Exception:
+        pass
+
+    def add_schedule(kind: str, name: str, record: dict[str, Any], url: str) -> None:
+        if not record.get('enabled', True):
+            return
+        last_status = record.get('last_status')
+        if last_status not in ('failure', 'failed', 'partial'):
+            return
+        detail = 'Last scheduled run failed'
+        if last_status == 'partial':
+            detail = 'Last scheduled run failed on some disks'
+        failed.append({
+            'kind': kind,
+            'name': name,
+            'when': _time_ago(record.get('last_run')),
+            'detail': detail,
+            'url': url,
+        })
+
+    try:
+        for job in storage.get_syncoid_jobs():
+            # Already listed above through its failed execution record.
+            if f"syncoid-{job.get('id')}" in listed_job_ids:
+                continue
+            add_schedule(
+                'Syncoid job', job.get('name') or f"job {job.get('id')}",
+                job, '/zfs/replication/syncoid',
+            )
+    except Exception:
+        pass
+
+    try:
+        for record in storage.get_scrub_schedules():
+            add_schedule(
+                'Scheduled scrub', f"pool {record.get('pool', 'unknown')}",
+                record, '/utils/scheduling/',
+            )
+    except Exception:
+        pass
+
+    try:
+        for record in storage.get_health_schedules():
+            add_schedule(
+                'Health check', record.get('name') or f"schedule {record.get('id')}",
+                record, '/utils/scheduling/',
+            )
+    except Exception:
+        pass
+
+    try:
+        from services.smart_monitoring import SMARTMonitoringService
+        for record in SMARTMonitoringService().list_scheduled_tests():
+            add_schedule(
+                'SMART test',
+                f"{record.get('test_type', 'short')} test on "
+                f"{record.get('disk', 'unknown disk')}",
+                record, '/utils/scheduling/',
+            )
+    except Exception:
+        pass
+
+    return failed
+
+
+def get_monitoring_services() -> list[dict[str, Any]]:
+    """Return the run state of the daemons that raise disk and pool alerts.
+
+    smartd is reported on every platform when it is installed. ZED is
+    reported on Linux only.
+    """
+    services: list[dict[str, Any]] = []
+
+    smartd_installed = any(Path(path).exists() for path in SMARTD_BINARY_PATHS)
+    smartd_running = False
+    if smartd_installed:
+        try:
+            from services.smartd import get_smartd_status
+            smartd_running = bool(get_smartd_status().get('running'))
+        except Exception:
+            smartd_running = False
+    services.append({
+        'name': 'smartd',
+        'description': 'SMART disk monitoring daemon',
+        'installed': smartd_installed,
+        'running': smartd_running,
+        'url': '/utils/smart/smartd',
+    })
+
+    if is_linux():
+        zed_running = False
+        try:
+            from services.zed import ZedService
+            zed_running, _ = ZedService().get_daemon_status()
+        except Exception:
+            zed_running = False
+        services.append({
+            'name': 'ZED',
+            'description': 'ZFS Event Daemon',
+            'installed': True,
+            'running': zed_running,
+            'url': '/utils/zed/',
+        })
+
+    return services
+
+
+def get_jobs_services_status() -> dict[str, Any]:
+    """Return the data for the dashboard Jobs and Services card."""
+    return {
+        'failed_jobs': get_failed_jobs(),
+        'services': get_monitoring_services(),
+        'window_hours': FAILED_JOB_WINDOW_HOURS,
+    }
 
 
 # ---------------------------------------------------------------------------

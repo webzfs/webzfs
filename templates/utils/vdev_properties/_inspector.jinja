@@ -27,6 +27,15 @@
 </div>
 {% endmacro %}
 
+{% if node.incompatible %}
+<div class="px-5 py-4 border-b border-border-subtle">
+    <h2 class="text-base font-semibold text-text-primary mb-0">Inspector</h2>
+    <p class="text-xs text-text-tertiary mt-1 mb-0">Pool: {{ node.pool }}</p>
+</div>
+<div class="p-4 text-sm text-text-secondary">
+    This pool cannot store custom vdev properties. See the warning in the pool topology.
+</div>
+{% else %}
 <div class="px-5 py-4 border-b border-border-subtle flex justify-between gap-3 items-start">
     <div class="min-w-0">
         <h2 class="text-base font-semibold text-text-primary mb-0">Inspector</h2>
@@ -65,3 +74,4 @@
     {% endif %}
     {% endfor %}
 </div>
+{% endif %}

@@ -18,6 +18,7 @@ from services.audit_logger import audit_logger
 from services.utils import is_netbsd, get_os_type
 from services.scan_status import errors_section_has_errors, parse_scan
 from services.zfs_capabilities import caps
+from services.zfs_pool_features import pool_feature_report
 from services.zfs_key_options import (
     KEYFORMAT_PASSPHRASE,
     KEYFORMATS,
@@ -504,6 +505,7 @@ async def pool_detail(request: Request, pool_name: str):
                 "zfs_cap": zfs_cap,
                 "checkpoint_info": checkpoint_info,
                 "checkpoint_supported": checkpoint_supported,
+                "feature_report": pool_feature_report(pool_name),
                 "page_title": f"Pool: {pool_name}"
             }
         )

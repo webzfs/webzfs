@@ -68,7 +68,9 @@
                         <div class="text-text-tertiary text-sm">Filtered View</div>
                         <div class="text-lg font-semibold text-text-primary mt-1">
                             {% if selected_dataset %}
-                                {{ selected_dataset }}
+                                <a href="/zfs/datasets/{{ selected_dataset }}"
+                                   class="text-primary-400 hover:text-primary-300 transition-colors"
+                                   title="Open dataset {{ selected_dataset }}">{{ selected_dataset }}</a>
                             {% else %}
                                 All Datasets
                             {% endif %}

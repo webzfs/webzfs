@@ -21,10 +21,13 @@ from core.vdev_property_catalog import (
 )
 from services.audit_logger import audit_logger
 from services.utils import run_privileged_command, run_zfs_command
+from services.zfs_capabilities import get_pool_features
 
 logger = logging.getLogger(__name__)
 
 ALL_POOLS = "all"
+# Pool feature that gives the root vdev (root-0) a ZAP for properties (OpenZFS 2.2).
+REQUIRED_FEATURE = "vdev_zaps_v2"
 POOL_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]*$")
 VDEV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./:@+-]*$")
 STATE_NAMES = {"0": "UNKNOWN", "1": "CLOSED", "2": "OFFLINE", "3": "REMOVED", "4": "CANT_OPEN",
@@ -79,6 +82,49 @@ def read_all_vdev_properties(pool: str) -> dict[str, dict[str, tuple[str, str]]]
     if "root-0" not in table:
         raise VdevPropertyError(f"Unable to read vdev properties for pool {pool}.")
     return table
+
+
+def incompatibility_reason(pool: str) -> str:
+    """Return why the pool cannot store custom vdev properties, or an empty string when it can.
+
+    Pool-scope values live on the ``root-0`` vdev, which only has property
+    storage when the ``vdev_zaps_v2`` pool feature is enabled or active. An
+    empty feature map means the query itself failed; in that case the normal
+    read path reports the real error.
+    """
+    try:
+        features = get_pool_features(pool)
+    except ValueError:
+        return ""
+    if not features:
+        return ""
+    if REQUIRED_FEATURE not in features:
+        return (f"The OpenZFS version installed on this system does not provide the {REQUIRED_FEATURE} "
+                f"pool feature. Custom vdev properties need OpenZFS 2.2 or newer.")
+    if features[REQUIRED_FEATURE].lower() in ("enabled", "active"):
+        return ""
+    return (f"Pool {pool} does not have the {REQUIRED_FEATURE} feature enabled, so it cannot store "
+            f"custom vdev properties. Upgrade the pool to enable it.")
+
+
+def incompatible_topology(pool: str, reason: str) -> dict:
+    """Page model for a pool that cannot store vdev properties: a warning and no selectable vdevs."""
+    token = selection_token("pool", pool)
+    return {
+        "pool": {"name": pool, "kind": "pool", "pool": pool, "token": token, "pool_token": token,
+                 "props": {}, "state": "", "incompatible": True, "incompatible_reason": reason},
+        "groups": [], "leaves": [],
+        "incompatible": True, "incompatible_reason": reason,
+        "upgradable": "Upgrade the pool" in reason,
+        "topology_summary": "Pool upgrade required",
+        "metrics": {"leaf_count": 0, "covered": 0, "missing": 0, "warranty_alerts": 0,
+                    "discoverable_fields": len(discoverable_keys())},
+    }
+
+
+def require_compatible(node: dict) -> None:
+    if node.get("incompatible"):
+        raise VdevPropertyError(node.get("incompatible_reason") or "This pool cannot store custom vdev properties.")
 
 
 def native(props: dict[str, tuple[str, str]], key: str) -> str:
@@ -180,6 +226,9 @@ def build_topology(pool: str, today: date | None = None) -> dict:
     """Build the page model: pool node, ordered top-level groups, leaf rows, and summary metrics."""
     validate_pool_name(pool)
     today = today or date.today()
+    reason = incompatibility_reason(pool)
+    if reason:
+        return incompatible_topology(pool, reason)
     table = read_all_vdev_properties(pool)
     sections = section_map(pool)
     root = table["root-0"]
@@ -286,7 +335,9 @@ def find_object(topology: dict, selected: str) -> dict:
 def build_topologies(pools: list[str], selected: str, today: date | None = None) -> tuple[list[dict], dict]:
     """Build one topology per pool and resolve the selected object across all pools."""
     topologies = [build_topology(pool, today=today) for pool in pools]
-    chosen = topologies[0]["pool"] if topologies else {}
+    # Default to the first pool that can store properties so the inspector is usable.
+    usable = [topology for topology in topologies if not topology.get("incompatible")]
+    chosen = (usable or topologies)[0]["pool"] if topologies else {}
     selected_pool = selected_pool_name(selected)
     for topology in topologies:
         topology["selected"] = topology["pool"]["token"]
@@ -324,6 +375,7 @@ def definition_for(key: str, node: dict) -> PropertyDefinition:
 def set_custom_property(username: str, pool: str, node: dict, key: str, value: str) -> str:
     """Set or clear one catalog property on the selected object. Returns the argv preview."""
     validate_pool_name(pool)
+    require_compatible(node)
     definition = definition_for(key, node)
     try:
         normalized = validate_value(definition, value)

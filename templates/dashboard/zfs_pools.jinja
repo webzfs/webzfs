@@ -27,6 +27,8 @@
                 <span>Used: <span class="text-text-primary font-medium">{{ pool.used|default(pool.alloc)|default('?') }}</span></span>
                 <span>Avail: <span class="text-text-primary font-medium">{{ pool.avail|default(pool.free)|default('?') }}</span></span>
                 <span>Total: <span class="text-text-primary font-medium">{{ pool.total|default(pool.size)|default('?') }}</span></span>
+                {% set frag_pct = pool.frag_pct %}
+                <span title="Free space fragmentation">Frag: <span class="font-medium {% if frag_pct is not none and frag_pct >= 80 %}text-danger-400{% elif frag_pct is not none and frag_pct >= 50 %}text-warning-400{% else %}text-text-primary{% endif %}">{{ pool.frag|default('?') }}</span></span>
                 <span>Cap: <span class="font-medium {% if cap_pct >= 90 %}text-danger-400{% elif cap_pct >= 80 %}text-warning-400{% else %}text-text-primary{% endif %}">{{ pool.cap|default('?') }}</span></span>
             </div>
 
@@ -85,10 +87,30 @@
                 <svg class="w-3.5 h-3.5 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
                 <span class="text-text-primary font-medium">{{ pool.disk_count|default(0) }}</span> disks
             </span>
+            {# Scrub / resilver state; the full scan line is in the tooltip #}
+            <span title="{{ pool.scan_line or 'No scan recorded' }}">
+                {% if pool.resilver_in_progress %}
+                Resilver: <span class="text-info-400 font-medium">running{% if pool.scrub_progress is not none %} ({{ pool.scrub_progress }}%){% endif %}</span>
+                {% elif pool.scrub_paused %}
+                Scrub: <span class="text-warning-400 font-medium">paused{% if pool.scrub_progress is not none %} ({{ pool.scrub_progress }}%){% endif %}</span>
+                {% elif pool.scrub_in_progress %}
+                Scrub: <span class="text-info-400 font-medium">running{% if pool.scrub_progress is not none %} ({{ pool.scrub_progress }}%){% endif %}</span>
+                {% elif pool.last_scrub_human %}
+                {# Age colours: up to 30 days green, over 30 yellow, over 60 red,
+                   over 90 bold red, over 180 (or never) pulsing bold red #}
+                {% set scrub_age = pool.scrub_age_days|default(0, true) %}
+                Scrub: <span class="{% if scrub_age > 180 %}text-danger-400 font-bold animate-pulse{% elif scrub_age > 90 %}text-danger-400 font-bold{% elif scrub_age > 60 %}text-danger-400 font-medium{% elif scrub_age > 30 %}text-warning-400 font-medium{% else %}text-success-400 font-medium{% endif %}">{{ pool.last_scrub_human }}</span>
+                {% else %}
+                Scrub: <span class="text-danger-400 font-bold animate-pulse">none recorded</span>
+                {% endif %}
+            </span>
 
             <span class="ml-auto"></span>
 
             <!-- Error counts with legend label -->
+            {% if pool.data_errors %}
+            <span class="text-danger-400 font-medium" title="{{ pool.errors_text }}">Data errors</span>
+            {% endif %}
             <span class="text-text-tertiary font-medium">Errors:</span>
             <span title="Read errors" class="{% if pool.read_errors|default(0) > 0 %}text-danger-400 font-medium{% endif %}">
                 Read: {{ pool.read_errors|default(0) }}
@@ -111,3 +133,56 @@
     <p>No ZFS pools found</p>
 </div>
 {% endif %}
+
+{# Footer: disk health from the latest saved health report, scrub schedule warning #}
+<div class="mt-3 flex items-center gap-4 flex-wrap text-xs text-text-secondary">
+    {% if disk_health %}
+    <span>
+        Disk health:
+        <span class="text-text-primary font-medium">{{ disk_health.total }}</span> disks,
+        <span class="text-text-primary font-medium">{{ disk_health.healthy }}</span> healthy,
+        <span class="font-medium {% if disk_health.warning > 0 %}text-warning-400{% else %}text-text-primary{% endif %}">{{ disk_health.warning }}</span> warning,
+        <span class="font-medium {% if disk_health.critical > 0 %}text-danger-400{% else %}text-text-primary{% endif %}">{{ disk_health.critical }}</span> critical
+        (<a href="/utils/health/report/{{ disk_health.report_id }}" class="text-primary-400 hover:text-primary-300">report{% if disk_health.age_human %} from {{ disk_health.age_human }}{% endif %}</a>{% if disk_health.stale %}, <span class="text-warning-400">older than 30 days</span>{% endif %})
+    </span>
+    {% else %}
+    <span>
+        Disk health: no completed health report,
+        <a href="/utils/health/" class="text-primary-400 hover:text-primary-300">run a health analysis</a>
+    </span>
+    {% endif %}
+
+    {% if pools and scrub_cron_configured is defined and not scrub_cron_configured %}
+    <span class="ml-auto text-warning-400">
+        No automated scrub schedule detected,
+        <a href="/utils/scheduling/scrub/new" class="text-primary-400 hover:text-primary-300">configure scrub schedules</a>
+    </span>
+    {% endif %}
+</div>
+
+{# Attention strip: swapped out-of-band into the top of the dashboard.
+   Hidden when nothing needs attention. #}
+<div id="dash-attention" hx-swap-oob="true"{% if not alerts %} hidden{% endif %}>
+    {% if alerts %}
+    <div class="space-y-2">
+        {% for alert in alerts %}
+        <div class="alert alert-{{ alert.level }} flex items-start gap-3" role="alert">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div class="min-w-0 text-sm">
+                <div class="font-semibold">
+                    <a href="/zfs/pools/{{ alert.pool }}" class="underline">{{ alert.pool }}</a>: {{ alert.title }}
+                </div>
+                {% if alert.detail %}
+                <div class="text-xs text-text-secondary mt-1">{{ alert.detail }}</div>
+                {% endif %}
+                {% if alert.action %}
+                <div class="text-xs text-text-secondary mt-1">Action: {{ alert.action }}</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>

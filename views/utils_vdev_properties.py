@@ -92,6 +92,7 @@ def inspector(request: Request, pool: str, selected: str = "pool"):
 def edit_form(request: Request, pool: str, selected: str = "pool"):
     try:
         topologies, node, summary = load(pool, selected)
+        service.require_compatible(node)
     except service.VdevPropertyError as failure:
         return render(request, "_error", error=str(failure))
     return render(request, "_edit_modal", **inspector_context(pool, topologies, node, summary))

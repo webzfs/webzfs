@@ -1,0 +1,112 @@
+{# Pool version and upgrade information. Context: feature_report (from services.zfs_pool_features). #}
+<div class="card" id="pool-upgrade">
+    <h2 class="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+        <svg class="w-5 h-5 text-info-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+        </svg>
+        Pool Version and Upgrade
+    </h2>
+
+    <div class="card-nested mb-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <div class="text-text-tertiary text-xs uppercase">Pool Version</div>
+                <div class="text-text-primary text-lg font-mono mt-1">{{ feature_report.version_label }}</div>
+            </div>
+            <div>
+                <div class="text-text-tertiary text-xs uppercase">Features Enabled</div>
+                <div class="text-text-primary text-lg font-mono mt-1">{{ feature_report.enabled_count }} of {{ feature_report.feature_count }}</div>
+            </div>
+            <div>
+                <div class="text-text-tertiary text-xs uppercase">Status</div>
+                <div class="mt-1">
+                    {% if feature_report.can_upgrade %}
+                    <span class="badge badge-warning">Upgrade available</span>
+                    {% else %}
+                    <span class="badge badge-success">Up to date</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if not feature_report.available and not feature_report.legacy %}
+    <p class="text-sm text-text-secondary">
+        Every pool feature supported by the OpenZFS version installed on this system is enabled on this pool. No upgrade is available.
+    </p>
+    {% else %}
+
+    {% if feature_report.legacy %}
+    <p class="text-sm text-text-secondary mb-4">
+        This pool uses the legacy on-disk format (version {{ feature_report.version }}). Upgrading converts it to feature flags and enables the features listed below.
+    </p>
+    {% elif feature_report.can_upgrade %}
+    <p class="text-sm text-text-secondary mb-4">
+        This pool can be upgraded. The OpenZFS version installed on this system supports the following features that are not enabled on this pool.
+    </p>
+    {% else %}
+    <p class="text-sm text-text-secondary mb-4">
+        The remaining features below are not enabled by a pool upgrade and must be enabled individually.
+    </p>
+    {% endif %}
+
+    {% if feature_report.available %}
+    <div class="overflow-x-auto mb-4">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="border-b border-border-subtle text-left text-xs uppercase tracking-wider text-text-tertiary">
+                    <th class="px-3 py-2 font-medium">Feature</th>
+                    <th class="px-3 py-2 font-medium">Description</th>
+                    <th class="px-3 py-2 font-medium">Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for feature in feature_report.available %}
+                <tr class="border-b border-border-subtle">
+                    <td class="px-3 py-2 font-mono text-text-primary whitespace-nowrap">{{ feature.name }}</td>
+                    <td class="px-3 py-2 text-text-secondary">{{ feature.description or '-' }}</td>
+                    <td class="px-3 py-2 text-text-tertiary text-xs">
+                        {% if feature.read_only_compatible %}<span class="badge badge-secondary">read-only compatible</span>{% endif %}
+                        {% if feature.manual %}<span class="badge badge-info">manual enable</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if feature_report.can_upgrade %}
+    <div class="text-text-tertiary text-xs uppercase mb-1">Upgrade command (run from the command line)</div>
+    <pre class="bg-bg-base text-text-primary p-3 rounded-lg overflow-x-auto text-sm font-mono border border-border-subtle mb-4">{{ feature_report.upgrade_command }}</pre>
+    {% endif %}
+
+    <div class="alert alert-warning flex items-start gap-3 mb-3">
+        <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+        <div class="text-sm">
+            <strong>A pool upgrade is a one-way operation.</strong>
+            <span class="text-text-secondary">
+                Enabled features cannot be disabled again. After the upgrade, the pool cannot be imported on a system
+                running an older OpenZFS version that does not support the newly enabled features. Do not upgrade a
+                pool that may need to be moved to, or booted from, an older system.
+                Features marked read-only compatible still allow a read-only import on software without that feature.
+            </span>
+        </div>
+    </div>
+
+    <ul class="text-xs text-text-tertiary space-y-1 list-disc pl-4">
+        {% if feature_report.has_manual %}
+        <li>Features marked manual enable are skipped by <span class="font-mono">zpool upgrade</span> and are enabled with <span class="font-mono">zpool set feature@&lt;name&gt;=enabled {{ feature_report.pool }}</span>.</li>
+        {% endif %}
+        {% if feature_report.compatibility %}
+        <li>The <span class="font-mono">compatibility</span> property of this pool is set to <span class="font-mono">{{ feature_report.compatibility }}</span>. An upgrade enables only the features that this setting allows.</li>
+        {% endif %}
+        {% if feature_report.bootfs %}
+        <li>This pool has <span class="font-mono">bootfs</span> set ({{ feature_report.bootfs }}) and may be a boot pool. Update the boot loader before upgrading, otherwise the system may fail to boot from the pool.</li>
+        {% endif %}
+        <li>WebZFS does not run the upgrade. See <span class="font-mono">zpool-upgrade(8)</span> and <span class="font-mono">zpool-features(7)</span>.</li>
+    </ul>
+    {% endif %}
+</div>

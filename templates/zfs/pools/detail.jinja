@@ -814,6 +814,11 @@ zpool import --rewind-to-checkpoint {{ pool.name }}</pre>
         <pre class="bg-bg-base text-text-primary p-4 rounded-lg overflow-x-auto text-sm font-mono border border-border-subtle">{{ pool.status_output }}</pre>
     </div>
 
+    <!-- Pool Version and Upgrade -->
+    {% if feature_report %}
+    {% include 'zfs/pools/_upgrade_card.jinja' %}
+    {% endif %}
+
     <!-- Back -->
     <div>
         <a href="/zfs/pools" class="text-text-secondary hover:text-text-primary inline-flex items-center gap-2 transition-colors">

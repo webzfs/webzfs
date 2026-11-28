@@ -1,0 +1,95 @@
+{% extends "layout.jinja" %}
+
+{% set active_page = "utils" %}
+
+{% block title %}Shell Session {{ metadata.session_id }} - WebZFS{% endblock %}
+
+{% block head_assets %}
+{# Root-relative paths so the assets load over the page's own scheme behind an HTTPS reverse proxy (issue 245). #}
+<link rel="stylesheet" href="{{ request.app.url_path_for('static', path='vendor/xterm/xterm.css') }}">
+<script src="{{ request.app.url_path_for('static', path='vendor/xterm/xterm.js') }}"></script>
+<script src="{{ request.app.url_path_for('static', path='vendor/xterm/addon-fit.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<nav class="text-sm mb-6 text-text-tertiary">
+    <a href="/utils/logs" class="hover:text-primary-400">Audit Logs</a>
+    <span class="mx-2">/</span>
+    <a href="/utils/logs/shell-history" class="hover:text-primary-400">Shell Session History</a>
+    <span class="mx-2">/</span>
+    <span class="text-text-primary font-mono">{{ metadata.session_id }}</span>
+</nav>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <h1 class="text-3xl font-bold text-text-primary mb-0">Shell Session Recording</h1>
+    <a href="/utils/logs/shell-history/{{ metadata.session_id }}/download" class="btn-primary" hx-boost="false">Download Signed Archive</a>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">WebZFS User</div><div class="text-lg font-semibold text-primary-400">{{ metadata.authenticated_user }}</div></div>
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Effective Account</div><div class="text-lg font-semibold text-warning-400">{{ metadata.effective_user }} (UID {{ metadata.effective_uid }})</div></div>
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Status</div><div class="text-lg font-semibold text-text-primary">{{ metadata.effective_status }}</div>{% if metadata.legacy_status_corrected %}<div class="text-xs text-text-tertiary mt-1">Legacy signed status: {{ metadata.signed_status }}</div>{% endif %}</div>
+    <div class="card-nested"><div class="text-xs text-text-tertiary uppercase">Integrity</div><div class="text-lg font-semibold {% if verification.valid %}text-success-400{% else %}text-danger-400{% endif %}">{% if verification.valid %}Verified{% else %}Invalid{% endif %}</div></div>
+</div>
+
+{% if not verification.valid %}
+<div class="alert-danger mb-6"><strong>Verification failed:</strong> {{ verification.error }}</div>
+{% endif %}
+
+<div class="card mb-6">
+    <div class="card-body">
+        <dl class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 text-sm">
+            <div><dt class="text-text-tertiary">Session ID</dt><dd class="text-text-primary font-mono break-all">{{ metadata.session_id }}</dd></div>
+            <div><dt class="text-text-tertiary">Started</dt><dd class="text-text-primary font-mono">{{ metadata.started_at }}</dd></div>
+            <div><dt class="text-text-tertiary">Finished</dt><dd class="text-text-primary font-mono">{{ metadata.finished_at }}</dd></div>
+            <div><dt class="text-text-tertiary">Duration</dt><dd class="text-text-primary">{{ metadata.duration_seconds }} seconds</dd></div>
+            <div><dt class="text-text-tertiary">Events</dt><dd class="text-text-primary">{{ metadata.event_count }}</dd></div>
+            <div><dt class="text-text-tertiary">Termination</dt><dd class="text-text-primary">{{ metadata.termination_reason }}</dd></div>
+        </dl>
+    </div>
+</div>
+
+<div class="card mb-6">
+    <div class="card-body p-0 overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border-subtle bg-bg-elevated-2">
+            <div class="font-semibold text-text-primary">Timed Output Replay</div>
+            <div class="flex items-center gap-2">
+                <label for="replay-speed" class="text-sm text-text-secondary">Speed</label>
+                <select id="replay-speed" class="form-select py-1 text-sm w-24"><option value="0">Instant</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option></select>
+                <button id="replay-start" type="button" class="btn-primary btn-sm">Replay</button>
+                <button id="replay-clear" type="button" class="btn-secondary btn-sm">Clear</button>
+            </div>
+        </div>
+        <div id="replay-terminal" class="bg-black min-h-[30rem] h-[60vh] p-3"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="text-xl font-semibold text-danger-400">Raw Recorded Input</h2>
+                <p class="text-sm text-text-secondary mb-0">This can expose passwords, tokens, private keys, and other hidden input.</p>
+            </div>
+            <button id="load-raw-input" type="button" class="btn-danger" onclick="showConfirm('confirm-reveal-raw-input')">Reveal Raw Input</button>
+        </div>
+        <pre id="raw-input-output" class="hidden mt-4 whitespace-pre-wrap break-all"></pre>
+    </div>
+</div>
+
+{% set id = 'confirm-reveal-raw-input' %}
+{% set title = 'Reveal Raw Terminal Input' %}
+{% set message = 'Raw terminal input can contain passwords, tokens, private keys, and other secrets. Reveal the complete recorded input for this session?' %}
+{% set confirm_text = 'Reveal Raw Input' %}
+{% set confirm_class = 'danger' %}
+{% set action_url = '' %}
+{% set confirm_action = 'revealRawShellInput()' %}
+{% include 'partials/confirm.jinja' %}
+
+<script id="shell-replay-config" type="application/json">{{ {
+    "sessionId": metadata.session_id,
+    "eventsPath": "/utils/logs/shell-history/" ~ metadata.session_id ~ "/events",
+    "inputPath": "/utils/logs/shell-history/" ~ metadata.session_id ~ "/input"
+} | tojson }}</script>
+<script src="{{ request.app.url_path_for('static', path='js/terminal/shell-replay.js') }}"></script>
+{% endblock %}

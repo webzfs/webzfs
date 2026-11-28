@@ -1,0 +1,25 @@
+{% extends "layout.jinja" %}
+
+{% set active_page = "utils" %}
+
+{% block content %}
+<nav class="text-sm mb-6 text-text-tertiary">
+    <a href="/utils" class="hover:text-primary-400">Utilities</a>
+    <span class="mx-2">/</span>
+    <a href="/utils/logs" class="hover:text-primary-400">Audit Logs</a>
+    <span class="mx-2">/</span>
+    <span class="text-text-primary">Shell Session History</span>
+</nav>
+
+<div class="card opacity-75 animate-fade-in" aria-disabled="true">
+    <div class="card-body text-center py-12">
+        <svg class="w-14 h-14 mx-auto text-text-tertiary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+        </svg>
+        <span class="badge-secondary">Not available in Cockpit</span>
+        <h1 class="text-3xl font-bold text-text-primary mt-4">Shell Session History</h1>
+        <p class="text-text-secondary max-w-2xl mx-auto">WebZFS terminal sessions are disabled inside Cockpit, so WebZFS Shell Session History is also unavailable. Cockpit Terminal sessions are not recorded by WebZFS.</p>
+        <button type="button" class="btn-primary" onclick="WebZFSApp.openCockpitTerminal()">Open Cockpit Terminal</button>
+    </div>
+</div>
+{% endblock %}
