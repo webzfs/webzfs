@@ -1,0 +1,61 @@
+{# Jobs and Services partial - used by both initial load and HTMX refresh #}
+
+{% if status and not status.error %}
+
+{# Monitoring daemons #}
+<div class="flex items-center gap-4 flex-wrap text-sm">
+    {% for service in status.services %}
+    <span class="inline-flex items-center gap-2" title="{{ service.description }}">
+        <a href="{{ service.url }}" class="text-primary-400 hover:text-primary-300 font-semibold">{{ service.name }}</a>
+        {% if not service.installed %}
+        <span class="badge badge-secondary">Not installed</span>
+        {% elif service.running %}
+        <span class="badge badge-success">Running</span>
+        {% else %}
+        <span class="badge badge-danger">Stopped</span>
+        {% endif %}
+    </span>
+    {% endfor %}
+</div>
+
+{# Failed jobs #}
+<div class="mt-3 pt-3 border-t border-border-subtle">
+    {% if status.failed_jobs %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="border-b border-border-subtle text-text-tertiary text-xs uppercase tracking-wider">
+                    <th class="py-2 pr-4 text-left font-medium">Type</th>
+                    <th class="py-2 px-4 text-left font-medium">Job</th>
+                    <th class="py-2 px-4 text-left font-medium">Failed</th>
+                    <th class="py-2 pl-4 text-left font-medium">Details</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-border-subtle">
+                {% for job in status.failed_jobs %}
+                <tr class="hover:bg-bg-elevated-2 transition-colors">
+                    <td class="py-2.5 pr-4 text-text-secondary whitespace-nowrap">{{ job.kind }}</td>
+                    <td class="py-2.5 px-4">
+                        <a href="{{ job.url }}" class="text-primary-400 hover:text-primary-300 font-semibold">{{ job.name }}</a>
+                    </td>
+                    <td class="py-2.5 px-4 text-danger-400 whitespace-nowrap">{{ job.when or 'unknown' }}</td>
+                    <td class="py-2.5 pl-4 text-xs text-text-tertiary max-w-xs truncate" title="{{ job.detail }}">{{ job.detail }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="text-xs text-text-tertiary mt-3" style="margin-bottom: 0;">Replication runs that failed in the last {{ status.window_hours }} hours, and enabled scheduled tasks whose most recent run failed.</p>
+    {% else %}
+    <div class="flex items-center gap-2 text-sm text-text-secondary">
+        <svg class="w-4 h-4 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        No failed replication runs in the last {{ status.window_hours }} hours and no scheduled task whose last run failed.
+    </div>
+    {% endif %}
+</div>
+
+{% else %}
+<p class="text-text-tertiary text-sm">Unable to read job and service status{% if status and status.error %}: {{ status.error }}{% endif %}</p>
+{% endif %}
