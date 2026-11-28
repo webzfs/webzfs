@@ -1,0 +1,47 @@
+# WebZFS: deploy the pre-built image from the local registry.
+#
+# On the target host (needs the zfs kernel module loaded):
+#   1. Allow the HTTP registry in /etc/docker/daemon.json, then restart docker:
+#        { "insecure-registries": ["192.168.0.103:5000"] }
+#   2. Put a password in a .env file next to this file:
+#        WEBZFS_ADMIN_PASSWORD=change-me
+#   3. docker compose -f docker-compose.deploy.yml up -d
+#   4. Open http://localhost:26619 and log in as "admin"
+#
+# Update to a newer image:
+#   docker compose -f docker-compose.deploy.yml pull && docker compose -f docker-compose.deploy.yml up -d
+services:
+  webzfs:
+    image: 192.168.0.103:5000/webzfs:${WEBZFS_TAG:-latest}
+    container_name: webzfs
+    restart: unless-stopped
+    pull_policy: always
+    privileged: true          # ZFS, SMART and block-device access
+    pid: host                 # process / ARC views reflect the real host
+    environment:
+      WEBZFS_ADMIN_USER: ${WEBZFS_ADMIN_USER:-admin}
+      WEBZFS_ADMIN_PASSWORD: ${WEBZFS_ADMIN_PASSWORD:?set WEBZFS_ADMIN_PASSWORD in .env}
+      TZ: ${TZ:-UTC}
+      # Any setting from .env.example can be overridden here, e.g.:
+      # SHELL_ALLOWED_USERS: admin
+      # SMTP_ENABLED: "true"
+      # SMTP_HOST: mail.example.com
+    ports:
+      # Localhost only. Use "26619:26619" to reach it from the LAN.
+      - "127.0.0.1:26619:26619"
+    volumes:
+      - webzfs-data:/opt/webzfs/.config/webzfs   # settings, state, audit logs
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+      - /etc/zfs:/etc/zfs
+      - /etc/sanoid:/etc/sanoid
+      # Pool/dataset mountpoints. rshared makes mounts done by the container
+      # (zpool import, zfs mount) appear on the host, and host mounts appear
+      # in the container. Add a line for any mountpoint outside /mnt, e.g.:
+      # - /tank:/tank:rshared
+      - /mnt:/mnt:rshared
+      # Host logs for the observability / support-bundle pages:
+      # - /var/log:/var/log:ro
+
+volumes:
+  webzfs-data:

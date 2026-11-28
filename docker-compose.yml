@@ -1,0 +1,40 @@
+# WebZFS via Docker Compose.
+#   1. Set WEBZFS_ADMIN_PASSWORD (e.g. in a .env file next to this file).
+#   2. docker compose up -d --build
+#   3. Open http://localhost:26619
+services:
+  webzfs:
+    build: .
+    image: webzfs:latest
+    container_name: webzfs
+    restart: unless-stopped
+    # ZFS, SMART and block-device tools need full device access.
+    privileged: true
+    # Host PID namespace lets process/ARC views reflect the real host.
+    pid: host
+    environment:
+      WEBZFS_ADMIN_USER: ${WEBZFS_ADMIN_USER:-admin}
+      WEBZFS_ADMIN_PASSWORD: ${WEBZFS_ADMIN_PASSWORD:?set WEBZFS_ADMIN_PASSWORD}
+      # Any .env.example setting can be overridden here, e.g.:
+      # SHELL_ALLOWED_USERS: admin
+      # SMTP_ENABLED: "true"
+    ports:
+      # Localhost only by default, matching WebZFS's own default.
+      # Use "26619:26619" to expose it on the LAN.
+      - "127.0.0.1:26619:26619"
+    volumes:
+      - webzfs-data:/opt/webzfs/.config/webzfs
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+      - /etc/sanoid:/etc/sanoid
+      - /etc/zfs:/etc/zfs
+      # Pool/dataset mountpoints. rshared makes mounts done by the container
+      # (zpool import, zfs mount) appear on the host, and host mounts appear
+      # in the container. Add a line for any mountpoint outside /mnt, e.g.:
+      # - /tank:/tank:rshared
+      - /mnt:/mnt:rshared
+      # Optional: host logs for the observability / support-bundle pages
+      # - /var/log:/var/log:ro
+
+volumes:
+  webzfs-data:

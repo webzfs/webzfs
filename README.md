@@ -88,6 +88,8 @@ Node.js and npm are not required to install or update WebZFS. The built styleshe
 
 ### Installation
 
+**Docker:** see [DOCKER.md](DOCKER.md).
+
 **Linux:**
 ```bash
 git clone https://github.com/webzfs/webzfs.git
