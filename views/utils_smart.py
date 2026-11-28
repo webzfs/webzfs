@@ -507,14 +507,15 @@ async def smartd_index(request: Request):
     """Display smartd daemon status and configuration"""
     try:
         status = smart_service.get_smartd_status()
-        config = smart_service.get_smartd_config()
-        
+        config_info = smart_service.get_smartd_config_info()
+
         return templates.TemplateResponse(
             request,
             name="utils/smart/smartd.jinja",
             context={
                 "status": status,
-                "config": config,
+                "config": config_info["content"],
+                "config_info": config_info,
                 "page_title": "Smartd Configuration"
             }
         )
@@ -525,6 +526,7 @@ async def smartd_index(request: Request):
             context={
                 "status": {"error": str(e)},
                 "config": "",
+                "config_info": None,
                 "error": str(e),
                 "page_title": "Smartd Configuration"
             }

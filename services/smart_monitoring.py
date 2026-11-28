@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
+from services import smartd
 from services.utils import is_freebsd, is_netbsd, run_privileged_command
 
 # Sentinel stored in the disk field of a scheduled test to mean "every
@@ -464,110 +465,52 @@ class SMARTMonitoringService:
     
     # Smartd Integration
     
-    def get_smartd_config(self) -> str:
-        """Get current smartd.conf configuration"""
+    # Paths, privileged writes and service commands live in
+    # services/smartd.py so this service and the health analysis agree.
+
+    def get_smartd_config_info(self) -> Dict[str, Any]:
+        """
+        Get smartd.conf and where it lives on this platform.
+
+        Returns:
+            path: the file smartd reads on this platform
+            exists: False when the file has not been created yet
+            content: file content, empty when the file does not exist
+            stale_path: /etc/smartd.conf when it exists on a platform
+                where smartd does not read it, otherwise None
+            sample_path: packaged sample file, if installed
+        """
+        config_path = smartd.get_smartd_config_path()
         try:
-            config_path = Path('/etc/smartd.conf')
-            if config_path.exists():
-                with open(config_path, 'r') as f:
-                    return f.read()
-            return "# smartd.conf not found"
+            content = smartd.read_smartd_config()
         except Exception as e:
-            raise Exception(f"Failed to read smartd.conf: {str(e)}")
-    
+            raise Exception(f"Failed to read {config_path}: {str(e)}")
+        stale_path = smartd.get_stale_smartd_config_path()
+        sample_path = smartd.get_smartd_sample_path()
+        return {
+            'path': str(config_path),
+            'exists': content is not None,
+            'content': content or '',
+            'stale_path': str(stale_path) if stale_path else None,
+            'sample_path': str(sample_path) if sample_path else None,
+        }
+
+    def get_smartd_config(self) -> str:
+        """Get current smartd.conf content, empty if the file is missing"""
+        return self.get_smartd_config_info()['content']
+
     def update_smartd_config(self, config: str) -> None:
         """Update smartd.conf configuration"""
-        try:
-            config_path = Path('/etc/smartd.conf')
-            # Would need root privileges
-            with open(config_path, 'w') as f:
-                f.write(config)
-        except Exception as e:
-            raise Exception(f"Failed to update smartd.conf: {str(e)}")
-    
+        smartd.write_smartd_config(config)
+
     def get_smartd_status(self) -> Dict[str, Any]:
         """Get smartd daemon status"""
-        if is_freebsd():
-            # FreeBSD only uses service command
-            try:
-                result = subprocess.run(
-                    ['service', 'smartd', 'status'],
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
-                return {
-                    'running': result.returncode == 0,
-                    'status_output': result.stdout
-                }
-            except Exception as e:
-                return {'error': f'Unable to check smartd status: {str(e)}'}
-        
-        # Linux tries systemctl first (default)
-        try:
-            result = subprocess.run(
-                ['systemctl', 'status', 'smartd'],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            
-            active = 'active (running)' in result.stdout
-            
-            return {
-                'running': active,
-                'status_output': result.stdout
-            }
-            
-        except FileNotFoundError:
-            # Fallback to service command on Linux
-            try:
-                result = subprocess.run(
-                    ['service', 'smartd', 'status'],
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
-                return {
-                    'running': result.returncode == 0,
-                    'status_output': result.stdout
-                }
-            except:
-                return {'error': 'Unable to check smartd status'}
-    
+        return smartd.get_smartd_status()
+
     def restart_smartd(self) -> None:
         """Restart smartd daemon"""
-        if is_freebsd():
-            # FreeBSD only uses service command
-            try:
-                subprocess.run(
-                    ['service', 'smartd', 'restart'],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-            except subprocess.CalledProcessError as e:
-                raise Exception(f"Failed to restart smartd: {e.stderr}")
-        else:
-            # Linux tries systemctl first (default)
-            try:
-                subprocess.run(
-                    ['systemctl', 'restart', 'smartd'],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-            except FileNotFoundError:
-                # Fallback to service command on Linux
-                subprocess.run(
-                    ['service', 'smartd', 'restart'],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-            except subprocess.CalledProcessError as e:
-                raise Exception(f"Failed to restart smartd: {e.stderr}")
-    
+        smartd.restart_smartd()
+
     # Scheduled Tests
     
     def list_scheduled_tests(self) -> List[Dict[str, Any]]:

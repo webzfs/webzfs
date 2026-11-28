@@ -80,11 +80,31 @@
     <!-- Configuration Editor -->
     <div class="bg-bg-elevated rounded-lg overflow-hidden shadow-lg">
         <div class="p-6 border-b border-gray-700">
-            <h2 class="text-xl font-bold text-text-primary">Configuration File (/etc/smartd.conf)</h2>
+            <h2 class="text-xl font-bold text-text-primary">Configuration File{% if config_info %} (<span class="font-mono">{{ config_info.path }}</span>){% endif %}</h2>
         </div>
-        
+
         <form method="post" action="/utils/smart/smartd/config" id="form-save-config">
             <div class="p-6">
+                {% if config_info and not config_info.exists %}
+                <div class="alert-warning mb-4 text-sm">
+                    <strong>File not found:</strong>
+                    <span class="font-mono">{{ config_info.path }}</span> does not exist yet.
+                    Saving will create it.
+                    {% if config_info.sample_path %}
+                    The smartmontools package installed a sample at
+                    <span class="font-mono">{{ config_info.sample_path }}</span> that can be used as a starting point.
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% if config_info and config_info.stale_path %}
+                <div class="alert-warning mb-4 text-sm">
+                    <strong>Unused file:</strong>
+                    <span class="font-mono">{{ config_info.stale_path }}</span> exists, but smartd on this
+                    system reads <span class="font-mono">{{ config_info.path }}</span>. Earlier WebZFS versions
+                    saved to the unused file. Copy any settings you still need into the editor below, then
+                    remove <span class="font-mono">{{ config_info.stale_path }}</span>.
+                </div>
+                {% endif %}
                 <textarea 
                     name="config" 
                     rows="20" 

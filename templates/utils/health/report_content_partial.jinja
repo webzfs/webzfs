@@ -330,10 +330,10 @@
                 <div class="flex items-center gap-3">
                     {% if report.smart_test_status.smartd_config_exists %}
                     <span class="w-3 h-3 rounded-full bg-success-400"></span>
-                    <span class="text-sm text-text-primary">smartd.conf exists</span>
+                    <span class="text-sm text-text-primary">{{ report.smart_test_status.smartd_config_path or 'smartd.conf' }} exists</span>
                     {% else %}
                     <span class="w-3 h-3 rounded-full bg-warning-400"></span>
-                    <span class="text-sm text-warning-400">smartd.conf not found</span>
+                    <span class="text-sm text-warning-400">{{ report.smart_test_status.smartd_config_path or 'smartd.conf' }} not found</span>
                     {% endif %}
                 </div>
             </div>
