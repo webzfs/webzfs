@@ -17,7 +17,7 @@ For the keen eye'd among you, there has been a new Fleetview page in WebZFS that
 Anyway, some pics.
 
 ![](./images/CNC-Setup-5.jpg)
+![](./images/CNC-Setup-4.jpg)
 ![](./images/CNC-Setup-3.jpg)
 ![](./images/CNC-Setup-2.jpg)
-![](./images/CNC-Setup-1.jpg)
 ![](./images/CNC-Setup-1.jpg)
