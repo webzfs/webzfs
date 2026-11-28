@@ -1,5 +1,13 @@
 # WebZFS - ZFS Web Management Interface
 
+> **About this fork.** This is a fork of the original WebZFS project,
+> [webzfs/webzfs](https://github.com/webzfs/webzfs). The only addition is **Docker support**: a
+> `Dockerfile`, Docker Compose files and [DOCKER.md](DOCKER.md), which explains how to run WebZFS in a container.
+> Everything else is the original project, unchanged.
+>
+> **The Docker support was written by AI** (Claude, by Anthropic), not by the original author. It is not part of
+> the original project. Please report problems with the Docker files here, not to the original project.
+
 A modern web-based management interface for ZFS pools, datasets, snapshots, and SMART disk monitoring built with Python FastAPI and HTMX.
 
 ![webzfs dashboard](screenshots/0.77/dashboard-v0.77.jpg)
