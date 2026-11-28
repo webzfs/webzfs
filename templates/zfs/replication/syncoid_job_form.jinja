@@ -203,6 +203,10 @@
                             <input type="checkbox" name="large_blocks" value="true" class="form-checkbox" {% if job and job.large_blocks %}checked{% endif %}>
                             <span class="ml-3 text-text-secondary">Large blocks (zfs send -L, for recordsize larger than 128 KiB)</span>
                         </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="raw_send" value="true" class="form-checkbox" {% if job and job.raw_send %}checked{% endif %}>
+                            <span class="ml-3 text-text-secondary">Raw send (zfs send -w, replicates encrypted datasets without loading keys)</span>
+                        </label>
                     </div>
                     <p id="large-blocks-hint" class="hidden mt-2 text-xs text-info-400">
                         Large blocks was enabled automatically because the source dataset uses a recordsize larger than 128 KiB.
@@ -222,6 +226,9 @@
                                    {% if not job or not job.additional_flags %}disabled{% else %}required{% endif %}>
                             <p class="text-text-tertiary text-xs mt-1">
                                 Enter the additional arguments exactly as they should appear before the source and target datasets in the Syncoid command.
+                            </p>
+                            <p class="text-warning-400 text-xs mt-2">
+                                Warning: if you enter <code class="font-mono">--sendoptions</code> here, it replaces the send options set by the Large blocks and Raw send checkboxes. Syncoid only uses the last <code class="font-mono">--sendoptions</code> it is given, so list every send option you need in it, for example <code class="font-mono">--sendoptions=Lw</code>.
                             </p>
                         </div>
                     </div>
@@ -634,7 +641,11 @@
         if (optionCheckbox('skip_parent').checked) { parts.push('--skip-parent'); }
         if (optionCheckbox('create_bookmark').checked) { parts.push('--create-bookmark'); }
         if (optionCheckbox('force_delete').checked) { parts.push('--force-delete'); }
-        if (largeBlocksCheckbox.checked) { parts.push('--sendoptions=L'); }
+        // Large blocks and raw send share one --sendoptions argument.
+        let sendOptions = '';
+        if (largeBlocksCheckbox.checked) { sendOptions += 'L'; }
+        if (optionCheckbox('raw_send').checked) { sendOptions += 'w'; }
+        if (sendOptions) { parts.push('--sendoptions=' + sendOptions); }
         // Receive options saved with the job are passed via --recvoptions
         // (issue #23).
         const recvUnmounted = document.getElementById('receive_unmounted');
@@ -746,7 +757,7 @@
         if (el) { el.addEventListener('input', updateCommandPreview); }
     });
     ['recursive', 'no_sync_snap', 'skip_parent', 'create_bookmark',
-     'force_delete', 'large_blocks'].forEach(function(name) {
+     'force_delete', 'large_blocks', 'raw_send'].forEach(function(name) {
         const box = optionCheckbox(name);
         if (box) { box.addEventListener('change', updateCommandPreview); }
     });

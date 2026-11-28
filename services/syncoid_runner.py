@@ -190,6 +190,13 @@ def _execute_locked_job(
             # Progress recording must never break the replication.
             pass
 
+    # Large blocks (-L) and raw send (-w) share one --sendoptions argument.
+    send_options = ""
+    if job.get("large_blocks", False):
+        send_options += "L"
+    if job.get("raw_send", False):
+        send_options += "w"
+
     try:
         syncoid_service = SyncoidService()
         result = syncoid_service.execute_replication(
@@ -203,7 +210,7 @@ def _execute_locked_job(
             skip_parent=job.get("skip_parent", False),
             create_bookmark=job.get("create_bookmark", False),
             force_delete=job.get("force_delete", False),
-            send_options="L" if job.get("large_blocks", False) else None,
+            send_options=send_options or None,
             recv_options=job.get("receive_options") or None,
             additional_flags=job.get("additional_flags") or None,
             source_host=source_host,
