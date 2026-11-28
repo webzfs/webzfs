@@ -8,7 +8,7 @@ tags: [release, beta, zfs, announcement]
 
 In the 0.85 post, under "What comes next", the very first bullet point was:
 
-`Hopefully no new features`
+`Hopefully no new features`  
 ![](./images/maury.gif)
 
 So anyway, here's a release with over 16,000 new lines in it.
