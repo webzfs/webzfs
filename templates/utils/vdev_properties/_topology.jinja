@@ -15,6 +15,13 @@
     </div>
     {% endif %}
 
+{% if topology.incompatible %}
+<div class="p-3">
+    {% with pool_name = topology.pool.name, reason = topology.incompatible_reason, upgradable = topology.upgradable %}
+    {% include 'utils/vdev_properties/_incompatible.jinja' %}
+    {% endwith %}
+</div>
+{% else %}
 <div class="p-3 space-y-3">
     <!-- Pool node -->
     <div class="{{ node_classes(topology.pool.token) }} p-3 bg-primary-500/5 border-primary-400/30" data-node="{{ topology.pool.token }}" onclick="selectVdevNode(this.dataset.node)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVdevNode(this.dataset.node)}">
@@ -72,4 +79,5 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
 </div>
