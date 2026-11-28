@@ -96,7 +96,7 @@ Go read it, especially the "What you will notice after updating" section. The sh
 
 ### Node.js and npm were removed, and there was much rejoicing
 
-![](./images/much_rejoicing.gif)
+![](./images/much_rejoicing.gif)  
 Remember the Ubuntu Snap saga from 0.78, where the installer got handed Node 10? The sequel was Linux Mint shipping Node 18 when one of the build dependencies had moved on to requiring Node 22.
 
 Here's the thing. Node was only ever used at install time to build one CSS file. That's it. So the built stylesheet is now committed to the repo, the vendored JavaScript libraries are already there from the security work, and the installers and updaters on Linux, FreeBSD, and NetBSD no longer need Node.js or npm at all. Nothing gets downloaded from npm on your server.
