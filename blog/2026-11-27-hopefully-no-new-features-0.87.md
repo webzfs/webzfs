@@ -11,7 +11,7 @@ In the 0.85 post, under "What comes next", the very first bullet point was:
 `Hopefully no new features`  
 ![](./images/maury.gif)
 
-So anyway, here's a release with over 10,000 new lines in it.  Ok technically they're not all **NEW**, ome were in side branches I had on my local gitea that I forgot about, some were for bug fixes I had written earlier and didn't get pushed before. And also technically I just made up that 10k figure, i don't actually know how many new lines there are, but it sounds good. Sounds a lot better than something like 2,347 new lines.
+So anyway, here's a release with over 10,000 new lines in it.  Ok technically they're not all **NEW**, some were in side branches I had on my local gitea that I forgot about, some were for bug fixes I had written earlier and didn't get pushed before. And also technically I just made up that 10k figure, i don't actually know how many new lines there are, but it sounds good. Sounds a lot better than something like 2,347 new lines.
 
 In my defense, I didn't go looking for shiny new things to build... I just ended up being wrong.  And unlike the typical modus operandi in world these days, I wont try to gaslight everyone else when I'm genuinely the one at fault. 
 ![](./images/dont_shoot.jpg)
